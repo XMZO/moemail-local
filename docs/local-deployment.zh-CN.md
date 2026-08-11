@@ -4,9 +4,13 @@
 
 Cloudflare Email Routing 与 Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。
 
+Docker 部署现在只保留一个 `compose.yaml`。当前发布文件固定拉取 `ghcr.io/xmzo/moemail-local:v0.16.0`、`ghcr.io/xmzo/moemail-local-postgres:v0.16.0` 和 `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.0`；这些镜像只在 Docker-compatible Git tag（例如 `v0.16.0`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
+
+首次成功发布后，到 GitHub Packages 中确认 `moemail-local`、`moemail-local-postgres`、`moemail-local-postgres-tools` 三个 container package 的 visibility 为 **Public**，否则未登录的 Compose 主机无法拉取。稳定 semver tag 也会刷新 `latest`，但生产部署继续固定三个相同的版本 tag，不能混用不同版本，也不通过 `.env` 选 tag。升级时下载目标 tag 对应的 `compose.yaml`，完成备份与恢复演练后再切换。Compose 不再内置 Caddy，默认只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
+
 ## 1. 服务器与数据库选择
 
-- 推荐 Node.js 22 LTS、pnpm 10、Caddy 2；裸机构建原生依赖还需要 `build-essential` 与 `python3`。启用异地同步需安装 `rclone`；裸机 PostgreSQL 备份/恢复需安装与服务端同主版本的 `pg_dump`/`pg_restore`。`sqlite3` 只在把 D1 SQL 转成导入源库时需要；Wrangler 只用于 Email Worker 或 D1 导出。
+- 推荐 Node.js 22 LTS、pnpm 11.21.0、Caddy 2；裸机构建原生依赖还需要 `build-essential` 与 `python3`。启用异地同步需安装 `rclone`；裸机 PostgreSQL 备份/恢复需安装与服务端同主版本的 `pg_dump`/`pg_restore`。`sqlite3` 只在把 D1 SQL 转成导入源库时需要；Wrangler 只用于 Email Worker 或 D1 导出。
 - 数据库应放在本机 SSD/NVMe 持久化目录，不要把 SQLite 放在 NFS、SMB 或容器临时层。
 - 最小 1 vCPU / 1 GiB；生产建议从 2 vCPU / 2 GiB 起步。
 
@@ -16,7 +20,7 @@ Cloudflare Email Routing 与 Email Worker 仍使用 Wrangler `vars`/Secret，因
 | 2 vCPU / 2–4 GiB | 50–150 | 5 万邮箱、30 万封邮件 | 中低频公开站，每分钟数十封收信 |
 | 4 vCPU / 4–8 GiB | 150–500 | 10 万邮箱、100 万封邮件 | 较活跃单机站，需要监控慢查询与带宽 |
 
-SQLite 只允许一个 Next.js 写实例。需要多实例、持续高写入、在线人数长期超过数百或数据库高可用时，选择 PostgreSQL。仓库内 `compose.postgres.yaml` 是单节点 PostgreSQL；高可用要在 WebUI 中填写外部托管/集群数据库 URL，并另外完成故障切换演练。
+SQLite 只允许一个 Next.js 写实例。需要多实例、持续高写入、在线人数长期超过数百或数据库高可用时，选择 PostgreSQL。当前单文件 Compose 内置的是单节点 PostgreSQL；高可用要在 WebUI 中填写外部托管/集群数据库 URL，并另外完成故障切换演练。
 
 ## 2. 首次启动：全部在 WebUI 初始化
 
@@ -82,7 +86,7 @@ pnpm start --hostname 127.0.0.1 --port 3000
 | `database.postgres.ssl` | `false` | 是否使用 TLS |
 | `database.postgres.sslRejectUnauthorized` | `true` | TLS 时是否严格校验证书；Web 与备份/恢复工具使用同一策略 |
 | `database.postgres.applicationName` | `moemail` | PostgreSQL application name |
-| `database.postgres.backupDir` | `data/postgres-backups` | 必须位于该目录或其子目录；Compose 与 offsite 共享同一持久卷 |
+| `database.postgres.backupDir` | `data/postgres-backups` | 必须位于该目录或其子目录；Compose 与 offsite 共享同一 bind 目录 |
 | `database.postgres.backupRetentionDays` | `14` | 备份保留天数 |
 | `auth.secret` | 向导生成，至少 32 字节 | 会话 secret |
 | `auth.passwordPepper` | 向导生成，至少 32 字节 | 已初始化后禁止直接轮换，否则现有账号无法登录 |
@@ -97,27 +101,45 @@ pnpm start --hostname 127.0.0.1 --port 3000
 
 四个 runtime secret 必须互不相同、至少 32 字节、无空白且不能是示例占位符。OAuth 的 ID/Secret 也不能只填一半。生成的 YAML 含明文凭据，不要提交；数据库备份之外还要单独安全备份 `config.yaml` 与 `config.yaml.lkg`。
 
-为保证 Compose 中 Web、维护与异地同步容器看到同一持久卷，`database.sqlite.path` 必须是 `data/` 内的相对文件，`database.sqlite.backupDir` 必须位于 `data/`；裸机若要使用其他磁盘，请把它挂载或软链接到该目录。PostgreSQL Compose 的备份目录固定在 `data/postgres-backups` 子树。
+为保证 Compose 中 Web、维护与异地同步容器看到同一 bind 目录，`database.sqlite.path` 必须是 `data/` 内的相对文件，`database.sqlite.backupDir` 必须位于 `data/`；裸机若要使用其他磁盘，请把它挂载或软链接到该目录。PostgreSQL Compose 的备份目录固定在 `data/postgres-backups` 子树。
 
 业务站点设置仍保存在所选数据库的 `site_config` 表中，可由皇帝在个人中心设置，例如邮箱域名、默认角色、Resend、Turnstile 与 Webhook。运行配置和业务配置都能通过 WebUI 管理，但二者的持久化位置不同。
 
-## 3. Docker Compose：SQLite（默认）
+## 3. Docker Compose：单文件启动
 
-`compose.yaml` 没有 `environment` 或 `env_file`。应用、SQLite 文件、`config.yaml`、setup token 和 SQLite 备份都在 `moemail-data` 命名卷的 `/app/data` 中。
+`compose.yaml` 没有 `environment`、`env_file` 或 `${...}` 插值，也不在部署机本地 `build`。默认 `docker compose up -d` 会拉取三种 GHCR 镜像并启动目录初始化、内置 PostgreSQL 和 Web；向导中仍可选择 SQLite。全部持久状态都在 Compose 文件同目录的 `./data` 树：
+
+- `./data`：`config.yaml`、`config.yaml.lkg`、setup token、SQLite 库与 SQLite 备份；
+- `./data/postgres`：内置 PostgreSQL 数据；
+- `./data/postgres-backups`：PostgreSQL 归档及其配置 pair。
+
+首次启动的 `storage-init` 会在标准 Linux rootful Docker 中把 bind 目录准备给容器 UID 10001；rootless Docker、NAS 或不允许容器内 `chown` 的文件系统需先自行验证权限。三个 GHCR package 必须已经公开或已在宿主执行 `docker login ghcr.io`。
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 docker compose ps
 docker compose logs -f moemail
 ```
 
-访问 `http://服务器IP:3000` 后读取令牌：
+访问站点后读取令牌：
 
 ```bash
 docker compose exec -T moemail sh -c 'cat /app/data/setup-token'
 ```
 
-在 WebUI 选择 SQLite；默认 `data/moemail.db` 在容器内解析为 `/app/data/moemail.db`。Compose 当前映射 `3000:3000`，初始化完成和 HTTPS 代理就绪前应使用防火墙限制访问。删除容器不会删除命名卷；不要运行 `docker compose down -v`，除非确定要永久删除配置、数据库与备份。
+在 WebUI 选择 SQLite；默认 `data/moemail.db` 在容器内解析为 `/app/data/moemail.db`。Compose 当前只映射 `127.0.0.1:3000:3000`，必须由宿主机 Caddy/Nginx 反代到公网；若需要临时直连初始化，可暂时改成 `0.0.0.0:3000:3000` 或通过 SSH tunnel 访问。`docker compose down` 不会删除同目录 bind mounts；只要保留 `./data`，删镜像/删容器后配置和数据都还在，也方便整目录打包迁移。
+
+需要把整套部署冷打包带走时，先停止写入，再连同唯一 Compose 文件一起归档；以 root 解包可保留容器 UID 10001/PostgreSQL UID 的权限。不要在 PostgreSQL 正在写入时直接复制其物理目录：
+
+```bash
+set -euo pipefail
+docker compose --profile '*' stop
+sudo tar --numeric-owner -czf "../moemail-$(date -u +%Y%m%d%H%M%S).tar.gz" \
+  compose.yaml data
+docker compose --profile '*' start
+```
+
+删除镜像可用 `docker compose down --rmi all`，上面的 bind 数据仍会保留；只有显式删除 `./data` 才会删除本地状态。迁入新机后在同一目录以 root 解包，再执行 `docker compose up -d`。
 
 一次性维护任务和常驻 scheduler：
 
@@ -140,7 +162,7 @@ docker compose --profile offsite up -d offsite-backup
 
 在运行配置中填写 `monitor` 阈值、可选告警 URL/令牌，以及 `offsite.remote`。Compose 部署应将完整 rclone INI 内容粘贴到 `offsite.rcloneConfigContent`；任务会写入 `0600` 临时文件，调用结束立即删除。留空只会使用任务进程自身可见的 rclone 默认配置，容器不会自动看到宿主配置；若不用 WebUI 内容，必须自行增加只读配置卷。YAML 与 LKG 都含明文凭据，必须按 secret 文件保护；不使用 Compose 环境变量。
 
-升级前先用当前 checkout/镜像备份；确认数据库文件与相邻 pair 已复制到命名卷外，再拉取新代码。不要让尚未验证的新脚本成为唯一一份升级前备份：
+升级前先用当前版本镜像备份；确认数据库文件与相邻 pair 已复制到 `./data` 目录外，再下载目标 release 的 Compose。不要让尚未验证的新镜像成为唯一一份升级前备份：
 
 ```bash
 set -euo pipefail
@@ -161,8 +183,13 @@ docker compose --profile maintenance run --rm --no-deps -T \
   > "$archive_dir/$backup_name.config.yaml.lkg"
 test -s "$archive_dir/$backup_name"
 test -s "$archive_dir/$backup_name.config.yaml.lkg"
-git pull --ff-only
-docker compose build --pull moemail
+release_tag=v0.16.0
+curl -fsSL \
+  "https://raw.githubusercontent.com/XMZO/moemail-local/$release_tag/compose.yaml" \
+  -o compose.yaml.next
+docker compose -f compose.yaml.next config --quiet
+mv -T compose.yaml.next compose.yaml
+docker compose pull
 docker compose up -d
 docker compose ps
 ```
@@ -181,14 +208,14 @@ docker compose up -d moemail
 
 verify 成功后再开放 Web，并只重新启动此前实际启用的 profiles。
 
-## 4. Docker Compose：PostgreSQL
+## 4. 在同一个 Compose 中切到 PostgreSQL
 
-`compose.postgres.yaml` 同样不使用应用环境变量。内置 PostgreSQL 17 不发布 5432，只连接到 Compose 的 `internal: true` 数据库网络；该隔离网络内使用 trust 认证。备份/恢复工具使用 PostgreSQL 18 客户端并同时连接隔离网络和默认出口网络，因此既可访问内置库，也可访问向导中填写的 PostgreSQL 17/18 外部托管实例，但不会发布数据库端口。外部服务端版本不得高于工具客户端 major；更高版本应把 `deploy/docker/postgres-tools.Dockerfile` 改为匹配或更高版本后重新构建。不要把这套无密码数据库端口发布到宿主或外网。
+同一个 `compose.yaml` 已经带上内置 PostgreSQL 17。它不使用应用环境变量，也不再本地 `build`。配置仍位于同目录 `./data/`，内置 PostgreSQL 数据目录位于 `./data/postgres/`，归档备份位于 `./data/postgres-backups/`。该 PostgreSQL 不发布 5432，只连接到 Compose 的 `internal: true` 数据库网络；隔离网络内使用 trust 认证。备份/恢复工具使用 PostgreSQL 18 客户端并同时连接隔离网络和默认出口网络，因此既可访问内置库，也可访问向导中填写的 PostgreSQL 17/18 外部托管实例，但不会发布数据库端口。不要把这套无密码数据库端口发布到宿主或外网。
 
 ```bash
-docker compose -f compose.postgres.yaml up -d --build
-docker compose -f compose.postgres.yaml ps
-docker compose -f compose.postgres.yaml logs -f moemail postgres
+docker compose up -d
+docker compose ps
+docker compose logs -f moemail postgres
 ```
 
 首次打开 WebUI 后读取 `/app/data/setup-token`，选择 PostgreSQL，并填写内置数据库 URL：
@@ -199,19 +226,19 @@ postgresql://moemail@postgres:5432/moemail
 
 外部 PostgreSQL 可使用服务商提供的带凭据 URL，但必须先移除全部 `?query` 参数，只保留 authority/path 中显式的 host、user、password 与 database；TLS、连接超时和 application name 分别填写对应 YAML 字段。严格 TLS 会让 Node 与 libpq 工具使用各自运行时的系统公共 CA；当前没有私有 CA 文件字段，使用私有 CA 的部署需先扩展受控证书挂载/配置，不能关闭校验来掩盖。向导的连接测试和最终提交都会探测数据库；提交成功后 migration 完成，应用自动重启到 PostgreSQL driver。
 
-配置存于 `moemail-config` 卷，数据库存于 `postgres-data`，备份存于 `postgres-backups`。同一备份卷分别挂载到应用默认的 `/app/data/postgres-backups` 和 PostgreSQL 工具的 `/backups`，无需修改默认备份目录。
+配置存于 `./data`，数据库存于 `./data/postgres`，备份存于 `./data/postgres-backups`。同一备份目录分别挂载到应用默认的 `/app/data/postgres-backups` 和 PostgreSQL 工具的 `/backups`，无需修改默认备份目录。
 
-不要运行 `docker compose -f compose.postgres.yaml down -v`，除非确定要永久删除配置、主数据库和全部 PostgreSQL 备份。
+不要删除 `./data`、`./data/postgres` 或 `./data/postgres-backups`，除非确定要永久删除配置、主数据库和全部 PostgreSQL 备份。
 
 手工备份与 scheduler：
 
 ```bash
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm postgres-backup
 
-docker compose -f compose.postgres.yaml --profile scheduler \
+docker compose --profile scheduler \
   up -d scheduler postgres-backup-scheduler
-docker compose -f compose.postgres.yaml \
+docker compose \
   logs -f scheduler postgres-backup-scheduler
 ```
 
@@ -224,15 +251,15 @@ set -euo pipefail
 archive_dir=/srv/moemail-offsite
 sudo install -d -m 0700 -o "$(id -un)" -g "$(id -gn)" "$archive_dir"
 umask 077
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm postgres-backup
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm --no-deps --entrypoint sh postgres-backup -c 'ls -1 /backups'
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm --no-deps -T --entrypoint cat postgres-backup \
   /backups/moemail-2026-08-11T03-23-00Z.dump \
   > "$archive_dir/moemail-2026-08-11T03-23-00Z.dump"
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm --no-deps -T --entrypoint cat postgres-backup \
   /backups/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg \
   > "$archive_dir/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg"
@@ -240,26 +267,26 @@ test -s "$archive_dir/moemail-2026-08-11T03-23-00Z.dump"
 test -s "$archive_dir/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg"
 ```
 
-PostgreSQL Compose 升级也必须先让上面的新备份和两个卷外文件都成功，再运行 `git pull --ff-only`、重建镜像、启动并执行 verify；任何备份/导出失败都应中止升级。
+PostgreSQL Compose 升级也必须先让上面的新备份和两个卷外文件都成功，再按 SQLite 升级块下载并校验目标 tag 的 `compose.yaml`，然后执行 `docker compose pull`、`up -d` 与 verify；任何备份、导出、Compose 校验或拉取失败都应中止升级。Compose 部署不在服务器本地重建镜像。
 
 放回二进制备份时禁用 TTY。覆盖前先再生成一份当前数据库+配置的独立安全备份；恢复器保持当前配置不动，用所选 pair 确定目标并完成 restore/verify，全部成功后才把 pair 安装到配置卷：
 
 ```bash
 set -euo pipefail
 cat /srv/moemail-offsite/moemail-2026-08-11T03-23-00Z.dump | \
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm --no-deps -T --entrypoint sh postgres-backup \
   -c 'umask 077; cat > /backups/restore.dump'
 cat /srv/moemail-offsite/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg | \
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm --no-deps -T --entrypoint sh postgres-backup \
   -c 'umask 077; cat > /backups/restore.dump.config.yaml.lkg'
 
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm postgres-backup
-docker compose -f compose.postgres.yaml stop \
+docker compose stop \
   moemail scheduler postgres-backup-scheduler monitor offsite-backup cleanup postgres-backup
-docker compose -f compose.postgres.yaml --profile maintenance \
+docker compose --profile maintenance \
   run --rm --no-deps --entrypoint node postgres-backup \
   /opt/moemail/config-reader.mjs --file \
   /backups/restore.dump.config.yaml.lkg postgres-target
@@ -269,10 +296,10 @@ docker compose -f compose.postgres.yaml --profile maintenance \
 
 ```bash
 set -euo pipefail
-docker compose -f compose.postgres.yaml --profile restore \
+docker compose --profile restore \
   run --rm postgres-restore /backups/restore.dump --confirm
-docker compose -f compose.postgres.yaml run --rm --no-deps moemail verify
-docker compose -f compose.postgres.yaml up -d moemail
+docker compose run --rm --no-deps moemail verify
+docker compose up -d moemail
 ```
 
 恢复后只恢复此前启用的 profiles。restore 或 verify 任一步失败时，`set -e` 会阻止 Web 启动。
@@ -294,11 +321,7 @@ OAuth 回调地址：
 
 代理必须覆盖而不是追加 `X-MoeMail-Client-IP`、`CF-Connecting-IP`、`X-Real-IP`、`X-Forwarded-For`，并正确传递 Host/Proto。仓库示例已这样处理。普通请求体限制为 1 MB，只有 `/api/internal/email` 放宽到 27 MB；应用和 Worker 的硬限制为 25 MiB。
 
-Compose 的可选 `proxy` profile 使用 `deploy/docker/Caddyfile`，当前只发布 HTTP 80，适合在另一个 TLS 终止层之后使用或本地验证，并不会自动申请公开 HTTPS 证书：
-
-```bash
-docker compose --profile proxy up -d caddy
-```
+Compose 不再内置代理服务；宿主机上的 Caddy/Nginx 应直接反代 `127.0.0.1:3000`。仓库只保留裸机代理示例，不再提供 Docker 内置 Caddy profile。
 
 用户名密码注册/登录即使关闭 Turnstile，也会受 `auth.rateLimit` 限制。多实例仍需在可信入口增加共享限流；应用内计数只覆盖单进程。
 
@@ -350,7 +373,7 @@ Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.16.0 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \
@@ -458,15 +481,20 @@ SQLite 恢复会把旧数据库改名为带时间戳的 `.bak`；PostgreSQL 恢�
 
 数据库文件/归档本身不包含运行配置。内置备份命令会在旁边原子生成同名 `.config.yaml.lkg` pair；导出时必须两者一起加密保存，并另行保留主 `config.yaml` 供审计。否则会丢失会话、密码 pepper 与 Worker 投递 secret。不要用损坏的主配置覆盖 LKG 或 pair。
 
-恢复到全新 Compose 数据卷时，不要先启动 Web。数据库备份旁边必须存在同名 `.config.yaml.lkg`。不要把宿主密钥文件改成 0644，也不要直接假设宿主 UID 等于容器 UID 10001；先以 root 的一次性容器把 `0600` 输入复制到临时命名卷并改属 10001，再把该卷只读挂载到 `/restore`。不要先复制到可配置的 `data/**` 目标。恢复器在数据库校验成功后自行安装 pair。
+恢复到全新 Compose 独立目录时，不要先启动 Web。数据库备份旁边必须存在同名 `.config.yaml.lkg`。现在 Compose 使用相对 bind mount，单独改 `-p` 并不能隔离 `./data`；恢复演练必须在一份独立目录中复制 `compose.yaml` 后再运行，这样相对 `./data`、`./data/postgres` 和 `./data/postgres-backups` 才会落到新的目录树。不要把宿主密钥文件改成 0644，也不要直接假设宿主 UID 等于容器 UID 10001；先以 root 的一次性容器把 `0600` 输入复制到临时卷并改属 10001，再把该卷只读挂载到 `/restore`。不要先复制到可配置的 `data/**` 目标。恢复器在数据库校验成功后自行安装 pair。
 
-SQLite 的完整顺序如下。宿主 `restore-point/` 同时包含 `.db` 与相邻 pair；容器内 `/restore` 位于数据卷外，因此不可能与任意合法 live path 相同。示例刻意使用全新的 Compose project 名，避免误复用当前生产卷；记下该名称，恢复后的所有管理命令都必须继续带同一个 `-p "$recovery_project"`：
+SQLite 的完整顺序如下。宿主 `restore-point/` 同时包含 `.db` 与相邻 pair；容器内 `/restore` 位于工作目录的 `data/` 之外，因此不可能与任意合法 live path 相同。示例刻意使用全新的独立目录；恢复后的所有管理命令都必须继续在同一个 `recovery_root` 下执行：
 
 ```bash
 set -euo pipefail
 recovery_project="moemail-recovery-$(date -u +%Y%m%d%H%M%S)"
-docker compose -p "$recovery_project" build moemail
 restore_root="$(pwd)/restore-point"
+recovery_root="$(pwd)/$recovery_project"
+mkdir -p "$recovery_root"
+cp compose.yaml "$recovery_root/compose.yaml"
+cd "$recovery_root"
+mkdir -p data data/postgres data/postgres-backups
+docker compose -p "$recovery_project" run --rm storage-init
 restore_input="moemail-restore-input-$(date -u +%Y%m%d%H%M%S)-$$"
 docker volume create "$restore_input"
 docker compose -p "$recovery_project" run --rm --no-deps --user 0:0 \
@@ -482,20 +510,22 @@ docker compose -p "$recovery_project" run --rm --no-deps \
 docker compose -p "$recovery_project" run --rm --no-deps moemail verify
 ```
 
-verify 成功后，先停止或切走同宿主仍占用 3000 端口的旧 Web，再执行 `docker compose -p "$recovery_project" up -d moemail`；确认新实例健康后才能运行 `docker volume rm "$restore_input"`。任何一步失败时 `set -e` 会停止，保留临时输入卷和隔离 project 供排错，不会启动 Web 或删除原部署。
+verify 成功后，先停止或切走同宿主仍占用 3000 端口的旧 Web，再执行 `docker compose -p "$recovery_project" up -d moemail`；确认新实例健康后才能运行 `docker volume rm "$restore_input"`。任何一步失败时 `set -e` 会停止，保留临时输入卷和独立恢复目录供排错，不会启动 Web 或删除原部署。
 
-恢复内置 PostgreSQL 新卷前，先确认配对快照中的 driver 是 `postgres`，URL 正是预期目标 `postgresql://moemail@postgres:5432/moemail`；若 URL 指向托管库，恢复器会操作该外部库，而不是新的 `postgres-data` 卷。下例同样使用隔离的全新 Compose project；恢复后继续用同一 `-p "$recovery_project"` 管理它：
+恢复内置 PostgreSQL 新目录前，先确认配对快照中的 driver 是 `postgres`，URL 正是预期目标 `postgresql://moemail@postgres:5432/moemail`；若 URL 指向托管库，恢复器会操作该外部库，而不是新的 `./data/postgres`。下例同样使用隔离的全新目录；恢复后继续在同一 `recovery_root` 下管理它：
 
 ```bash
 set -euo pipefail
 recovery_project="moemail-pg-recovery-$(date -u +%Y%m%d%H%M%S)"
-docker compose -p "$recovery_project" -f compose.postgres.yaml \
-  build postgres postgres-backup postgres-restore moemail
-
 restore_root="$(pwd)/restore-point"
+recovery_root="$(pwd)/$recovery_project"
+mkdir -p "$recovery_root"
+cp compose.yaml "$recovery_root/compose.yaml"
+cd "$recovery_root"
+mkdir -p data data/postgres data/postgres-backups
 restore_input="moemail-restore-input-$(date -u +%Y%m%d%H%M%S)-$$"
 docker volume create "$restore_input"
-docker compose -p "$recovery_project" -f compose.postgres.yaml \
+docker compose -p "$recovery_project" \
   run --rm --no-deps --user 0:0 \
   --volume "$restore_root:/source:ro" --volume "$restore_input:/restore" \
   --entrypoint sh moemail -ceu '
@@ -503,7 +533,7 @@ docker compose -p "$recovery_project" -f compose.postgres.yaml \
     install -o 10001 -g 10001 -m 0600 /source/moemail-2026-08-11T03-23-00Z.dump /restore/restore.dump
     install -o 10001 -g 10001 -m 0600 /source/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg /restore/restore.dump.config.yaml.lkg
   '
-docker compose -p "$recovery_project" -f compose.postgres.yaml --profile maintenance \
+docker compose -p "$recovery_project" --profile maintenance \
   run --rm --no-deps --volume "$restore_input:/restore:ro" \
   --entrypoint node postgres-backup /opt/moemail/config-reader.mjs \
   --file /restore/restore.dump.config.yaml.lkg postgres-target
@@ -513,15 +543,15 @@ docker compose -p "$recovery_project" -f compose.postgres.yaml --profile mainten
 
 ```bash
 set -euo pipefail
-docker compose -p "$recovery_project" -f compose.postgres.yaml up -d postgres
-docker compose -p "$recovery_project" -f compose.postgres.yaml --profile restore \
+docker compose -p "$recovery_project" up -d postgres
+docker compose -p "$recovery_project" --profile restore \
   run --rm --volume "$restore_input:/restore:ro" postgres-restore \
   /restore/restore.dump --confirm
-docker compose -p "$recovery_project" -f compose.postgres.yaml \
+docker compose -p "$recovery_project" \
   run --rm --no-deps moemail verify
 ```
 
-verify 成功后，先停止或切走同宿主旧 Web，再执行 `docker compose -p "$recovery_project" -f compose.postgres.yaml up -d moemail`；确认健康后才能删除 `$restore_input`。失败时保留恢复 project 和输入卷，不要启动 Web。
+verify 成功后，先停止或切走同宿主旧 Web，再执行 `docker compose -p "$recovery_project" up -d moemail`；确认健康后才能删除 `$restore_input`。失败时保留恢复目录和输入卷，不要启动 Web。
 
 裸机新目录把数据库备份及相邻 pair 以 `0600` 安装到 `/var/lib/moemail-restore-input/`（或其他 `/opt/moemail/data` 之外的 0700 目录），再以 `moemail` 用户执行恢复；不要预写 `config.yaml(.lkg)`。配置与数据库必须来自同一恢复点，恢复后先 verify 再开放流量。跨版本灾备优先用产出该备份的同版本代码/镜像恢复并 verify，再逐步升级和 migration；不要直接假定未来版本的完整 schema 校验能接受任意历史归档。
 
@@ -591,5 +621,5 @@ pnpm build
 - 错误 ingestion secret 返回 401，超大请求返回 413，重复邮件只入库一次。
 - `pnpm db:verify` 成功；数据库备份及其相邻 `.config.yaml.lkg` pair 能在全新独立路径恢复。
 - 监控磁盘、数据库/WAL 大小、HTTP 5xx、ingestion 非 2xx、cleanup 退出码和 API 延迟。
-- Compose 部署确认容器 health、非 root 用户、命名卷可重挂载，且 migration 失败时不提交候选配置。
+- Compose 部署确认容器 health、非 root 用户、同目录 bind mounts 可完整打包迁移，且 migration 失败时不提交候选配置。
 - durable Worker 的 Queue backlog 为零，R2 `failed/` 无未处理对象。

@@ -1,27 +1,77 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { parse } from "yaml"
 
 const packageDocument = JSON.parse(readFileSync("package.json", "utf8")) as {
+  version?: string
+  packageManager?: string
   scripts?: Record<string, string>
 }
 
+assert.match(packageDocument.version ?? "", /^\d+\.\d+\.\d+$/)
+assert.equal(packageDocument.packageManager, "pnpm@11.21.0")
+const releaseTag = `v${packageDocument.version}`
+
+type Healthcheck = {
+  disable?: boolean
+}
+
+type DependsOn = Record<string, { condition?: string }>
+
 type ComposeService = {
+  "<<"?: ComposeService | ComposeService[]
   image?: string
+  pull_policy?: string
+  build?: unknown
+  user?: string
+  restart?: string
   networks?: string[] | Record<string, unknown>
-  ports?: unknown
-  volumes?: Array<string | Record<string, unknown>>
+  network_mode?: string
+  ports?: unknown[]
+  volumes?: string[]
+  profiles?: string[]
+  command?: string[]
+  entrypoint?: string[]
+  depends_on?: DependsOn
+  read_only?: boolean
+  tmpfs?: string[]
+  cap_drop?: string[]
+  cap_add?: string[]
+  security_opt?: string[]
+  stop_grace_period?: string
+  healthcheck?: Healthcheck
 }
 
 type ComposeDocument = {
+  name?: string
   services?: Record<string, ComposeService>
   networks?: Record<string, { internal?: boolean }>
+  volumes?: Record<string, unknown>
+}
+
+type WorkflowDocument = {
+  on?: Record<string, unknown>
+}
+
+function resolveService(service: ComposeService | undefined) {
+  assert.ok(service, "Compose service is missing")
+  const inherited = service["<<"]
+  const bases = inherited ? (Array.isArray(inherited) ? inherited : [inherited]) : []
+  return Object.assign({}, ...bases, service) as ComposeService
 }
 
 function networkNames(service: ComposeService | undefined) {
-  assert.ok(service, "Compose service is missing")
-  if (Array.isArray(service.networks)) return service.networks
-  return Object.keys(service.networks ?? {})
+  const resolved = resolveService(service)
+  if (Array.isArray(resolved.networks)) return resolved.networks
+  return Object.keys(resolved.networks ?? {})
+}
+
+function serviceVolumes(service: ComposeService | undefined) {
+  return resolveService(service).volumes ?? []
+}
+
+function dependencyCondition(service: ComposeService | undefined, dependency: string) {
+  return resolveService(service).depends_on?.[dependency]?.condition
 }
 
 function baseImageMajor(path: string) {
@@ -31,58 +81,166 @@ function baseImageMajor(path: string) {
   return Number(match[1])
 }
 
-const compose = parse(readFileSync("compose.postgres.yaml", "utf8")) as ComposeDocument
-const services = compose.services ?? {}
+function sorted<T>(items: Iterable<T>) {
+  return [...items].sort()
+}
 
+const composePath = "compose.yaml"
+const composeSource = readFileSync(composePath, "utf8")
+const compose = parse(composeSource) as ComposeDocument
+const rawServices = compose.services ?? {}
+const services = Object.fromEntries(
+  Object.entries(rawServices).map(([name, service]) => [name, resolveService(service)]),
+) as Record<string, ComposeService>
+const expectedServices = [
+  "storage-init",
+  "postgres",
+  "moemail",
+  "cleanup",
+  "backup",
+  "postgres-backup",
+  "scheduler",
+  "postgres-backup-scheduler",
+  "monitor",
+  "offsite-backup",
+  "postgres-restore",
+]
+
+assert.equal(existsSync("compose.postgres.yaml"), false, "only compose.yaml may remain")
+assert.equal(existsSync("deploy/docker/Caddyfile"), false, "Docker must not bundle Caddy")
+assert.equal(compose.name, "moemail")
+assert.deepEqual(sorted(Object.keys(services)), sorted(expectedServices))
+assert.equal(compose.volumes, undefined, "Compose must use bind mounts instead of named volumes")
 assert.equal(compose.networks?.database?.internal, true)
+assert.doesNotMatch(composeSource, /\$\{[^}]+\}/, "Compose must not read shell or .env interpolation")
+assert.doesNotMatch(composeSource, /^\s*(?:environment|env_file|build):/m)
+assert.equal(services.caddy, undefined, "Compose must not bundle Caddy")
+
+const appServices = [
+  "storage-init",
+  "moemail",
+  "cleanup",
+  "backup",
+  "scheduler",
+  "monitor",
+  "offsite-backup",
+]
+for (const name of appServices) {
+  assert.equal(services[name]?.image, `ghcr.io/xmzo/moemail-local:${releaseTag}`)
+  assert.equal(services[name]?.pull_policy, "always")
+  assert.equal(services[name]?.build, undefined)
+}
+assert.equal(services.postgres?.image, `ghcr.io/xmzo/moemail-local-postgres:${releaseTag}`)
+assert.equal(services.postgres?.pull_policy, "always")
+assert.equal(services.postgres?.build, undefined)
+for (const name of ["postgres-backup", "postgres-backup-scheduler", "postgres-restore"]) {
+  assert.equal(services[name]?.image, `ghcr.io/xmzo/moemail-local-postgres-tools:${releaseTag}`)
+  assert.equal(services[name]?.pull_policy, "always")
+  assert.equal(services[name]?.build, undefined)
+  assert.equal(services[name]?.user, "10001:10001")
+}
+
+assert.equal(services["storage-init"]?.user, "0:0")
+assert.equal(services["storage-init"]?.network_mode, "none")
+assert.equal(services["storage-init"]?.restart, "no")
+assert.deepEqual(serviceVolumes(services["storage-init"]), [
+  "./data:/app/data",
+  "./data/postgres:/postgres-data",
+  "./data/postgres-backups:/backups",
+])
+assert.match(
+  (services["storage-init"]?.entrypoint ?? []).join("\n"),
+  /install -d -o 10001 -g 10001 -m 0700 \/app\/data \/app\/data\/backups \/app\/data\/postgres-backups/,
+)
+
 assert.deepEqual(networkNames(services.postgres), ["database"])
 assert.equal(services.postgres?.ports, undefined, "PostgreSQL must not publish a host port")
+assert.equal(services.postgres?.user, "0:0")
+assert.deepEqual(serviceVolumes(services.postgres), [
+  "./data/postgres:/var/lib/postgresql/data",
+])
+assert.equal(dependencyCondition(services.postgres, "storage-init"), "service_completed_successfully")
+
+assert.equal(services.moemail?.restart, "unless-stopped")
+assert.equal(services.moemail?.stop_grace_period, "30s")
+assert.deepEqual(services.moemail?.ports, ["127.0.0.1:3000:3000"])
+assert.deepEqual(serviceVolumes(services.moemail), ["./data:/app/data"])
+assert.deepEqual(networkNames(services.moemail), ["default", "database"])
+assert.equal(dependencyCondition(services.moemail, "storage-init"), "service_completed_successfully")
+assert.equal(dependencyCondition(services.moemail, "postgres"), "service_healthy")
+
+for (const name of ["cleanup", "backup"] as const) {
+  assert.deepEqual(services[name]?.profiles, ["maintenance"])
+  assert.equal(services[name]?.restart, "no")
+  assert.equal(services[name]?.healthcheck?.disable, true)
+  assert.deepEqual(serviceVolumes(services[name]), ["./data:/app/data"])
+}
+assert.deepEqual(services.cleanup?.command, ["cleanup"])
+assert.equal(dependencyCondition(services.cleanup, "postgres"), "service_healthy")
+assert.deepEqual(services.backup?.command, ["backup"])
 
 for (const name of ["postgres-backup", "postgres-backup-scheduler", "postgres-restore"]) {
   const networks = new Set(networkNames(services[name]))
-  assert.ok(networks.has("database"), `${name} cannot reach the built-in PostgreSQL service`)
-  assert.ok(networks.has("default"), `${name} cannot reach an external PostgreSQL service`)
+  assert.ok(networks.has("database"), `${name} cannot reach built-in PostgreSQL`)
+  assert.ok(networks.has("default"), `${name} cannot reach external PostgreSQL`)
+  assert.equal(dependencyCondition(services[name], "storage-init"), "service_completed_successfully")
+  assert.equal(dependencyCondition(services[name], "postgres"), "service_healthy")
 }
-const postgresRestoreVolumes = services["postgres-restore"]?.volumes ?? []
-assert.ok(
-  postgresRestoreVolumes.includes("moemail-config:/app/data"),
-  "postgres-restore must be able to atomically install or roll back runtime config",
-)
-assert.equal(
-  postgresRestoreVolumes.includes("moemail-config:/app/data:ro"),
-  false,
-  "postgres-restore config volume must not be read-only",
-)
+assert.deepEqual(serviceVolumes(services["postgres-backup"]), [
+  "./data:/app/data:ro",
+  "./data/postgres-backups:/app/data/postgres-backups",
+  "./data/postgres-backups:/backups",
+])
+assert.deepEqual(serviceVolumes(services["postgres-backup-scheduler"]), [
+  "./data:/app/data:ro",
+  "./data/postgres-backups:/app/data/postgres-backups",
+  "./data/postgres-backups:/backups",
+])
+assert.deepEqual(serviceVolumes(services["postgres-restore"]), [
+  "./data:/app/data",
+  "./data/postgres-backups:/app/data/postgres-backups",
+  "./data/postgres-backups:/backups",
+])
 
-assert.deepEqual(
-  networkNames(services["offsite-backup"]),
-  ["default"],
-  "offsite-backup must not depend on database network access",
-)
+assert.deepEqual(services.scheduler?.profiles, ["scheduler"])
+assert.equal(services.scheduler?.restart, "unless-stopped")
+assert.deepEqual(services.scheduler?.command, ["scheduler"])
+assert.equal(services.scheduler?.healthcheck?.disable, true)
+assert.equal(dependencyCondition(services.scheduler, "postgres"), "service_healthy")
+assert.equal(dependencyCondition(services.scheduler, "moemail"), "service_healthy")
+
+assert.deepEqual(services.monitor?.profiles, ["monitoring"])
+assert.equal(services.monitor?.network_mode, "service:moemail")
+assert.equal(services.monitor?.user, "0:0")
+assert.equal(services.monitor?.read_only, true)
+assert.deepEqual(services.monitor?.cap_drop, ["ALL"])
+assert.deepEqual(services.monitor?.cap_add, ["DAC_READ_SEARCH"])
+assert.deepEqual(serviceVolumes(services.monitor), [
+  "./data:/app/data:ro",
+  "./data/postgres:/postgres-data:ro",
+])
+
+assert.deepEqual(networkNames(services["offsite-backup"]), ["default"])
+assert.deepEqual(serviceVolumes(services["offsite-backup"]), [
+  "./data:/app/data:ro",
+  "./data/postgres-backups:/app/data/postgres-backups:ro",
+  "./data/postgres-backups:/backups:ro",
+])
 
 const serverMajor = baseImageMajor("deploy/docker/postgres.Dockerfile")
 const toolsMajor = baseImageMajor("deploy/docker/postgres-tools.Dockerfile")
 const toolsDockerfile = readFileSync("deploy/docker/postgres-tools.Dockerfile", "utf8")
-assert.ok(
-  toolsMajor >= serverMajor,
-  `PostgreSQL tools major ${toolsMajor} is older than server major ${serverMajor}`,
-)
-for (const name of ["postgres-backup", "postgres-backup-scheduler", "postgres-restore"]) {
-  assert.equal(services[name]?.image, `moemail-postgres-tools:${toolsMajor}`)
-}
+assert.ok(toolsMajor >= serverMajor)
 assert.match(toolsDockerfile, /\bca-certificates\b/)
 
-const entrypoint = readFileSync("deploy/docker/postgres-entrypoint.sh", "utf8")
-assert.match(entrypoint, /# moemail-compose-internal-trust/)
-assert.match(entrypoint, /^host all all 0\.0\.0\.0\/0 trust$/m)
-assert.match(entrypoint, /^host all all ::\/0 trust$/m)
+const postgresEntrypoint = readFileSync("deploy/docker/postgres-entrypoint.sh", "utf8")
+assert.match(postgresEntrypoint, /# moemail-compose-internal-trust/)
+assert.match(postgresEntrypoint, /^host all all 0\.0\.0\.0\/0 trust$/m)
+assert.match(postgresEntrypoint, /^host all all ::\/0 trust$/m)
 
 const postgresBackup = readFileSync("deploy/docker/postgres-backup.sh", "utf8")
 const postgresRestore = readFileSync("deploy/docker/postgres-restore.sh", "utf8")
-const postgresBackupScheduler = readFileSync(
-  "deploy/docker/postgres-backup-scheduler.sh",
-  "utf8",
-)
+const postgresBackupScheduler = readFileSync("deploy/docker/postgres-backup-scheduler.sh", "utf8")
 assert.match(postgresBackup, /expired_pair="\$\{expired\}\.config\.yaml\.lkg"/)
 assert.match(postgresBackup, /expired_pair[\s\S]*validate-complete/)
 assert.match(postgresBackup, /pair_driver.*database\.driver/)
@@ -102,7 +260,7 @@ for (const [name, source] of [
   ["postgres-restore", postgresRestore],
   ["postgres-backup-scheduler", postgresBackupScheduler],
 ] as const) {
-  assert.match(source, /PGSSLROOTCERT=system/, `${name} must use the system CA pool for verify-full`)
+  assert.match(source, /PGSSLROOTCERT=system/, `${name} must use the system CA pool`)
 }
 assert.match(postgresRestore, /install_recovery_config/)
 assert.match(postgresRestore, /restore_previous_config/)
@@ -115,10 +273,7 @@ assert.match(dockerConfigReader, /command === "postgres-fields"/)
 assert.match(dockerConfigReader, /command === "postgres-conninfo"/)
 assert.match(dockerConfigReader, /databaseUrl\.searchParams\.size > 0/)
 
-for (const serviceFile of [
-  "deploy/local/moemail.service",
-  "deploy/local/moemail-scheduler.service",
-]) {
+for (const serviceFile of ["deploy/local/moemail.service", "deploy/local/moemail-scheduler.service"]) {
   assert.match(readFileSync(serviceFile, "utf8"), /^Restart=always$/m)
 }
 
@@ -130,14 +285,56 @@ assert.doesNotMatch(dockerEntrypoint, /pnpm db:startup/)
 assert.match(
   dockerEntrypoint,
   /restore\)\s*[\s\S]*?exec pnpm db:restore "\$@"/,
-  "Docker restore must bootstrap from the backup pair without requiring an installed LKG",
+  "Docker restore must bootstrap from the backup pair",
 )
 assert.doesNotMatch(webSystemdUnit, /^ExecStartPre=.*db:startup$/m)
 assert.match(instrumentation, /await awaitInitialConfigReady\(\)/)
 
+const workflowSource = readFileSync(".github/workflows/publish-docker.yml", "utf8")
+const workflow = parse(workflowSource) as WorkflowDocument
+assert.deepEqual(sorted(Object.keys(workflow.on ?? {})), ["push", "workflow_dispatch"])
+assert.match(workflowSource, /push:\s+tags:\s+- '\*'/m)
+assert.match(workflowSource, /publish_tag:/)
+assert.match(workflowSource, /default:\s+latest/)
+assert.doesNotMatch(workflowSource, /pull_request:|schedule:|branches:/)
+assert.match(workflowSource, /packages: write/)
+assert.match(workflowSource, /runner:\s+ubuntu-24\.04(?:\s|$)/m)
+assert.match(workflowSource, /runner:\s+ubuntu-24\.04-arm/m)
+assert.match(workflowSource, /platform:\s+linux\/amd64/m)
+assert.match(workflowSource, /platform:\s+linux\/arm64/m)
+assert.match(workflowSource, /expected_uname:\s+x86_64/m)
+assert.match(workflowSource, /expected_uname:\s+aarch64/m)
+assert.match(workflowSource, /uname -m/)
+assert.doesNotMatch(workflowSource, /setup-qemu-action|qemu/i)
+assert.match(workflowSource, /push-by-digest=true/)
+assert.match(workflowSource, /Smoke-test native image/)
+assert.match(workflowSource, /docker image inspect --format/)
+assert.match(workflowSource, /docker run --rm --entrypoint/)
+assert.match(workflowSource, /docker buildx imagetools create/)
+assert.match(workflowSource, /Expected exactly 2 native digests/)
+assert.match(workflowSource, /linux\/amd64/)
+assert.match(workflowSource, /linux\/arm64/)
+assert.match(workflowSource, /ghcr\.io\/xmzo\/moemail-local"/)
+assert.match(workflowSource, /ghcr\.io\/xmzo\/moemail-local-postgres"/)
+assert.match(workflowSource, /ghcr\.io\/xmzo\/moemail-local-postgres-tools"/)
+assert.equal((workflowSource.match(/dockerfile:/g) ?? []).length, 6)
+
+const dockerfileSource = readFileSync("Dockerfile", "utf8")
+assert.match(dockerfileSource, /npm install --global pnpm@11\.21\.0/)
+for (const readmePath of ["README.md", "README.zh-CN.md"]) {
+  const readme = readFileSync(readmePath, "utf8")
+  assert.ok(readme.includes(`/${releaseTag}/compose.yaml`))
+  assert.ok(readme.includes(`moemail-local:${releaseTag}`))
+  assert.doesNotMatch(readme, /moemail-local(?:-postgres|-postgres-tools)?:latest/)
+}
+
 console.log(JSON.stringify({
+  singleComposeOnly: true,
+  composeUsesGhcrOnly: true,
+  composeBindsAllStateUnderData: true,
+  composeAvoidsEnvInterpolation: true,
+  composeOmitsBundledCaddy: true,
   postgresInternalNetworkOnly: true,
-  postgresHostAuthenticationForInternalPeers: true,
   externalPostgresToolsReachable: true,
   postgresServerMajor: serverMajor,
   postgresToolsMajor: toolsMajor,
@@ -146,7 +343,10 @@ console.log(JSON.stringify({
   strictPostgresTlsUsesSystemCa: true,
   postgresTargetInspectionIsRedacted: true,
   postgresRestoreRollsBackDatabaseAndConfig: true,
-  freshVolumeRestoreUsesBackupPair: true,
   systemdSuccessfulRestart: true,
   singleAuthoritativeWebStartupValidation: true,
+  publishWorkflowTagsOrManualOnly: true,
+  publishWorkflowBuildsThreeImagesOnTwoNativeArchitectures: true,
+  publishWorkflowAvoidsQemu: true,
+  releaseVersionPinnedConsistently: true,
 }, null, 2))

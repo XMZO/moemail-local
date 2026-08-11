@@ -1,20 +1,73 @@
 name: moemail
 
+x-images:
+  app: &app-image ghcr.io/xmzo/moemail-local:v0.16.0
+  postgres: &postgres-image ghcr.io/xmzo/moemail-local-postgres:v0.16.0
+  postgres-tools: &postgres-tools-image ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.0
+
 x-moemail-service: &moemail-service
-  image: moemail-local:latest
-  build:
-    context: .
-    target: runtime
+  image: *app-image
+  pull_policy: always
   volumes:
-    - moemail-data:/app/data
+    - ./data:/app/data
+  networks:
+    - default
+    - database
+  depends_on:
+    storage-init:
+      condition: service_completed_successfully
   stop_grace_period: 30s
 
 services:
+  storage-init:
+    image: *app-image
+    pull_policy: always
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        install -d -o 10001 -g 10001 -m 0700 /app/data /app/data/backups /app/data/postgres-backups
+        install -d -m 0700 /postgres-data
+        install -d -o 10001 -g 10001 -m 0700 /backups
+    volumes:
+      - ./data:/app/data
+      - ./data/postgres:/postgres-data
+      - ./data/postgres-backups:/backups
+
+  postgres:
+    image: *postgres-image
+    pull_policy: always
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: [CMD, pg_isready, --host, 127.0.0.1, --username, moemail, --dbname, moemail]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    shm_size: 128mb
+
   moemail:
     <<: *moemail-service
     restart: unless-stopped
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test:
         - CMD
@@ -30,9 +83,14 @@ services:
     <<: *moemail-service
     profiles: [maintenance]
     restart: "no"
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    command: [cleanup]
     healthcheck:
       disable: true
-    command: [cleanup]
 
   backup:
     <<: *moemail-service
@@ -42,31 +100,83 @@ services:
       disable: true
     command: [backup]
 
+  postgres-backup:
+    image: *postgres-tools-image
+    pull_policy: always
+    user: "10001:10001"
+    profiles: [maintenance]
+    restart: "no"
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+      - ./data/postgres-backups:/app/data/postgres-backups
+      - ./data/postgres-backups:/backups
+    networks:
+      - default
+      - database
+    entrypoint: [moemail-postgres-backup]
+
   scheduler:
     <<: *moemail-service
     profiles: [scheduler]
     restart: unless-stopped
     depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       moemail:
         condition: service_healthy
     command: [scheduler]
     healthcheck:
       disable: true
 
+  postgres-backup-scheduler:
+    image: *postgres-tools-image
+    pull_policy: always
+    user: "10001:10001"
+    profiles: [scheduler]
+    restart: unless-stopped
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+      - ./data/postgres-backups:/app/data/postgres-backups
+      - ./data/postgres-backups:/backups
+    networks:
+      - default
+      - database
+    entrypoint: [moemail-postgres-backup-scheduler]
+
   monitor:
-    <<: *moemail-service
+    image: *app-image
+    pull_policy: always
     profiles: [monitoring]
     restart: unless-stopped
+    user: "0:0"
+    stop_grace_period: 30s
     network_mode: "service:moemail"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     cap_drop: [ALL]
+    cap_add: [DAC_READ_SEARCH]
     security_opt: [no-new-privileges:true]
     volumes:
-      - moemail-data:/app/data:ro
-      - caddy-logs:/var/log/caddy:ro
+      - ./data:/app/data:ro
+      - ./data/postgres:/postgres-data:ro
     depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       moemail:
         condition: service_healthy
     command: [monitor-scheduler]
@@ -78,28 +188,35 @@ services:
     profiles: [offsite]
     restart: unless-stopped
     volumes:
-      - moemail-data:/app/data:ro
+      - ./data:/app/data:ro
+      - ./data/postgres-backups:/app/data/postgres-backups:ro
+      - ./data/postgres-backups:/backups:ro
+    networks:
+      - default
     command: [offsite-scheduler]
     healthcheck:
       disable: true
 
-  caddy:
-    image: caddy:2-alpine
-    profiles: [proxy]
-    restart: unless-stopped
+  postgres-restore:
+    image: *postgres-tools-image
+    pull_policy: always
+    user: "10001:10001"
+    profiles: [restore]
+    restart: "no"
     depends_on:
-      moemail:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
         condition: service_healthy
-    ports:
-      - "80:80"
     volumes:
-      - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-      - caddy-logs:/var/log/caddy
+      - ./data:/app/data
+      - ./data/postgres-backups:/app/data/postgres-backups
+      - ./data/postgres-backups:/backups
+    networks:
+      - default
+      - database
+    entrypoint: [moemail-postgres-restore]
 
-volumes:
-  moemail-data:
-  caddy-data:
-  caddy-config:
-  caddy-logs:
+networks:
+  database:
+    internal: true

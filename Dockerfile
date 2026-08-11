@@ -6,7 +6,7 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN npm install --global pnpm@10.30.3 \
+RUN npm install --global pnpm@11.21.0 \
   && pnpm --version \
   && npm cache clean --force
 

@@ -1,0 +1,339 @@
+name: Publish Docker Images
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      publish_tag:
+        description: Docker tag to publish to GHCR
+        required: true
+        default: latest
+        type: string
+      publish_latest:
+        description: Also refresh the latest tag
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-docker-${{ github.ref_name || inputs.publish_tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      publish_tag: ${{ steps.prepare.outputs.publish_tag }}
+      publish_latest: ${{ steps.prepare.outputs.publish_latest }}
+      semver_tag: ${{ steps.prepare.outputs.semver_tag }}
+      sha_tag: ${{ steps.prepare.outputs.sha_tag }}
+      app_image: ${{ steps.prepare.outputs.app_image }}
+      postgres_image: ${{ steps.prepare.outputs.postgres_image }}
+      postgres_tools_image: ${{ steps.prepare.outputs.postgres_tools_image }}
+    steps:
+      - name: Prepare image names and tags
+        id: prepare
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_PUBLISH_TAG: ${{ inputs.publish_tag }}
+          INPUT_PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            publish_tag="$REF_NAME"
+            publish_latest=false
+          else
+            publish_tag="$INPUT_PUBLISH_TAG"
+            publish_latest="$INPUT_PUBLISH_LATEST"
+          fi
+
+          if [[ ! "$publish_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Only Docker-compatible tags are supported: $publish_tag" >&2
+            exit 64
+          fi
+
+          semver_tag=""
+          if [[ "$publish_tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?)$ ]]; then
+            semver_tag="${BASH_REMATCH[1]}"
+            if [[ "$publish_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              publish_latest=true
+            fi
+          elif [[ "$publish_tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            semver_tag="$publish_tag"
+            publish_latest=true
+          fi
+
+          if [[ "$publish_tag" == "latest" ]]; then
+            publish_latest=true
+          fi
+
+          {
+            echo "publish_tag=$publish_tag"
+            echo "publish_latest=$publish_latest"
+            echo "semver_tag=$semver_tag"
+            echo "sha_tag=sha-${GIT_SHA::12}"
+            echo "app_image=ghcr.io/xmzo/moemail-local"
+            echo "postgres_image=ghcr.io/xmzo/moemail-local-postgres"
+            echo "postgres_tools_image=ghcr.io/xmzo/moemail-local-postgres-tools"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image_kind: app
+            dockerfile: Dockerfile
+            target: runtime
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            expected_uname: x86_64
+          - image_kind: app
+            dockerfile: Dockerfile
+            target: runtime
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            expected_uname: aarch64
+          - image_kind: postgres
+            dockerfile: deploy/docker/postgres.Dockerfile
+            target: ""
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            expected_uname: x86_64
+          - image_kind: postgres
+            dockerfile: deploy/docker/postgres.Dockerfile
+            target: ""
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            expected_uname: aarch64
+          - image_kind: postgres-tools
+            dockerfile: deploy/docker/postgres-tools.Dockerfile
+            target: ""
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            expected_uname: x86_64
+          - image_kind: postgres-tools
+            dockerfile: deploy/docker/postgres-tools.Dockerfile
+            target: ""
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            expected_uname: aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image metadata
+        id: meta
+        shell: bash
+        env:
+          IMAGE_KIND: ${{ matrix.image_kind }}
+          APP_IMAGE: ${{ needs.prepare.outputs.app_image }}
+          POSTGRES_IMAGE: ${{ needs.prepare.outputs.postgres_image }}
+          POSTGRES_TOOLS_IMAGE: ${{ needs.prepare.outputs.postgres_tools_image }}
+        run: |
+          set -euo pipefail
+
+          case "$IMAGE_KIND" in
+            app) image_name="$APP_IMAGE" ;;
+            postgres) image_name="$POSTGRES_IMAGE" ;;
+            postgres-tools) image_name="$POSTGRES_TOOLS_IMAGE" ;;
+            *)
+              echo "Unknown image kind: $IMAGE_KIND" >&2
+              exit 64
+              ;;
+          esac
+
+          echo "image_name=$image_name" >> "$GITHUB_OUTPUT"
+
+      - name: Assert native runner architecture
+        shell: bash
+        env:
+          EXPECTED_UNAME: ${{ matrix.expected_uname }}
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          actual_uname="$(uname -m)"
+          echo "runner_arch=$actual_uname platform=$EXPECTED_PLATFORM"
+          if [[ "$actual_uname" != "$EXPECTED_UNAME" ]]; then
+            echo "Runner architecture mismatch: expected $EXPECTED_UNAME, got $actual_uname" >&2
+            exit 1
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push native image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.publish_tag }}
+          outputs: type=image,name=${{ steps.meta.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Smoke-test native image
+        shell: bash
+        env:
+          IMAGE_KIND: ${{ matrix.image_kind }}
+          IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+
+          image_ref="$IMAGE_NAME@$DIGEST"
+          docker pull "$image_ref"
+          actual_platform="linux/$(docker image inspect --format '{{.Architecture}}' "$image_ref")"
+          if [[ "$actual_platform" != "$EXPECTED_PLATFORM" ]]; then
+            echo "Image architecture mismatch: expected $EXPECTED_PLATFORM, got $actual_platform" >&2
+            exit 1
+          fi
+
+          case "$IMAGE_KIND" in
+            app) docker run --rm --entrypoint node "$image_ref" --version ;;
+            postgres) docker run --rm --entrypoint postgres "$image_ref" --version ;;
+            postgres-tools) docker run --rm --entrypoint pg_dump "$image_ref" --version ;;
+            *)
+              echo "Unknown image kind: $IMAGE_KIND" >&2
+              exit 64
+              ;;
+          esac
+
+      - name: Export digest for manifest merge
+        shell: bash
+        env:
+          IMAGE_KIND: ${{ matrix.image_kind }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest_root="$RUNNER_TEMP/digests/$IMAGE_KIND"
+          mkdir -p "$digest_root"
+          touch "$digest_root/${DIGEST#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image_kind }}-${{ matrix.expected_uname }}
+          path: ${{ runner.temp }}/digests/${{ matrix.image_kind }}/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image_kind:
+          - app
+          - postgres
+          - postgres-tools
+    steps:
+      - name: Resolve image metadata
+        id: meta
+        shell: bash
+        env:
+          IMAGE_KIND: ${{ matrix.image_kind }}
+          APP_IMAGE: ${{ needs.prepare.outputs.app_image }}
+          POSTGRES_IMAGE: ${{ needs.prepare.outputs.postgres_image }}
+          POSTGRES_TOOLS_IMAGE: ${{ needs.prepare.outputs.postgres_tools_image }}
+        run: |
+          set -euo pipefail
+
+          case "$IMAGE_KIND" in
+            app) image_name="$APP_IMAGE" ;;
+            postgres) image_name="$POSTGRES_IMAGE" ;;
+            postgres-tools) image_name="$POSTGRES_TOOLS_IMAGE" ;;
+            *)
+              echo "Unknown image kind: $IMAGE_KIND" >&2
+              exit 64
+              ;;
+          esac
+
+          echo "image_name=$image_name" >> "$GITHUB_OUTPUT"
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.image_kind }}-*
+          path: ${{ runner.temp }}/digests/${{ matrix.image_kind }}
+          merge-multiple: true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and verify multi-arch manifest
+        shell: bash
+        env:
+          IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
+          IMAGE_KIND: ${{ matrix.image_kind }}
+          PUBLISH_TAG: ${{ needs.prepare.outputs.publish_tag }}
+          PUBLISH_LATEST: ${{ needs.prepare.outputs.publish_latest }}
+          SEMVER_TAG: ${{ needs.prepare.outputs.semver_tag }}
+          SHA_TAG: ${{ needs.prepare.outputs.sha_tag }}
+        run: |
+          set -euo pipefail
+
+          digest_root="$RUNNER_TEMP/digests/$IMAGE_KIND"
+          mapfile -t digest_files < <(find "$digest_root" -maxdepth 1 -type f | sort)
+          if [[ "${#digest_files[@]}" -ne 2 ]]; then
+            echo "Expected exactly 2 native digests for $IMAGE_NAME, got ${#digest_files[@]}" >&2
+            exit 1
+          fi
+
+          refs=()
+          for digest_file in "${digest_files[@]}"; do
+            refs+=("$IMAGE_NAME@sha256:$(basename "$digest_file")")
+          done
+
+          declare -A tag_set=()
+          tag_set["$PUBLISH_TAG"]=1
+          tag_set["$SHA_TAG"]=1
+          if [[ -n "$SEMVER_TAG" ]]; then
+            tag_set["$SEMVER_TAG"]=1
+          fi
+          if [[ "$PUBLISH_LATEST" == "true" ]]; then
+            tag_set["latest"]=1
+          fi
+
+          tag_args=()
+          for tag in "${!tag_set[@]}"; do
+            tag_args+=(-t "$IMAGE_NAME:$tag")
+          done
+
+          docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "$IMAGE_NAME:$PUBLISH_TAG" > "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt"
+          grep -F "linux/amd64" "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt" >/dev/null
+          grep -F "linux/arm64" "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt" >/dev/null

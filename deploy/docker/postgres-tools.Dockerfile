@@ -6,7 +6,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && install -d -m 0755 /opt/moemail \
   && cd /opt/moemail \
-  && npm install --omit=dev --no-audit --no-fund yaml@2.6.1 \
+  && npm install --omit=dev --no-audit --no-fund yaml@2.9.0 \
   && npm cache clean --force \
   && groupadd --gid 10001 moemail \
   && useradd --uid 10001 --gid moemail --create-home --home-dir /home/moemail moemail \

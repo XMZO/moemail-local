@@ -1,18 +1,18 @@
 # 本地化改造验证记录
 
-验证日期：2026-08-12。SQLite/Next.js 主开发验证环境为 Windows、Node.js 24.14.0、pnpm 10.30.3、better-sqlite3 12.4.1（SQLite 3.50.4）；PostgreSQL 使用独立临时 PostgreSQL 18 集群。另在 Debian 13 x86_64 VPS、Docker 29.7.2、Compose 5.4.0 上完成 SQLite 镜像实机部署。生产部署仍应在自己的目标机重做恢复演练。
+验证日期：2026-08-12。SQLite/Next.js 主开发验证环境为 Windows、Node.js 24.14.0、pnpm 11.21.0、better-sqlite3 12.4.1（SQLite 3.50.4）；PostgreSQL 使用独立临时 PostgreSQL 18 集群。另在 Debian 13 x86_64 VPS、Docker 29.7.2、Compose 5.4.0 上完成 SQLite 镜像实机部署。生产部署仍应在自己的目标机重做恢复演练。
 
 ## 构建与静态检查
 
 - `pnpm install --frozen-lockfile --offline`：通过。
 - `pnpm exec tsc --noEmit --incremental false`：通过。
 - `pnpm lint`：通过；仅保留 6 条改造前已有的 Hook/Image 警告。
-- `pnpm build`：Next.js 15.5.21 production build 通过，Node Route、middleware、PWA 与页面均成功生成。
+- `pnpm build`：Next.js 15.5.23 production build 通过，Node Route、middleware、PWA 与页面均成功生成。
 - `git diff --check`：通过。
 - Web 源码未发现 `runtime = "edge"`、`getRequestContext()`、`SITE_CONFIG`、`drizzle-orm/d1` 或 `env.DB` 残留；D1 依赖只存在于明确标记的 legacy Worker/官方回退资产。
-- Compose 文件通过官方 Compose JSON Schema 与 YAML 解析；当前两份 Compose 均无 `environment`/`env_file`，systemd units 无 `EnvironmentFile`。所有 `deploy/**/*.sh` 通过 `bash -n`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。PostgreSQL Compose 仍仅完成静态检查。
-- `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
-- `pnpm validate:deployment` 通过：检查 PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 工具镜像、备份/恢复并发锁、systemd 自动重启，以及 Compose/systemd/脚本之间的路径契约。
+- Compose 文件通过官方 Compose JSON Schema 与 YAML 解析；当前单个 `compose.yaml` 无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy，且所有容器都只使用同目录相对 bind mounts。systemd units 无 `EnvironmentFile`。所有 `deploy/**/*.sh` 通过 `bash -n`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
+- `pnpm validate:no-local-env` 通过：递归检查单个 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
+- `pnpm validate:deployment` 通过：检查单文件 Compose、GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、manifest 合并）。
 - `pnpm validate:runtime-config` 通过：损坏 YAML、未知字段、不可打开或没有站主的 SQLite 目标均被拒绝且旧值继续生效；有效直接文件修改由约 1 秒 watcher 自动应用。进程内 revision 竞争、外部文件 fingerprint 失效，以及两个真实 Node 进程同时持同一 fingerprint 保存都恰好一个成功；跨进程保存锁在退出后无残留。
 - `pnpm validate:runtime-config:cold` 通过：首份配置、主文件与 LKG 相同、以及仅剩 LKG 三种路径都必须重新验证数据库中恰有一个站主后才开放完成态；不可读目标、空库与无站主 LKG 均被拒绝且不会创建目标文件。坏 PostgreSQL 主配置回退 SQLite LKG 时，实际绑定 driver 与维护 CLI 也只使用已验证的 SQLite 配置。坏配置仍允许 Web 恢复入口启动。
 - `pnpm validate:setup` 通过：首次 SQLite setup、已暂存 pepper 的同账号续跑、不同既有站主 409、两个真实 Node 进程争用同一 setup operation lock，以及坏 YAML/非对象 payload 拒绝均通过；另覆盖进程 A 完成后进程 B 持旧内存 token 的顺序竞争，B 在取锁后重新加载并以 409 拒绝。该测试构造等价的 staged 状态，不冒充进程崩溃注入测试。
@@ -22,11 +22,11 @@
 - `pnpm start` 由 Next.js Node instrumentation 在加载业务路由前等待唯一一次冷启动校验；Docker/systemd 不再用独立预进程重复探测同一坏候选。未初始化或校验失败时仍启动 Web 恢复入口，首次访问向导时生成/复用一次性 setup token。secret 长度、占位符、重复值、认证限流和 scrypt 并发参数均由同一 schema 约束。
 - 生成的 Service Worker 不含 `apis`、`others`、`start-url` 或其他运行时缓存路由，只预缓存静态资源；激活脚本会删除旧运行时 cache，且 `/api/*` 实测带 `private, no-store`。
 
-安全审计后将 Next.js、Auth.js、Auth Drizzle adapter、Drizzle ORM、Nanoid 与 Sharp 升级到已修复版本，并强制 Next.js 使用 Sharp 0.35.0。生产依赖审计未发现 critical；剩余 high advisory 路径位于 PWA/Tailwind/PostCSS 等构建工具链，未命中 Next.js、Auth.js、Drizzle ORM 或 Sharp 运行时。
+安全审计后升级了 Next.js、next-intl、Radix UI、YAML、tsx、Tailwind/PostCSS 及相关传递依赖，并强制 Next.js 使用 Sharp 0.35.0。使用 pnpm 11.21.0 执行 `pnpm audit --prod --audit-level high` 返回 `No known vulnerabilities found`，`pnpm peers check` 无 peer dependency 问题。
 
 ## Debian 13 VPS Docker SQLite（旧配置链路记录）
 
-- 在 4 vCPU、3.8 GiB RAM、40 GiB SSD 的 x86_64 VPS 上，较早的环境变量版工作树曾执行 `docker compose up -d --build`，镜像构建、SQLite migration、结构 verify、运行时 secret 校验和 healthcheck 全部通过。该结果只证明镜像/SQLite/调度器基础链路，不证明当前首次 WebUI + YAML 配置链路。
+- 在 4 vCPU、3.8 GiB RAM、40 GiB SSD 的 x86_64 VPS 上，较早的环境变量版工作树曾执行 `docker compose up -d --build`，镜像构建、SQLite migration、结构 verify、运行时 secret 校验和 healthcheck 全部通过。该结果只证明旧版镜像/SQLite/调度器基础链路，不证明当前单文件 Compose + GHCR 镜像 + 首次 WebUI/YAML 配置链路。
 - 容器以镜像声明的 UID/GID `10001` 运行，端口映射为 `0.0.0.0:3000`；公网 `GET /api/internal/health` 返回 `200` 与 `database=sqlite`，中文首页返回完整 MoeMail HTML。
 - 公网 `pnpm validate:http` 通过；临时用户注册返回 `201`、响应不含密码、落库哈希为 `$scrypt$v1$`，随后已删除测试用户并确认数据库无残留。
 - 在线 backup 通过完整性校验并原子生成 `.db` 文件；验证过程中发现并修复验证连接遗留 `.tmp-shm/.tmp-wal` 的问题，复测 sidecar 数量为 0。
@@ -124,7 +124,7 @@
 - Caddy/Nginx 真实证书、代理头与日志权限。
 - 真实浏览器点击/可访问性与移动端视觉；当前已覆盖 production HTML 和向导背后的完整 HTTP/Session API，不把 API 验收冒充浏览器自动化。
 - Linux systemd `Restart=always` 与 `moemail-scheduler.service` 的实际安装、权限、进程重启；本机测试已验证相同 Next 退出/重启语义与 scheduler 的 LKG 读取。
-- 当前无应用环境变量版 Compose 的实际 build/up、配置卷持久化、backup/restore 与 migration 失败阻断；本机没有 Docker CLI，上述 VPS 结果来自改造前一版 Compose。当前两份 YAML 已完成解析、无 env 断言和 compose-spec 静态校验。
+- 当前单文件 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过；默认解析出 `storage-init`、`postgres`、`moemail`，完整配置解析出 11 个服务和三类 GHCR 镜像。本机仍没有 Docker daemon，因此尚未实跑 pull/up、bind mount 权限、backup/restore 与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
 - rclone 到真实异机/对象存储后的 checksum、immutable 与独立恢复演练。
 
 这些属于生产环境验收，不是剩余源码实现；部署时按 `docs/local-deployment.zh-CN.md` 的上线清单逐项打勾。
