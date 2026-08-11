@@ -4,7 +4,7 @@
 
 Cloudflare Email Routing 与 Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。
 
-Docker 部署现在只保留一个 `compose.yaml`。当前发布文件固定拉取 `ghcr.io/xmzo/moemail-local:v0.16.0`、`ghcr.io/xmzo/moemail-local-postgres:v0.16.0` 和 `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.0`；这些镜像只在 Docker-compatible Git tag（例如 `v0.16.0`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
+Docker 部署现在只保留一个 `compose.yaml`。当前发布文件固定拉取 `ghcr.io/xmzo/moemail-local:v0.16.1`、`ghcr.io/xmzo/moemail-local-postgres:v0.16.1` 和 `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.1`；这些镜像只在 Docker-compatible Git tag（例如 `v0.16.1`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认 `moemail-local`、`moemail-local-postgres`、`moemail-local-postgres-tools` 三个 container package 的 visibility 为 **Public**，否则未登录的 Compose 主机无法拉取。稳定 semver tag 也会刷新 `latest`，但生产部署继续固定三个相同的版本 tag，不能混用不同版本，也不通过 `.env` 选 tag。升级时下载目标 tag 对应的 `compose.yaml`，完成备份与恢复演练后再切换。Compose 不再内置 Caddy，默认只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -183,7 +183,7 @@ docker compose --profile maintenance run --rm --no-deps -T \
   > "$archive_dir/$backup_name.config.yaml.lkg"
 test -s "$archive_dir/$backup_name"
 test -s "$archive_dir/$backup_name.config.yaml.lkg"
-release_tag=v0.16.0
+release_tag=v0.16.1
 curl -fsSL \
   "https://raw.githubusercontent.com/XMZO/moemail-local/$release_tag/compose.yaml" \
   -o compose.yaml.next
@@ -373,7 +373,7 @@ Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.16.0 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.16.1 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \

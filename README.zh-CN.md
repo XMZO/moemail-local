@@ -43,7 +43,7 @@ set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.0/compose.yaml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.1/compose.yaml \
   -o compose.yaml
 docker compose config --quiet
 docker compose up -d
@@ -54,9 +54,9 @@ Compose 会拉取以下多架构镜像：
 
 | 用途 | 镜像 |
 | --- | --- |
-| Web/API 与应用维护任务 | `ghcr.io/xmzo/moemail-local:v0.16.0` |
-| 内置 PostgreSQL 17 | `ghcr.io/xmzo/moemail-local-postgres:v0.16.0` |
-| PostgreSQL 18 备份/恢复工具 | `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.0` |
+| Web/API 与应用维护任务 | `ghcr.io/xmzo/moemail-local:v0.16.1` |
+| 内置 PostgreSQL 17 | `ghcr.io/xmzo/moemail-local-postgres:v0.16.1` |
+| PostgreSQL 18 备份/恢复工具 | `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.1` |
 
 应用只监听 `127.0.0.1:3000`，PostgreSQL 不向宿主机发布端口。
 

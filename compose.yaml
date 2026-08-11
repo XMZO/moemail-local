@@ -1,9 +1,9 @@
 name: moemail
 
 x-images:
-  app: &app-image ghcr.io/xmzo/moemail-local:v0.16.0
-  postgres: &postgres-image ghcr.io/xmzo/moemail-local-postgres:v0.16.0
-  postgres-tools: &postgres-tools-image ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.0
+  app: &app-image ghcr.io/xmzo/moemail-local:v0.16.1
+  postgres: &postgres-image ghcr.io/xmzo/moemail-local-postgres:v0.16.1
+  postgres-tools: &postgres-tools-image ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.1
 
 x-moemail-service: &moemail-service
   image: *app-image

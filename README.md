@@ -43,7 +43,7 @@ set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.0/compose.yaml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.1/compose.yaml \
   -o compose.yaml
 docker compose config --quiet
 docker compose up -d
@@ -54,9 +54,9 @@ The Compose file pulls these multi-architecture images:
 
 | Purpose | Image |
 | --- | --- |
-| Web/API and application jobs | `ghcr.io/xmzo/moemail-local:v0.16.0` |
-| Bundled PostgreSQL 17 | `ghcr.io/xmzo/moemail-local-postgres:v0.16.0` |
-| PostgreSQL 18 backup/restore tools | `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.0` |
+| Web/API and application jobs | `ghcr.io/xmzo/moemail-local:v0.16.1` |
+| Bundled PostgreSQL 17 | `ghcr.io/xmzo/moemail-local-postgres:v0.16.1` |
+| PostgreSQL 18 backup/restore tools | `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.1` |
 
 The application listens only on `127.0.0.1:3000`. PostgreSQL is not published on the host.
 
