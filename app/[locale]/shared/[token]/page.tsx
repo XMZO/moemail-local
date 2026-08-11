@@ -1,6 +1,6 @@
-import { getSharedEmail, getSharedEmailMessages } from "@/lib/shared-data"
 import { SharedErrorPage } from "@/components/emails/shared-error-page"
 import { SharedEmailPageClient } from "./page-client"
+import { requireCompletedSetup } from "@/lib/setup-navigation"
 
 interface PageProps {
   params: Promise<{
@@ -10,7 +10,9 @@ interface PageProps {
 }
 
 export default async function SharedEmailPage({ params }: PageProps) {
-  const { token } = await params
+  const { token, locale } = await params
+  requireCompletedSetup(locale)
+  const { getSharedEmail, getSharedEmailMessages } = await import("@/lib/shared-data")
 
   // 服务端获取数据
   const email = await getSharedEmail(token)

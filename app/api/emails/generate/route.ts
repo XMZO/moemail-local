@@ -5,29 +5,51 @@ import { emails } from "@/lib/schema"
 import { eq, and, gt, sql } from "drizzle-orm"
 import { EXPIRY_OPTIONS } from "@/types/email"
 import { EMAIL_CONFIG } from "@/config"
-import { getRequestContext } from "@cloudflare/next-on-pages"
-import { getUserId } from "@/lib/apiKey"
-import { getUserRole } from "@/lib/auth"
-import { ROLES } from "@/lib/permissions"
+import { PERMISSIONS, ROLES } from "@/lib/permissions"
+import { CONFIG_KEYS, getConfigValues } from "@/lib/config-store"
+import { authorizeRequest } from "@/lib/request-auth"
+import {
+  normalizeMailboxDomain,
+  normalizeMailboxLocalPart,
+} from "@/lib/email-address"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
+
+function isEmailAddressConflict(error: unknown) {
+  let current = error
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
+    const candidate = current as { cause?: unknown; code?: unknown }
+    if (candidate.code === "SQLITE_CONSTRAINT_UNIQUE" || candidate.code === "23505") {
+      return true
+    }
+    current = candidate.cause
+  }
+  return false
+}
 
 export async function POST(request: Request) {
-  const db = createDb()
-  const env = getRequestContext().env
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
 
-  const userId = await getUserId()
-  const userRole = await getUserRole(userId!)
+  const { userId, roles: userRoles } = authorization.principal
 
   try {
-    if (userRole !== ROLES.EMPEROR) {
-      const maxEmails = await env.SITE_CONFIG.get("MAX_EMAILS") || EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString()
+    const db = createDb()
+    const config = await getConfigValues([
+      CONFIG_KEYS.MAX_EMAILS,
+      CONFIG_KEYS.EMAIL_DOMAINS,
+    ])
+
+    if (!userRoles.includes(ROLES.EMPEROR)) {
+      const maxEmails = config.MAX_EMAILS || EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString()
       const activeEmailsCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(emails)
         .where(
           and(
-            eq(emails.userId, userId!),
+            eq(emails.userId, userId),
             gt(emails.expiresAt, new Date())
           )
         )
@@ -40,30 +62,50 @@ export async function POST(request: Request) {
       }
     }
 
-    const { name, expiryTime, domain } = await request.json<{ 
-      name: string
-      expiryTime: number
-      domain: string
-    }>()
+    const payload = await request.json().catch(() => null) as {
+      name?: unknown
+      expiryTime?: unknown
+      domain?: unknown
+    } | null
+    if (!payload) {
+      return NextResponse.json({ error: "请求格式无效" }, { status: 400 })
+    }
+    const { name, expiryTime, domain } = payload
 
-    if (!EXPIRY_OPTIONS.some(option => option.value === expiryTime)) {
+    if (
+      typeof expiryTime !== "number"
+      || !EXPIRY_OPTIONS.some(option => option.value === expiryTime)
+    ) {
       return NextResponse.json(
         { error: "无效的过期时间" },
         { status: 400 }
       )
     }
 
-    const domainString = await env.SITE_CONFIG.get("EMAIL_DOMAINS")
-    const domains = domainString ? domainString.split(',') : ["moemail.app"]
+    const normalizedName = typeof name === "string" && name.trim()
+      ? normalizeMailboxLocalPart(name)
+      : normalizeMailboxLocalPart(nanoid(8))
+    if (!normalizedName) {
+      return NextResponse.json(
+        { error: "邮箱名称仅支持 1-64 位 ASCII 字母、数字、点、下划线、加号和连字符" },
+        { status: 400 },
+      )
+    }
 
-    if (!domains || !domains.includes(domain)) {
+    const requestedDomain = normalizeMailboxDomain(domain)
+    const domainString = config.EMAIL_DOMAINS
+    const domains = (domainString ? domainString.split(',') : ["moemail.app"])
+      .map(normalizeMailboxDomain)
+      .filter((item): item is string => Boolean(item))
+
+    if (!requestedDomain || !domains.includes(requestedDomain)) {
       return NextResponse.json(
         { error: "无效的域名" },
         { status: 400 }
       )
     }
 
-    const address = `${name || nanoid(8)}@${domain}`
+    const address = `${normalizedName}@${requestedDomain}`
     const existingEmail = await db.query.emails.findFirst({
       where: eq(sql`LOWER(${emails.address})`, address.toLowerCase())
     })
@@ -84,7 +126,7 @@ export async function POST(request: Request) {
       address,
       createdAt: now,
       expiresAt: expires,
-      userId: userId!
+      userId
     }
     
     const result = await db.insert(emails)
@@ -96,10 +138,16 @@ export async function POST(request: Request) {
       email: result[0].address 
     })
   } catch (error) {
+    if (isEmailAddressConflict(error)) {
+      return NextResponse.json(
+        { error: "该邮箱地址已被使用" },
+        { status: 409 }
+      )
+    }
     console.error('Failed to generate email:', error)
     return NextResponse.json(
       { error: "创建邮箱失败" },
       { status: 500 }
     )
   }
-} 
+}

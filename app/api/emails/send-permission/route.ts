@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
 import { checkSendPermission } from "@/lib/send-permissions"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({
-        canSend: false,
-        error: "未授权"
-      })
-    }
-    const result = await checkSendPermission(session.user.id)
+    const authorization = await authorizeRequest(request, {
+      permission: PERMISSIONS.MANAGE_EMAIL,
+    })
+    if (!authorization.ok) return authorization.response
+
+    const result = await checkSendPermission(authorization.principal.userId)
     
     return NextResponse.json(result)
   } catch (error) {
@@ -26,4 +25,4 @@ export async function GET() {
       { status: 500 }
     )
   }
-} 
+}

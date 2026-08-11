@@ -2,20 +2,23 @@ import { createDb } from "@/lib/db"
 import { messageShares, messages, emails } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
 import { NextResponse } from "next/server"
-import { getUserId } from "@/lib/apiKey"
 import { nanoid } from "nanoid"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 // 获取消息的所有分享链接
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string; messageId: string }> }
 ) {
-  const userId = await getUserId()
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   const { id: emailId, messageId } = await params
   const db = createDb()
@@ -60,10 +63,12 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; messageId: string }> }
 ) {
-  const userId = await getUserId()
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   const { id: emailId, messageId } = await params
   const db = createDb()

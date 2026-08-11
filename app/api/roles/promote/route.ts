@@ -1,12 +1,18 @@
 import { createDb } from "@/lib/db";
 import { roles, userRoles } from "@/lib/schema";
 import { eq } from "drizzle-orm";
-import { ROLES } from "@/lib/permissions";
+import { PERMISSIONS, ROLES } from "@/lib/permissions";
 import { assignRoleToUser } from "@/lib/auth";
+import { authorizeRequest } from "@/lib/request-auth";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.PROMOTE_USER,
+  });
+  if (!authorization.ok) return authorization.response;
+
   try {
     const { userId, roleName } = await request.json() as { 
       userId: string, 

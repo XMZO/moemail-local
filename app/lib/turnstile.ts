@@ -1,4 +1,4 @@
-import { getRequestContext } from "@cloudflare/next-on-pages"
+import { CONFIG_KEYS, getConfigValues } from "./config-store"
 
 interface TurnstileConfig {
   enabled: boolean
@@ -7,17 +7,16 @@ interface TurnstileConfig {
 }
 
 export async function getTurnstileConfig(): Promise<TurnstileConfig> {
-  const env = getRequestContext().env
-  const [enabled, siteKey, secretKey] = await Promise.all([
-    env.SITE_CONFIG.get("TURNSTILE_ENABLED"),
-    env.SITE_CONFIG.get("TURNSTILE_SITE_KEY"),
-    env.SITE_CONFIG.get("TURNSTILE_SECRET_KEY"),
+  const config = await getConfigValues([
+    CONFIG_KEYS.TURNSTILE_ENABLED,
+    CONFIG_KEYS.TURNSTILE_SITE_KEY,
+    CONFIG_KEYS.TURNSTILE_SECRET_KEY,
   ])
 
   return {
-    enabled: enabled === "true",
-    siteKey: siteKey || "",
-    secretKey: secretKey || "",
+    enabled: config.TURNSTILE_ENABLED === "true",
+    siteKey: config.TURNSTILE_SITE_KEY || "",
+    secretKey: config.TURNSTILE_SECRET_KEY || "",
   }
 }
 

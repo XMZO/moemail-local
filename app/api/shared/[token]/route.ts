@@ -2,14 +2,18 @@ import { createDb } from "@/lib/db"
 import { emailShares } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
+import { setupRequiredResponse } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 // 通过分享token获取邮箱信息
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  const setupRequired = setupRequiredResponse()
+  if (setupRequired) return setupRequired
+
   const { token } = await params
   const db = createDb()
 

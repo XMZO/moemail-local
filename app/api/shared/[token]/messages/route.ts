@@ -3,8 +3,9 @@ import { emailShares, messages } from "@/lib/schema"
 import { eq, and, lt, or, sql, ne, isNull } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
+import { setupRequiredResponse } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 const PAGE_SIZE = 20
 
@@ -13,10 +14,14 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  const setupRequired = setupRequiredResponse()
+  if (setupRequired) return setupRequired
+
   const { token } = await params
   const db = createDb()
   const { searchParams } = new URL(request.url)
   const cursor = searchParams.get('cursor')
+  const includeTotal = searchParams.get('includeTotal') === '1'
 
   try {
     // 验证分享token
@@ -61,11 +66,11 @@ export async function GET(
       )
     )
 
-    // 获取消息总数（只统计接收的邮件）
-    const totalResult = await db.select({ count: sql<number>`count(*)` })
-      .from(messages)
-      .where(baseConditions)
-    const totalCount = Number(totalResult[0].count)
+    const totalCount = includeTotal
+      ? Number((await db.select({ count: sql<number>`count(*)` })
+          .from(messages)
+          .where(baseConditions))[0].count)
+      : undefined
 
     const conditions = [baseConditions]
 
@@ -85,6 +90,14 @@ export async function GET(
 
     const results = await db.query.messages.findMany({
       where: and(...conditions),
+      columns: {
+        id: true,
+        fromAddress: true,
+        toAddress: true,
+        subject: true,
+        receivedAt: true,
+        sentAt: true,
+      },
       orderBy: (messages, { desc }) => [
         desc(messages.receivedAt),
         desc(messages.id)
@@ -111,7 +124,7 @@ export async function GET(
         sent_at: msg.sentAt
       })),
       nextCursor,
-      total: totalCount
+      ...(totalCount === undefined ? {} : { total: totalCount })
     })
   } catch (error) {
     console.error("Failed to fetch shared messages:", error)

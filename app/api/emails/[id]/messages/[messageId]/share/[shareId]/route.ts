@@ -2,19 +2,22 @@ import { createDb } from "@/lib/db"
 import { messageShares, messages, emails } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
 import { NextResponse } from "next/server"
-import { getUserId } from "@/lib/apiKey"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 // 删除消息分享链接
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string; messageId: string; shareId: string }> }
 ) {
-  const userId = await getUserId()
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   const { id: emailId, messageId, shareId } = await params
   const db = createDb()

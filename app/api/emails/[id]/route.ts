@@ -3,16 +3,22 @@ import { createDb } from "@/lib/db"
 import { emails, messages } from "@/lib/schema"
 import { eq, and, lt, or, sql, ne, isNull } from "drizzle-orm"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
-import { getUserId } from "@/lib/apiKey"
 import { checkBasicSendPermission } from "@/lib/send-permissions"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getUserId()
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   try {
     const db = createDb()
@@ -20,7 +26,7 @@ export async function DELETE(
     const email = await db.query.emails.findFirst({
       where: and(
         eq(emails.id, id),
-        eq(emails.userId, userId!)
+        eq(emails.userId, userId)
       )
     })
 
@@ -52,17 +58,23 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
   const { searchParams } = new URL(request.url)
   const cursorStr = searchParams.get('cursor')
   const messageType = searchParams.get('type')
+  const includeTotal = searchParams.get('includeTotal') === '1'
 
   try {
     const db = createDb()
     const { id } = await params
 
-    const userId = await getUserId()
     if (messageType === 'sent') {
-      const permissionResult = await checkBasicSendPermission(userId!)
+      const permissionResult = await checkBasicSendPermission(userId)
       if (!permissionResult.canSend) {
         return NextResponse.json(
           { error: permissionResult.error || "您没有查看发送邮件的权限" },
@@ -74,7 +86,7 @@ export async function GET(
     const email = await db.query.emails.findFirst({
       where: and(
         eq(emails.id, id),
-        eq(emails.userId, userId!)
+        eq(emails.userId, userId)
       )
     })
 
@@ -95,10 +107,11 @@ export async function GET(
           )
     )
 
-    const totalResult = await db.select({ count: sql<number>`count(*)` })
-      .from(messages)
-      .where(baseConditions)
-    const totalCount = Number(totalResult[0].count)
+    const totalCount = includeTotal
+      ? Number((await db.select({ count: sql<number>`count(*)` })
+          .from(messages)
+          .where(baseConditions))[0].count)
+      : undefined
 
     const conditions = [baseConditions]
 
@@ -120,6 +133,14 @@ export async function GET(
     
     const results = await db.query.messages.findMany({
       where: and(...conditions),
+      columns: {
+        id: true,
+        fromAddress: true,
+        toAddress: true,
+        subject: true,
+        receivedAt: true,
+        sentAt: true,
+      },
       orderBy: (messages, { desc }) => [
         desc(orderByTime),
         desc(messages.id)
@@ -144,13 +165,11 @@ export async function GET(
         from_address: msg?.fromAddress,
         to_address: msg?.toAddress,
         subject: msg.subject,
-        content: msg.content,
-        html: msg.html,
         sent_at: msg.sentAt?.getTime(),
         received_at: msg.receivedAt?.getTime()
       })),
       nextCursor,
-      total: totalCount
+      ...(totalCount === undefined ? {} : { total: totalCount })
     })
   } catch (error) {
     console.error('Failed to fetch messages:', error)
@@ -159,4 +178,4 @@ export async function GET(
       { status: 500 }
     )
   }
-} 
+}

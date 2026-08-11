@@ -19,6 +19,7 @@
 
 # production
 /build
+/data/
 
 # misc
 .DS_Store
@@ -29,9 +30,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env files (can opt-in for committing if needed)
+# Environment files are not a supported local configuration source.
 .env*
-!.env.example
+/deploy/docker/*.env
 
 # vercel
 .vercel
@@ -51,3 +52,5 @@ public/sw.js
 wrangler.json
 wrangler.cleanup.json
 wrangler.email.json
+wrangler.email.durable.json
+wrangler.email.d1.legacy.json

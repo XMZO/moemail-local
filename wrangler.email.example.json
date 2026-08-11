@@ -4,12 +4,10 @@
   "compatibility_date": "2024-03-20",
   "compatibility_flags": ["nodejs_compat"],
   "main": "workers/email-receiver.ts",
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "migrations_dir": "drizzle",
-      "database_name": "moemail",
-      "database_id": "${DATABASE_ID}"
-    }
-  ]
+  "vars": {
+    "EMAIL_INGEST_URL": "https://example.com/api/internal/email"
+  },
+  "observability": {
+    "enabled": true
+  }
 }

@@ -6,7 +6,7 @@ import {Mail, Calendar, RefreshCw, Trash2, Share2} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useThrottle } from "@/hooks/use-throttle"
-import { EMAIL_CONFIG } from "@/config"
+import { useRuntimeConfig } from "@/providers"
 import { useToast } from "@/components/ui/use-toast"
 import { ShareMessageDialog } from "./share-message-dialog"
 import {
@@ -45,13 +45,14 @@ interface MessageListProps {
 interface MessageResponse {
   messages: Message[]
   nextCursor: string | null
-  total: number
+  total?: number
 }
 
 export function MessageList({ email, messageType, onMessageSelect, selectedMessageId, refreshTrigger }: MessageListProps) {
   const t = useTranslations("emails.messages")
   const tList = useTranslations("emails.list")
   const tCommon = useTranslations("common.actions")
+  const { emailPollIntervalMs: pollIntervalMs } = useRuntimeConfig()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -68,7 +69,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
     messagesRef.current = messages
   }, [messages])
 
-  const fetchMessages = async (cursor?: string) => {
+  const fetchMessages = async (cursor?: string, includeTotal = false) => {
     try {
       const url = new URL(`/api/emails/${email.id}`, window.location.origin)
       if (messageType === 'sent') {
@@ -76,6 +77,9 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
       }
       if (cursor) {
         url.searchParams.set('cursor', cursor)
+      }
+      if (includeTotal) {
+        url.searchParams.set('includeTotal', '1')
       }
       const response = await fetch(url)
       const data = await response.json() as MessageResponse
@@ -91,17 +95,19 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
         if (lastDuplicateIndex === -1) {
           setMessages(newMessages)
           setNextCursor(data.nextCursor)
-          setTotal(data.total)
+          setTotal(data.total ?? newMessages.length)
           return
         }
         const uniqueNewMessages = newMessages.slice(0, lastDuplicateIndex)
         setMessages([...uniqueNewMessages, ...oldMessages])
-        setTotal(data.total)
+        setTotal(current => data.total ?? current + uniqueNewMessages.length)
         return
       }
       setMessages(prev => [...prev, ...data.messages])
       setNextCursor(data.nextCursor)
-      setTotal(data.total)
+      if (data.total !== undefined) {
+        setTotal(data.total)
+      }
     } catch (error) {
       console.error("Failed to fetch messages:", error)
     } finally {
@@ -117,7 +123,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
       if (!refreshing && !loadingMore) {
         fetchMessages()
       }
-    }, EMAIL_CONFIG.POLL_INTERVAL)
+    }, pollIntervalMs)
   }
 
   const stopPolling = () => {
@@ -129,7 +135,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await fetchMessages()
+    await fetchMessages(undefined, true)
   }
 
   const handleScroll = useThrottle((e: React.UIEvent<HTMLDivElement>) => {
@@ -189,14 +195,14 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
     }
     setLoading(true)
     setNextCursor(null)
-    fetchMessages()
+    fetchMessages(undefined, true)
     startPolling() 
 
     return () => {
       stopPolling() 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email.id])
+  }, [email.id, pollIntervalMs])
 
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
@@ -316,4 +322,4 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
     </AlertDialog>
   </>
   )
-} 
+}

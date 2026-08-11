@@ -1,18 +1,23 @@
-import NextAuth from "next-auth"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import GitHub from "next-auth/providers/github"
 import Google from "next-auth/providers/google"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { createDb, Db } from "./db"
 import { accounts, users, roles, userRoles } from "./schema"
-import { eq } from "drizzle-orm"
-import { getRequestContext } from "@cloudflare/next-on-pages"
-import { Permission, hasPermission, ROLES, Role } from "./permissions"
+import { and, eq } from "drizzle-orm"
+import { ROLES, Role } from "./permissions"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { hashPassword, comparePassword } from "@/lib/utils"
+import { hashPassword, verifyPassword } from "@/lib/password"
 import { authSchema, AuthSchema } from "@/lib/validation"
 import { generateAvatarUrl } from "./avatar"
-import { getUserId } from "./apiKey"
 import { verifyTurnstileToken } from "./turnstile"
+import { CONFIG_KEYS, getConfigValue } from "./config-store"
+import { AuthWorkloadOverloadedError } from "./auth-abuse-guard"
+import { getConfig } from "./config/runtime"
+
+class AuthenticationTemporarilyUnavailableError extends CredentialsSignin {
+  code = "temporarily_unavailable"
+}
 
 const ROLE_DESCRIPTIONS: Record<Role, string> = {
   [ROLES.EMPEROR]: "皇帝（网站所有者）",
@@ -22,7 +27,7 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 }
 
 const getDefaultRole = async (): Promise<Role> => {
-  const defaultRole = await getRequestContext().env.SITE_CONFIG.get("DEFAULT_ROLE")
+  const defaultRole = await getConfigValue(CONFIG_KEYS.DEFAULT_ROLE)
 
   if (
     defaultRole === ROLES.DUKE ||
@@ -64,52 +69,46 @@ export async function assignRoleToUser(db: Db, userId: string, roleId: string) {
     })
 }
 
-export async function getUserRole(userId: string) {
-  const db = createDb()
-  const userRoleRecords = await db.query.userRoles.findMany({
-    where: eq(userRoles.userId, userId),
-    with: { role: true },
-  })
-  return userRoleRecords[0].role.name
+/** 只挂载配置文件里已填好 Client ID/Secret 的 OAuth 提供方。 */
+function oauthProviders() {
+  const { github, google } = getConfig().auth
+  return [
+    ...(github.clientId && github.clientSecret
+      ? [GitHub({
+        clientId: github.clientId,
+        clientSecret: github.clientSecret,
+        allowDangerousEmailAccountLinking: true,
+      })]
+      : []),
+    ...(google.clientId && google.clientSecret
+      ? [Google({
+        clientId: google.clientId,
+        clientSecret: google.clientSecret,
+        allowDangerousEmailAccountLinking: true,
+      })]
+      : []),
+  ]
 }
 
-export async function checkPermission(permission: Permission) {
-  const userId = await getUserId()
-
-  if (!userId) return false
-
-  const db = createDb()
-  const userRoleRecords = await db.query.userRoles.findMany({
-    where: eq(userRoles.userId, userId),
-    with: { role: true },
-  })
-
-  const userRoleNames = userRoleRecords.map(ur => ur.role.name)
-  return hasPermission(userRoleNames as Role[], permission)
-}
-
+/**
+ * 配置以函数形式提供，Auth.js 每次请求都会重新求值，
+ * 因此配置文件里的密钥与 OAuth 变更无需重启即可生效。
+ */
 export const {
   handlers: { GET, POST },
   auth,
   signIn,
   signOut
 } = NextAuth(() => ({
-  secret: process.env.AUTH_SECRET,
+  secret: getConfig().auth.secret ?? undefined,
+  // 本地部署始终位于自有反向代理之后，回调地址由请求头推导。
+  trustHost: true,
   adapter: DrizzleAdapter(createDb(), {
     usersTable: users,
     accountsTable: accounts,
   }),
   providers: [
-    GitHub({
-      clientId: process.env.AUTH_GITHUB_ID,
-      clientSecret: process.env.AUTH_GITHUB_SECRET,
-      allowDangerousEmailAccountLinking: true,
-    }),
-    Google({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET,
-      allowDangerousEmailAccountLinking: true,
-    }),
+    ...oauthProviders(),
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -149,14 +148,44 @@ export const {
           throw new Error("用户名或密码错误")
         }
 
-        const isValid = await comparePassword(parsedCredentials.password, user.password as string)
-        if (!isValid) {
+        if (!user.password) {
           throw new Error("用户名或密码错误")
         }
 
+        let passwordVerification
+        try {
+          passwordVerification = await verifyPassword(
+            parsedCredentials.password,
+            user.password,
+          )
+        } catch (error) {
+          if (error instanceof AuthWorkloadOverloadedError) {
+            throw new AuthenticationTemporarilyUnavailableError()
+          }
+          throw error
+        }
+        if (!passwordVerification.valid) {
+          throw new Error("用户名或密码错误")
+        }
+
+        if (passwordVerification.needsRehash) {
+          try {
+            const upgradedPassword = await hashPassword(parsedCredentials.password)
+            await db.update(users)
+              .set({ password: upgradedPassword })
+              .where(and(eq(users.id, user.id), eq(users.password, user.password)))
+          } catch (error) {
+            console.error("Failed to upgrade password hash:", error)
+          }
+        }
+
         return {
-          ...user,
-          password: undefined,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          emailVerified: user.emailVerified,
+          image: user.image,
+          username: user.username,
         }
       },
     }),
@@ -235,6 +264,33 @@ export const {
   },
 }))
 
+export class UsernameAlreadyExistsError extends Error {
+  constructor() {
+    super("用户名已存在")
+    this.name = "UsernameAlreadyExistsError"
+  }
+}
+
+function isUniqueConstraintError(error: unknown) {
+  let current = error
+  for (let depth = 0; depth < 5 && current; depth += 1) {
+    if (typeof current === "object") {
+      const candidate = current as { code?: unknown; cause?: unknown }
+      if (
+        candidate.code === "23505"
+        || candidate.code === "SQLITE_CONSTRAINT_UNIQUE"
+        || candidate.code === "SQLITE_CONSTRAINT_PRIMARYKEY"
+      ) {
+        return true
+      }
+      current = candidate.cause
+    } else {
+      break
+    }
+  }
+  return false
+}
+
 export async function register(username: string, password: string) {
   const db = createDb()
 
@@ -243,17 +299,31 @@ export async function register(username: string, password: string) {
   })
 
   if (existing) {
-    throw new Error("用户名已存在")
+    throw new UsernameAlreadyExistsError()
   }
 
   const hashedPassword = await hashPassword(password)
 
-  const [user] = await db.insert(users)
-    .values({
-      username,
-      password: hashedPassword,
-    })
-    .returning()
+  try {
+    const [user] = await db.insert(users)
+      .values({
+        username,
+        password: hashedPassword,
+      })
+      .returning()
 
-  return user
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      image: user.image,
+      username: user.username,
+    }
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new UsernameAlreadyExistsError()
+    }
+    throw error
+  }
 }

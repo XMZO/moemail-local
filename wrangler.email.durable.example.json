@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "email-receiver-worker",
+  "compatibility_date": "2026-08-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "workers/email-receiver.ts",
+  "vars": {
+    "EMAIL_INGEST_URL": "https://example.com/api/internal/email",
+    "EMAIL_DELIVERY_MODE": "queue",
+    "EMAIL_MAX_DELIVERY_ATTEMPTS": "12"
+  },
+  "r2_buckets": [
+    {
+      "binding": "EMAIL_BUFFER",
+      "bucket_name": "moemail-email-buffer"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "EMAIL_DELIVERY_QUEUE",
+        "queue": "moemail-email-delivery"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "moemail-email-delivery",
+        "dead_letter_queue": "moemail-email-delivery-dlq",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 12,
+        "retry_delay": 30
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

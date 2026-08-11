@@ -2,19 +2,18 @@ import { createDb } from "@/lib/db";
 import { users, userRoles, apiKeys } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { ROLES, PERMISSIONS } from "@/lib/permissions";
-import { checkPermission } from "@/lib/auth";
-import { getUserId } from "@/lib/apiKey";
+import { authorizeRequest } from "@/lib/request-auth";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const canManage = await checkPermission(PERMISSIONS.PROMOTE_USER);
-  if (!canManage) {
-    return Response.json({ error: "权限不足" }, { status: 403 });
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.PROMOTE_USER,
+  });
+  if (!authorization.ok) return authorization.response;
 
   try {
     const { id: userId } = await params;
@@ -22,8 +21,7 @@ export async function DELETE(
       return Response.json({ error: "缺少必要参数" }, { status: 400 });
     }
 
-    const currentUserId = await getUserId();
-    if (userId === currentUserId) {
+    if (userId === authorization.principal.userId) {
       return Response.json({ error: "不能删除自己" }, { status: 400 });
     }
 

@@ -5,13 +5,15 @@
 </p>
 
 <p align="center">
-  A cute temporary email service built with NextJS + Cloudflare technology stack 🎉
+  A cute local-first temporary email service using Next.js Node, SQLite/PostgreSQL, and Cloudflare Email Routing 🎉
 </p>
 
 <p align="center">
   <span>English</span> | 
   <a href="./README.zh-CN.md">简体中文</a>
 </p>
+
+> This fork supports primary local deployment with Next.js Node production and SQLite or PostgreSQL, while Cloudflare only receives and forwards email. See the [local deployment guide](docs/local-deployment.zh-CN.md) and [validation record](docs/local-validation.zh-CN.md). The original Cloudflare workflow below remains available for upstream synchronization and rollback.
 
 <p align="center">
   <a href="https://www.producthunt.com/products/moemail?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-moemail" target="_blank" rel="noopener noreferrer"><img alt="MoeMail - OpenAPI‑first temp email, hosted &amp; ready | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1078475&amp;theme=light&amp;t=1770964043604"></a>
@@ -23,7 +25,7 @@
   <a href="#features">Features</a> •
   <a href="#tech-stack">Tech Stack</a> •
   <a href="#local-run">Local Run</a> •
-  <a href="#deployment">Deployment</a> •
+  <a href="docs/local-deployment.zh-CN.md">Local Deployment</a> •
   <a href="#email-domain-configuration">Email Domain Config</a> •
   <a href="#permission-system">Permission System</a> •
   <a href="#system-settings">System Settings</a> •
@@ -32,7 +34,7 @@
   <a href="#openapi">OpenAPI</a> •
   <a href="#cli-tool">CLI Tool</a> •
   <a href="#mcp-server">MCP Server</a> •
-  <a href="#environment-variables">Environment Variables</a> •
+  <a href="#runtime-configuration">Runtime Configuration</a> •
   <a href="#github-oauth-app-configuration">Github OAuth Config</a> •
   <a href="#google-oauth-app-configuration">Google OAuth Config</a> •
   <a href="#contribution">Contribution</a> •
@@ -63,8 +65,8 @@ The documentation site contains detailed usage guides, API documentation, deploy
 - 🎨 **Theme Switching**: Supports light and dark modes
 - 📱 **Responsive Design**: Perfectly adapted for desktop and mobile devices
 - 🔄 **Auto Cleanup**: Automatically cleans up expired mailboxes and emails
-- 📱 **PWA Support**: Support PWA installation
-- 💸 **Free Self-hosting**: Built on Cloudflare, capable of free self-hosting without any cost
+- 📱 **PWA Support**: Installable, with static-only precaching and no offline caching of account pages or API data
+- 🏠 **Local-first Self-hosting**: Run Web/API on Next.js Node with SQLite or PostgreSQL
 - 🎉 **Cute UI**: Simple and cute UI interface
 - 📤 **Sending Function**: Support sending emails using temporary addresses, based on Resend service
 - 🔔 **Webhook Notification**: Support receiving new email notifications via webhook
@@ -76,8 +78,8 @@ The documentation site contains detailed usage guides, API documentation, deploy
 ## Tech Stack
 
 - **Framework**: [Next.js](https://nextjs.org/) (App Router)
-- **Platform**: [Cloudflare Pages](https://pages.cloudflare.com/)
-- **Database**: [Cloudflare D1](https://developers.cloudflare.com/d1/) (SQLite)
+- **Platform**: Local Next.js Node production; Cloudflare Pages assets remain for rollback
+- **Database**: Local SQLite (default) or PostgreSQL; D1 import/rollback tooling remains
 - **Authentication**: [NextAuth](https://authjs.dev/getting-started/installation?framework=Next.js) with GitHub/Google Login
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **UI Components**: Custom components based on [Radix UI](https://www.radix-ui.com/)
@@ -87,6 +89,25 @@ The documentation site contains detailed usage guides, API documentation, deploy
 - **Internationalization**: [next-intl](https://next-intl-docs.vercel.app/)
 
 ## Local Run
+
+```bash
+git clone https://github.com/XMZO/moemail-local.git
+cd moemail-local
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start --hostname 127.0.0.1 --port 3000
+```
+
+Open `http://localhost:3000`, then copy the one-time setup token from `data/setup-token` (or the service log produced after opening the wizard), and finish the WebUI wizard. The wizard configures the public URL, SQLite or PostgreSQL, the first Emperor account, optional OAuth, and advanced maintenance/backup settings; it then migrates the selected database and writes `data/config.yaml`. Runtime secrets are generated locally. No `.env` file or application environment variables are used.
+
+When a direct production run switches from the bootstrap SQLite driver to PostgreSQL, the process exits successfully after setup so a supervisor can restart it. Without Docker or systemd, run the same `pnpm start --hostname 127.0.0.1 --port 3000` command again.
+
+After setup, the Emperor can edit the complete YAML in **Profile → Runtime Configuration**, or an operator can edit `data/config.yaml` directly. Valid changes are applied at runtime; an invalid YAML, schema value, or database target is rejected while the previous working configuration remains active. See the [local deployment guide](docs/local-deployment.zh-CN.md) and [validation record](docs/local-validation.zh-CN.md) for Docker, PostgreSQL, Email Worker, backup, and operational details.
+
+> The Wrangler/D1 workflow below is archived upstream documentation. It only applies to the fixed Cloudflare baseline worktree recorded in `plan.md`, not this local-first working tree. Tag pushes no longer trigger it.
+
+## Archived Upstream Cloudflare Workflow
 
 ### Prerequisites
 
@@ -99,8 +120,10 @@ The documentation site contains detailed usage guides, API documentation, deploy
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/beilunyang/moemail.git
-cd moemail
+git clone https://github.com/XMZO/moemail-local.git
+cd moemail-local
+git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e2960363b
+cd ../moemail-cloudflare-baseline
 ```
 
 2. Install dependencies:
@@ -116,11 +139,7 @@ cp wrangler.cleanup.example.json wrangler.cleanup.json
 ```
 Set Cloudflare D1 database name and database ID.
 
-4. Setup Environment Variables:
-```bash
-cp .env.example .env.local
-```
-Set `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, `AUTH_SECRET`.
+4. Follow the README in that pinned worktree to configure its historical Pages/D1 runtime. Those settings do not apply to the local Web/API runtime in this branch.
 
 5. Create local database schema:
 ```bash
@@ -151,29 +170,25 @@ pnpm test:cleanup
 pnpm generate-test-data
 ```
 
-## Deployment
+### Archived Cloudflare Deployment
 
-### Video Tutorial
+#### Video Tutorial
 https://www.youtube.com/watch?v=Vcw3nqsq2-E
 
-### Local Wrangler Deployment
-1. Create .env file
-```bash
-cp .env.example .env
-```
-2. Set [Environment Variables](#environment-variables) in the .env file.
+#### Local Wrangler Deployment
 
-3. Run deployment script
+Create a separate pinned worktree, then treat that worktree's README as the sole authority for the archived deployment:
+
 ```bash
+git worktree add ../moemail-cf-baseline 6c19aefc71ca60bc194a6003c13bae1e2960363b
+cd ../moemail-cf-baseline
+pnpm install --frozen-lockfile
 pnpm dlx tsx ./scripts/deploy/index.ts
 ```
 
-### Github Actions Deployment
+#### Github Actions Deployment
 
-This project supports automated deployment using GitHub Actions. It supports the following triggers:
-
-1. **Auto Trigger**: Automatically triggers deployment flow when a new tag is pushed.
-2. **Manual Trigger**: Manually trigger in the GitHub Actions page.
+The workflow retained on the current branch is manual-only and always checks out baseline commit `6c19aefc71ca60bc194a6003c13bae1e2960363b`. It cannot deploy the local-first tree.
 
 #### Deployment Steps
 
@@ -182,36 +197,22 @@ This project supports automated deployment using GitHub Actions. It supports the
    - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare Account ID
    - `AUTH_GITHUB_ID`: GitHub OAuth App ID
    - `AUTH_GITHUB_SECRET`: GitHub OAuth App Secret
+   - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`: Google OAuth credentials (optional)
    - `AUTH_SECRET`: NextAuth Secret, used to encrypt session, please set a random string
    - `CUSTOM_DOMAIN`: Custom domain for the website (Optional, if empty, uses Cloudflare Pages default domain)
    - `PROJECT_NAME`: Pages project name (Optional, if empty, defaults to moemail)
    - `DATABASE_NAME`: D1 database name (Optional, if empty, defaults to moemail-db)
+   - `DATABASE_ID`: Existing D1 database ID (optional)
    - `KV_NAMESPACE_NAME`: Cloudflare KV namespace name, used for site settings (Optional, if empty, defaults to moemail-kv)
+   - `KV_NAMESPACE_ID`: Existing KV namespace ID (optional)
 
-2. Choose trigger method:
-
-   **Method 1: Push Tag Trigger**
-   ```bash
-   # Create a new tag
-   git tag v1.0.0
-   
-   # Push tag to remote repository
-   git push origin v1.0.0
-   ```
-
-   **Method 2: Manual Trigger**
-   - Go to the Actions page of the repository
-   - Select "Deploy" workflow
-   - Click "Run workflow"
+2. Open Actions, select `Deploy Cloudflare Baseline (Manual)`, enter `DEPLOY_BASELINE_6c19aef`, and run it.
 
 3. Deployment progress can be viewed in the Actions tab of the repository.
 
 #### Notes
 - Ensure all Secrets are set correctly.
-- When using tag trigger, the tag must start with `v` (e.g., v1.0.0).
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/beilunyang/moemail)
-
+- Verify that the run checked out the pinned baseline commit before approving Cloudflare changes.
 
 ## Email Domain Configuration
 
@@ -283,8 +284,9 @@ The system includes four role levels:
 ### Role Upgrade
 
 1. **Become Emperor**
-   - The first user to visit `/api/roles/init-emperor` interface will become the Emperor (Website Owner).
-   - Once an Emperor exists, no other user can be promoted to Emperor.
+   - The first-run WebUI wizard creates exactly one Emperor account while initializing the selected database.
+   - A one-time token stored beside `data/config.yaml` protects the wizard and is removed after successful setup.
+   - Database locking prevents concurrent setup attempts from creating multiple Emperors.
 
 2. **Role Changes**
    - The Emperor can set other users as Duke, Knight, or Civilian in the User Profile page.
@@ -299,9 +301,9 @@ The system includes four role levels:
 
 ## System Settings
 
-System settings are stored in Cloudflare KV, including:
+System settings are stored in the `site_config` table of the selected SQLite/PostgreSQL database:
 
-- `DEFAULT_ROLE`: Default role for new users, values: `CIVILIAN`, `KNIGHT`, `DUKE`
+- `DEFAULT_ROLE`: Default role for new users, values: `civilian`, `knight`, `duke`
 - `EMAIL_DOMAINS`: Supported email domains, comma-separated
 - `ADMIN_CONTACT`: Administrator contact info
 - `MAX_EMAILS`: Maximum number of emails per user
@@ -445,7 +447,7 @@ GET /api/config
 Response:
 ```json
 {
-  "defaultRole": "CIVILIAN",
+  "defaultRole": "civilian",
   "emailDomains": "moemail.app,example.com",
   "adminContact": "admin@example.com",
   "maxEmails": "10"
@@ -483,8 +485,10 @@ GET /api/emails?cursor=xxx
 
 #### Get Messages for Email
 ```http
-GET /api/emails/{emailId}?cursor=xxx
+GET /api/emails/{emailId}?cursor=xxx&includeTotal=1
 ```
+
+`total` is returned only when `includeTotal=1`; polling should omit it to avoid a count query on every request.
 
 #### Delete Email
 ```http
@@ -560,22 +564,22 @@ moemail create --domain moemail.app --expiry 1h --json
 moemail list --json
 
 # List messages in a mailbox
-moemail list --email-id <id> --json
+moemail list --email-id EMAIL_ID --json
 
 # Wait for new messages (polling)
-moemail wait --email-id <id> --timeout 120 --json
+moemail wait --email-id EMAIL_ID --timeout 120 --json
 
 # Read message content
-moemail read --email-id <id> --message-id <id> --json
+moemail read --email-id EMAIL_ID --message-id MESSAGE_ID --json
 
 # Send an email from the temporary address
-moemail send --email-id <id> --to user@example.com --subject "Hello" --content "Body text" --json
+moemail send --email-id EMAIL_ID --to user@example.com --subject "Hello" --content "Body text" --json
 
 # Delete a single message
-moemail delete --email-id <id> --message-id <id>
+moemail delete --email-id EMAIL_ID --message-id MESSAGE_ID
 
 # Delete the whole mailbox
-moemail delete --email-id <id>
+moemail delete --email-id EMAIL_ID
 ```
 
 ### Agent Workflow
@@ -652,24 +656,23 @@ Credentials are passed via environment variables:
 
 For full documentation, see [packages/mcp/README.md](packages/mcp/README.md).
 
-## Environment Variables
+## Runtime Configuration
 
-### Authentication
-- `AUTH_GITHUB_ID`: GitHub OAuth App ID
-- `AUTH_GITHUB_SECRET`: GitHub OAuth App Secret
-- `AUTH_GOOGLE_ID`: Google OAuth App ID
-- `AUTH_GOOGLE_SECRET`: Google OAuth App Secret
-- `AUTH_SECRET`: NextAuth Secret
+The local Web/API has one runtime configuration source: `data/config.yaml`. It does not load application settings from `.env`, Compose `environment`, or systemd `EnvironmentFile` entries.
 
-### Cloudflare
-- `CLOUDFLARE_API_TOKEN`: Cloudflare API Token
-- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare Account ID
-- `DATABASE_NAME`: D1 Database Name
-- `DATABASE_ID`: D1 Database ID (Optional, auto-fetched if empty)
-- `KV_NAMESPACE_NAME`: KV Name
-- `KV_NAMESPACE_ID`: KV ID (Optional, auto-fetched if empty)
-- `CUSTOM_DOMAIN`: Custom domain
-- `PROJECT_NAME`: Pages Project Name
+The first-run WebUI writes the file in a recoverable two-stage setup and generates the session secret, password pepper, and Email Worker ingestion secret. After setup, the Emperor can edit the full YAML in the Runtime Configuration panel; direct file edits are detected about once per second. Changes are parsed and validated before they are committed, database changes are probed and migrated first, and failures leave the previous configuration active. A validated recovery snapshot is kept at `data/config.yaml.lkg`; fingerprint CAS plus a shared save lock rejects stale concurrent WebUI writes.
+
+The schema covers:
+
+- `server`: public base URL, trusted-proxy handling, automatic restart on database-driver changes, and browser polling interval.
+- `database`: SQLite path/backup retention or PostgreSQL URL, pool, TLS, and backup settings.
+- `auth`: session secret, password pepper, optional OAuth pairs, optional Emperor bootstrap secret, and login/register abuse limits.
+- `email.ingestSecret`: the shared secret copied to the Cloudflare Email Worker through Wrangler Secret.
+- `cleanup`, `scheduler`, `monitor`, and `offsite`: maintenance intervals, limits, alerts, and rclone destination.
+
+The generated file contains plaintext credentials. Keep the data directory private, back up `config.yaml` and `config.yaml.lkg` together with the database, and never commit them. See [the local deployment guide](docs/local-deployment.zh-CN.md) for a field summary and operational commands.
+
+Cloudflare Email Worker bindings remain on the Worker side: set `EMAIL_INGEST_URL` in Wrangler `vars`, and upload `EMAIL_INGEST_SECRET` with `wrangler secret put`. Wrangler may separately use its own login or CI credentials; the local Web/API never reads them.
 
 ## Github OAuth App Configuration
 
@@ -679,6 +682,7 @@ For full documentation, see [packages/mcp/README.md](packages/mcp/README.md).
    - `Application name`: `<your-app-name>`
    - `Homepage URL`: `https://<your-domain>`
    - `Authorization callback URL`: `https://<your-domain>/api/auth/callback/github`
+4. Enter the Client ID and Client Secret in the first-run wizard or the Runtime Configuration panel (`auth.github` in `data/config.yaml`)
 
 ## Google OAuth App Configuration
 
@@ -689,7 +693,7 @@ For full documentation, see [packages/mcp/README.md](packages/mcp/README.md).
    - Authorized Javascript origins: `https://<your-domain>`
    - Authorized redirect URIs: `https://<your-domain>/api/auth/callback/google`
 4. Get `Client ID` and `Client Secret`
-5. Configure env vars `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`
+5. Enter the Client ID and Client Secret in the first-run wizard or the Runtime Configuration panel (`auth.google` in `data/config.yaml`)
 
 ## Contribution
 

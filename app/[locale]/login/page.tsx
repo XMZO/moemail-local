@@ -1,10 +1,9 @@
 import { LoginForm } from "@/components/auth/login-form"
-import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import type { Locale } from "@/i18n/config"
-import { getTurnstileConfig } from "@/lib/turnstile"
+import { requireCompletedSetup } from "@/lib/setup-navigation"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 export default async function LoginPage({
   params,
@@ -13,6 +12,9 @@ export default async function LoginPage({
 }) {
   const { locale: localeFromParams } = await params
   const locale = localeFromParams as Locale
+  requireCompletedSetup(locale)
+  const { auth } = await import("@/lib/auth")
+  const { getTurnstileConfig } = await import("@/lib/turnstile")
   const session = await auth()
   
   if (session?.user) {

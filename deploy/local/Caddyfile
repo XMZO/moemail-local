@@ -1,0 +1,38 @@
+mail.example.com {
+  encode zstd gzip
+
+  log {
+    output file /var/log/caddy/moemail-access.json {
+      mode 0644
+      roll_size 100MiB
+      roll_keep 10
+      roll_keep_for 720h
+    }
+    format json
+  }
+
+  @email_ingest path /api/internal/email
+  handle @email_ingest {
+    request_body {
+      max_size 27MB
+    }
+    reverse_proxy 127.0.0.1:3000 {
+      header_up X-MoeMail-Client-IP {remote_host}
+      header_up -CF-Connecting-IP
+      header_up X-Real-IP {remote_host}
+      header_up X-Forwarded-For {remote_host}
+    }
+  }
+
+  handle {
+    request_body {
+      max_size 1MB
+    }
+    reverse_proxy 127.0.0.1:3000 {
+      header_up X-MoeMail-Client-IP {remote_host}
+      header_up -CF-Connecting-IP
+      header_up X-Real-IP {remote_host}
+      header_up X-Forwarded-For {remote_host}
+    }
+  }
+}

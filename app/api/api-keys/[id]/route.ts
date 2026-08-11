@@ -1,31 +1,30 @@
-import { auth } from "@/lib/auth"
 import { createDb } from "@/lib/db"
 import { apiKeys } from "@/lib/schema"
 import { NextResponse } from "next/server"
-import { checkPermission } from "@/lib/auth"
 import { PERMISSIONS } from "@/lib/permissions"
 import { eq, and } from "drizzle-orm"
+import { authorizeRequest } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const hasPermission = await checkPermission(PERMISSIONS.MANAGE_API_KEY)
-  if (!hasPermission) {
-    return NextResponse.json({ error: "权限不足" }, { status: 403 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_API_KEY,
+  })
+  if (!authorization.ok) return authorization.response
+
   try {
     const db = createDb()
-    const session = await auth()
     const { id } = await params
     
     const result = await db.delete(apiKeys)
       .where(
         and(
           eq(apiKeys.id, id),
-          eq(apiKeys.userId, session!.user.id!)
+          eq(apiKeys.userId, authorization.principal.userId)
         )
       )
       .returning()
@@ -51,13 +50,12 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const hasPermission = await checkPermission(PERMISSIONS.MANAGE_API_KEY)
-  if (!hasPermission) {
-    return NextResponse.json({ error: "权限不足" }, { status: 403 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_API_KEY,
+  })
+  if (!authorization.ok) return authorization.response
 
   try {
-    const session = await auth()
     const { id } = await params
 
     const { enabled } = await request.json() as { enabled: boolean }
@@ -68,7 +66,7 @@ export async function PATCH(
       .where(
         and(
           eq(apiKeys.id, id),
-          eq(apiKeys.userId, session!.user.id!)
+          eq(apiKeys.userId, authorization.principal.userId)
         )
       )
       .returning()
@@ -88,4 +86,4 @@ export async function PATCH(
       { status: 500 }
     )
   }
-} 
+}

@@ -1,25 +1,23 @@
-import { auth } from "@/lib/auth"
 import { createDb } from "@/lib/db"
 import { apiKeys } from "@/lib/schema"
 import { nanoid } from "nanoid"
 import { NextResponse } from "next/server"
-import { checkPermission } from "@/lib/auth"
 import { PERMISSIONS } from "@/lib/permissions"
 import { desc, eq } from "drizzle-orm"
+import { authorizeRequest } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
-export async function GET() {
-  const hasPermission = await checkPermission(PERMISSIONS.MANAGE_API_KEY)
-  if (!hasPermission) {
-    return NextResponse.json({ error: "权限不足" }, { status: 403 })
-  }
+export async function GET(request: Request) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_API_KEY,
+  })
+  if (!authorization.ok) return authorization.response
 
-  const session = await auth()
   try {
     const db = createDb()
     const keys = await db.query.apiKeys.findMany({
-      where: eq(apiKeys.userId, session!.user.id!),
+      where: eq(apiKeys.userId, authorization.principal.userId),
       orderBy: desc(apiKeys.createdAt),
     })
 
@@ -39,12 +37,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const hasPermission = await checkPermission(PERMISSIONS.MANAGE_API_KEY)
-  if (!hasPermission) {
-    return NextResponse.json({ error: "权限不足" }, { status: 403 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_API_KEY,
+  })
+  if (!authorization.ok) return authorization.response
 
-  const session = await auth()
   try {
     const { name } = await request.json() as { name: string }
     if (!name?.trim()) {
@@ -60,7 +57,7 @@ export async function POST(request: Request) {
     await db.insert(apiKeys).values({
       name,
       key,
-      userId: session!.user.id!,
+      userId: authorization.principal.userId,
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
     })
 
@@ -72,4 +69,4 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
-} 
+}

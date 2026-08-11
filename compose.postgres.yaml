@@ -1,0 +1,202 @@
+name: moemail-postgres
+
+x-moemail-service: &moemail-service
+  image: moemail-local:latest
+  build:
+    context: .
+    target: runtime
+  volumes:
+    - moemail-config:/app/data
+  networks:
+    - default
+    - database
+  stop_grace_period: 30s
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: deploy/docker/postgres.Dockerfile
+    image: moemail-postgres-local:17
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - database
+    # 不发布 5432；trust 认证仅存在于隔离的 database 网络。
+    healthcheck:
+      test: [CMD, pg_isready, --host, 127.0.0.1, --username, moemail, --dbname, moemail]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    shm_size: 128mb
+
+  moemail:
+    <<: *moemail-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/internal/health').then(r=>process.exit(r.ok ? 0 : 1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+  cleanup:
+    <<: *moemail-service
+    profiles: [maintenance]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [cleanup]
+    healthcheck:
+      disable: true
+
+  scheduler:
+    <<: *moemail-service
+    profiles: [scheduler]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      moemail:
+        condition: service_healthy
+    command: [scheduler]
+    healthcheck:
+      disable: true
+
+  monitor:
+    image: moemail-local:latest
+    build:
+      context: .
+      target: runtime
+    profiles: [monitoring]
+    restart: unless-stopped
+    user: "0:0"
+    network_mode: "service:moemail"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    cap_add: [DAC_READ_SEARCH]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - moemail-config:/app/data:ro
+      - caddy-logs:/var/log/caddy:ro
+      - postgres-data:/postgres-data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      moemail:
+        condition: service_healthy
+    command: [monitor-scheduler]
+    healthcheck:
+      disable: true
+
+  postgres-backup:
+    build:
+      context: .
+      dockerfile: deploy/docker/postgres-tools.Dockerfile
+    image: moemail-postgres-tools:18
+    profiles: [maintenance]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - moemail-config:/app/data:ro
+      - postgres-backups:/app/data/postgres-backups
+      - postgres-backups:/backups
+    networks:
+      - default
+      - database
+    entrypoint: [moemail-postgres-backup]
+
+  postgres-backup-scheduler:
+    build:
+      context: .
+      dockerfile: deploy/docker/postgres-tools.Dockerfile
+    image: moemail-postgres-tools:18
+    profiles: [scheduler]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - moemail-config:/app/data:ro
+      - postgres-backups:/app/data/postgres-backups
+      - postgres-backups:/backups
+    networks:
+      - default
+      - database
+    entrypoint: [moemail-postgres-backup-scheduler]
+
+  offsite-backup:
+    <<: *moemail-service
+    profiles: [offsite]
+    restart: unless-stopped
+    volumes:
+      - moemail-config:/app/data:ro
+      - postgres-backups:/app/data/postgres-backups:ro
+      - postgres-backups:/backups:ro
+    networks:
+      - default
+    command: [offsite-scheduler]
+    healthcheck:
+      disable: true
+
+  postgres-restore:
+    build:
+      context: .
+      dockerfile: deploy/docker/postgres-tools.Dockerfile
+    image: moemail-postgres-tools:18
+    profiles: [restore]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - moemail-config:/app/data
+      - postgres-backups:/app/data/postgres-backups
+      - postgres-backups:/backups
+    networks:
+      - default
+      - database
+    entrypoint: [moemail-postgres-restore]
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [proxy]
+    restart: unless-stopped
+    depends_on:
+      moemail:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+
+networks:
+  database:
+    internal: true
+
+volumes:
+  moemail-config:
+  postgres-data:
+  postgres-backups:
+  caddy-data:
+  caddy-config:
+  caddy-logs:

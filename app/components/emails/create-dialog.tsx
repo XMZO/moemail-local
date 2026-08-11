@@ -112,6 +112,11 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
               value={emailName}
               onChange={(e) => setEmailName(e.target.value)}
               placeholder={t("namePlaceholder")}
+              maxLength={64}
+              pattern="[A-Za-z0-9._+-]+"
+              autoCapitalize="none"
+              autoComplete="off"
+              spellCheck={false}
               className="flex-1"
             />
             {(config?.emailDomainsArray?.length ?? 0) > 1 && (
@@ -185,4 +190,4 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
       </DialogContent>
     </Dialog>
   )
-} 
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=MoeMail Next.js service
+After=network-online.target
+Wants=network-online.target
+OnFailure=moemail-alert@%n.service
+
+[Service]
+Type=simple
+User=moemail
+Group=moemail
+WorkingDirectory=/opt/moemail
+ExecStart=/usr/bin/pnpm start --hostname 127.0.0.1 --port 3000
+# 配置热加载在切换数据库 driver 后会以 0 退出，请始终由 systemd 拉起新进程。
+Restart=always
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

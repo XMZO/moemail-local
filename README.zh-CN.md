@@ -4,8 +4,10 @@
 </p>
 
 <p align="center">
-  一个基于 NextJS + Cloudflare 技术栈构建的可爱临时邮箱服务🎉
+  一个以 Next.js Node + SQLite/PostgreSQL 为主、由 Cloudflare 接收邮件的可爱临时邮箱服务🎉
 </p>
+
+> 本 fork 支持主要本地部署：Web/API 和数据存储运行在自己的服务器，Cloudflare 仅负责 Email Routing 与转发。完整步骤见[本地部署指南](docs/local-deployment.zh-CN.md)和[本地化验证记录](docs/local-validation.zh-CN.md)；原 Cloudflare 流程保留用于同步上游与回退。
 
 <p align="center">
   <span>简体中文</span> | 
@@ -22,7 +24,7 @@
   <a href="#特性">特性</a> •
   <a href="#技术栈">技术栈</a> •
   <a href="#本地运行">本地运行</a> •
-  <a href="#部署">部署</a> •
+  <a href="docs/local-deployment.zh-CN.md">本地部署</a> •
   <a href="#邮箱域名配置">邮箱域名配置</a> •
   <a href="#权限系统">权限系统</a> •
   <a href="#系统设置">系统设置</a> •
@@ -31,7 +33,7 @@
   <a href="#OpenAPI">OpenAPI</a> •
   <a href="#cli-工具">CLI 工具</a> •
   <a href="#mcp-服务器">MCP 服务器</a> •
-  <a href="#环境变量">环境变量</a> •
+  <a href="#运行配置">运行配置</a> •
   <a href="#Github OAuth App 配置">Github OAuth App 配置</a> •
   <a href="#Google OAuth App 配置">Google OAuth App 配置</a> •
   <a href="#贡献">贡献</a> •
@@ -63,8 +65,8 @@
 - 🎨 **主题切换**：支持亮色和暗色模式
 - 📱 **响应式设计**：完美适配桌面和移动设备
 - 🔄 **自动清理**：自动清理过期的邮箱和邮件
-- 📱 **PWA 支持**：支持 PWA 安装
-- 💸 **免费自部署**：基于 Cloudflare 构建, 可实现免费自部署，无需任何费用
+- 📱 **PWA 支持**：支持安装；只预缓存静态资源，不离线缓存账号页面或 API 数据
+- 🏠 **主要本地自部署**：Web/API 使用 Next.js Node，数据存于 SQLite 或 PostgreSQL
 - 🎉 **可爱的 UI**：简洁可爱萌萌哒 UI 界面
 - 📤 **发件功能**：支持使用临时邮箱发送邮件，基于 Resend 服务
 - 🔔 **Webhook 通知**：支持通过 webhook 接收新邮件通知
@@ -76,8 +78,8 @@
 ## 技术栈
 
 - **框架**: [Next.js](https://nextjs.org/) (App Router)
-- **平台**: [Cloudflare Pages](https://pages.cloudflare.com/)
-- **数据库**: [Cloudflare D1](https://developers.cloudflare.com/d1/) (SQLite)
+- **平台**: 本地 Next.js Node production；保留 Cloudflare Pages 回退资产
+- **数据库**: 本地 SQLite（默认）或 PostgreSQL；保留 D1 导入/回退工具
 - **认证**: [NextAuth](https://authjs.dev/getting-started/installation?framework=Next.js) 配合 GitHub 登录
 - **样式**: [Tailwind CSS](https://tailwindcss.com/)
 - **UI 组件**: 基于 [Radix UI](https://www.radix-ui.com/) 的自定义组件
@@ -87,6 +89,27 @@
 - **国际化**: [next-intl](https://next-intl-docs.vercel.app/) 支持多语言
 
 ## 本地运行
+
+主要本地部署的最小流程：
+
+```bash
+git clone https://github.com/XMZO/moemail-local.git
+cd moemail-local
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start --hostname 127.0.0.1 --port 3000
+```
+
+访问 `http://localhost:3000`，再从 `data/setup-token`（或打开向导后产生的服务日志）取得一次性初始化令牌，在 WebUI 向导中完成公网地址、SQLite/PostgreSQL、首个皇帝账号、可选 OAuth，以及高级维护/备份配置。向导会迁移所选数据库、在本机生成运行密钥，并写入 `data/config.yaml`；不使用 `.env` 或应用环境变量。
+
+直接运行 production 服务时，若向导把启动用 SQLite driver 切换为 PostgreSQL，进程会在提交成功后正常退出，供守护进程拉起。没有 Docker/systemd 时，请再次执行同一条 `pnpm start --hostname 127.0.0.1 --port 3000`。
+
+初始化后，皇帝可以在“个人中心 → 运行配置”编辑完整 YAML，运维人员也可以直接修改 `data/config.yaml`。合法配置会实时应用；YAML、字段或数据库目标校验失败时仍继续使用上一份可用配置。完整的 Docker、PostgreSQL、Email Worker、备份与上游同步步骤见 [本地部署指南](docs/local-deployment.zh-CN.md)，测试范围见 [本地化验证记录](docs/local-validation.zh-CN.md)。
+
+> 下方 Wrangler/D1 流程是上游归档说明，只适用于 `plan.md` 记录的固定 Cloudflare baseline worktree，不适用于当前本地化工作树；推送 tag 已不会触发它。
+
+## 归档的上游 Cloudflare 流程
 
 ### 前置要求
 
@@ -99,8 +122,10 @@
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/beilunyang/moemail.git
-cd moemail
+git clone https://github.com/XMZO/moemail-local.git
+cd moemail-local
+git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e2960363b
+cd ../moemail-cloudflare-baseline
 ```
 
 2. 安装依赖：
@@ -116,11 +141,7 @@ cp wrangler.cleanup.example.json wrangler.cleanup.json
 ```
 设置 Cloudflare D1 数据库名以及数据库 ID
 
-4. 设置环境变量：
-```bash
-cp .env.example .env.local
-```
-设置 AUTH_GITHUB_ID, AUTH_GITHUB_SECRET, AUTH_SECRET
+4. 按该固定 worktree 自己的 README 配置历史 Pages/D1 runtime；那些设置不适用于当前分支的本地 Web/API。
 
 5. 创建本地数据库表结构
 ```bash
@@ -150,29 +171,25 @@ pnpm test:cleanup
 ```bash
 pnpm generate-test-data
 ```
-## 部署
+### 归档 Cloudflare 部署
 
-### 视频版保姆级部署教程
+#### 视频版保姆级部署教程
 https://www.bilibili.com/video/BV19wrXY2ESM/
 
-### 本地 Wrangler 部署
-1. 创建 .env 文件
-```bash
-cp .env.example .env
-```
-2. 在 .env 文件中设置[环境变量](#环境变量)
+#### 本地 Wrangler 部署
 
-3. 运行部署脚本
+另建固定 baseline worktree，随后只以该 worktree 内的 README 作为归档部署依据：
+
 ```bash
+git worktree add ../moemail-cf-baseline 6c19aefc71ca60bc194a6003c13bae1e2960363b
+cd ../moemail-cf-baseline
+pnpm install --frozen-lockfile
 pnpm dlx tsx ./scripts/deploy/index.ts
 ```
 
-### Github Actions 部署
+#### Github Actions 部署
 
-本项目可使用 GitHub Actions 实现自动化部署。支持以下触发方式：
-
-1. **自动触发**：推送新的 tag 时自动触发部署流程
-2. **手动触发**：在 GitHub Actions 页面手动触发
+当前分支保留的 workflow 只允许手动运行，并固定 checkout baseline commit `6c19aefc71ca60bc194a6003c13bae1e2960363b`，不会部署当前本地化工作树。
 
 #### 部署步骤
 
@@ -181,36 +198,22 @@ pnpm dlx tsx ./scripts/deploy/index.ts
    - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare 账户 ID
    - `AUTH_GITHUB_ID`: GitHub OAuth App ID
    - `AUTH_GITHUB_SECRET`: GitHub OAuth App Secret
+   - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`: Google OAuth 凭据（可选）
    - `AUTH_SECRET`: NextAuth Secret，用来加密 session，请设置一个随机字符串
    - `CUSTOM_DOMAIN`: 网站自定义域名，用于访问 MoeMail (可选， 如果不填, 则会使用 Cloudflare Pages 默认域名)
    - `PROJECT_NAME`: Pages 项目名 （可选，如果不填，则为 moemail） 
    - `DATABASE_NAME`: D1 数据库名称 (可选，如果不填，则为 moemail-db)
+   - `DATABASE_ID`: 已有 D1 数据库 ID（可选）
    - `KV_NAMESPACE_NAME`: Cloudflare KV namespace 名称，用于存储网站配置 （可选，如果不填，则为 moemail-kv）
+   - `KV_NAMESPACE_ID`: 已有 KV namespace ID（可选）
 
-2. 选择触发方式：
-
-   **方式一：推送 tag 触发**
-   ```bash
-   # 创建新的 tag
-   git tag v1.0.0
-   
-   # 推送 tag 到远程仓库
-   git push origin v1.0.0
-   ```
-
-   **方式二：手动触发**
-   - 进入仓库的 Actions 页面
-   - 选择 "Deploy" workflow
-   - 点击 "Run workflow"
+2. 进入 Actions，选择 `Deploy Cloudflare Baseline (Manual)`，输入 `DEPLOY_BASELINE_6c19aef` 后运行。
 
 3. 部署进度可以在仓库的 Actions 标签页查看
 
 #### 注意事项
 - 确保所有 Secrets 都已正确设置
-- 使用 tag 触发时，tag 必须以 `v` 开头（例如：v1.0.0）
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/beilunyang/moemail)
-
+- 批准 Cloudflare 变更前，确认日志显示 checkout 的是固定 baseline commit
 
 ## 邮箱域名配置
 
@@ -282,8 +285,9 @@ pnpm dlx tsx ./scripts/deploy/index.ts
 ### 角色升级
 
 1. **成为皇帝**
-   - 第一个访问 `/api/roles/init-emperor` 接口的用户将成为皇帝，即网站所有者
-   - 站点已有皇帝后，无法再提升其他用户为皇帝
+   - 首次启动 WebUI 向导会在初始化所选数据库时创建唯一皇帝账号
+   - 向导由与 `data/config.yaml` 同目录的一次性令牌保护，成功后令牌自动删除
+   - 数据库锁保证并发初始化时仍然只有一名皇帝
 
 2. **角色变更**
    - 皇帝可以在个人中心页面将其他用户设为公爵、骑士或平民
@@ -298,9 +302,9 @@ pnpm dlx tsx ./scripts/deploy/index.ts
 
 ## 系统设置
 
-系统设置存储在 Cloudflare KV 中，包括以下内容：
+系统设置存储在当前 SQLite/PostgreSQL 的 `site_config` 表中，包括以下内容：
 
-- `DEFAULT_ROLE`: 新注册用户默认角色，可选值为 `CIVILIAN`、`KNIGHT`、`DUKE`
+- `DEFAULT_ROLE`: 新注册用户默认角色，可选值为 `civilian`、`knight`、`duke`
 - `EMAIL_DOMAINS`: 支持的邮箱域名，多个域名用逗号分隔
 - `ADMIN_CONTACT`: 管理员联系方式
 - `MAX_EMAILS`: 每个用户可创建的最大邮箱数量
@@ -444,14 +448,14 @@ GET /api/config
 返回响应：
 ```json
 {
-  "defaultRole": "CIVILIAN",
+  "defaultRole": "civilian",
   "emailDomains": "moemail.app,example.com",
   "adminContact": "admin@example.com",
   "maxEmails": "10"
 }
 ```
 响应字段说明：
-- `defaultRole`: 新用户默认角色，可选值：`CIVILIAN`（平民）、`KNIGHT`（骑士）、`DUKE`（公爵）
+- `defaultRole`: 新用户默认角色，可选值：`civilian`（平民）、`knight`（骑士）、`duke`（公爵）
 - `emailDomains`: 支持的邮箱域名，多个域名用逗号分隔
 - `adminContact`: 管理员联系方式
 - `maxEmails`: 每个用户可创建的最大邮箱数量
@@ -513,11 +517,12 @@ GET /api/emails?cursor=xxx
 
 #### 获取指定邮箱邮件列表
 ```http
-GET /api/emails/{emailId}?cursor=xxx
+GET /api/emails/{emailId}?cursor=xxx&includeTotal=1
 ```
 参数说明：
 - `emailId`: 邮箱的唯一标识符，必填
 - `cursor`: 分页游标，可选
+- `includeTotal`: 设为 `1` 时返回总数；默认轮询省略该参数以避免每次执行 `count(*)`
 
 返回响应：
 ```json
@@ -537,7 +542,7 @@ GET /api/emails/{emailId}?cursor=xxx
 响应字段说明：
 - `messages`: 邮件列表数组
 - `nextCursor`: 下一页游标，用于分页请求
-- `total`: 邮件总数量
+- `total`: 邮件总数量，仅在 `includeTotal=1` 时返回
 
 #### 删除邮箱
 ```http
@@ -812,22 +817,22 @@ moemail create --domain moemail.app --expiry 1h --json
 moemail list --json
 
 # 列出邮箱内的邮件
-moemail list --email-id <id> --json
+moemail list --email-id EMAIL_ID --json
 
 # 等待新邮件（轮询）
-moemail wait --email-id <id> --timeout 120 --json
+moemail wait --email-id EMAIL_ID --timeout 120 --json
 
 # 读取邮件内容
-moemail read --email-id <id> --message-id <id> --json
+moemail read --email-id EMAIL_ID --message-id MESSAGE_ID --json
 
 # 从临时地址发件
-moemail send --email-id <id> --to user@example.com --subject "你好" --content "正文内容" --json
+moemail send --email-id EMAIL_ID --to user@example.com --subject "你好" --content "正文内容" --json
 
 # 删除单封邮件
-moemail delete --email-id <id> --message-id <id>
+moemail delete --email-id EMAIL_ID --message-id MESSAGE_ID
 
 # 删除整个邮箱
-moemail delete --email-id <id>
+moemail delete --email-id EMAIL_ID
 ```
 
 ### Agent 工作流
@@ -890,26 +895,23 @@ MoeMail 同时提供 [MCP](https://modelcontextprotocol.io) 服务器，让任�
 
 详细文档见 [packages/mcp/README.md](packages/mcp/README.md)。
 
-## 环境变量
+## 运行配置
 
-本项目使用以下环境变量：
+本地 Web/API 只有一个运行配置来源：`data/config.yaml`。它不会从 `.env`、Compose `environment` 或 systemd `EnvironmentFile` 读取应用设置。
 
-### 认证相关
-- `AUTH_GITHUB_ID`: GitHub OAuth App ID
-- `AUTH_GITHUB_SECRET`: GitHub OAuth App Secret
-- `AUTH_GOOGLE_ID`: Google OAuth App ID
-- `AUTH_GOOGLE_SECRET`: Google OAuth App Secret
-- `AUTH_SECRET`: NextAuth Secret，用来加密 session，请设置一个随机字符串
+首次启动 WebUI 会用可恢复的两阶段提交写入该文件，并生成会话 secret、密码 pepper 与 Email Worker 投递 secret。初始化后，皇帝可在“运行配置”面板编辑完整 YAML；直接修改文件也会在约一秒内被检测。候选配置只有在 YAML、schema 与数据库检查全部通过后才提交，失败时上一份配置继续运行；最近一次验证通过的恢复副本保存在 `data/config.yaml.lkg`。WebUI 以 fingerprint CAS 和共享保存锁拒绝过期的并发写入。
 
-### Cloudflare 配置
-- `CLOUDFLARE_API_TOKEN`: Cloudflare API Token
-- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare Account ID
-- `DATABASE_NAME`: D1 数据库名称
-- `DATABASE_ID`: D1 数据库 ID (可选, 如果不填, 则会自动通过 Cloudflare API 获取)
-- `KV_NAMESPACE_NAME`: Cloudflare KV namespace 名称，用于存储网站配置
-- `KV_NAMESPACE_ID`: Cloudflare KV namespace ID，用于存储网站配置 （可选， 如果不填, 则会自动通过 Cloudflare API 获取）
-- `CUSTOM_DOMAIN`: 网站自定义域名, 如：moemail.app (可选， 如果不填, 则会使用 Cloudflare Pages 默认域名)
-- `PROJECT_NAME`: Pages 项目名 （可选，如果不填，则为 moemail） 
+配置 schema 包括：
+
+- `server`：公网地址、可信代理、数据库类型变化时自动重启、浏览器轮询间隔。
+- `database`：SQLite 路径/备份保留，或 PostgreSQL URL、连接池、TLS 与备份设置。
+- `auth`：会话 secret、密码 pepper、可选 OAuth 配对、可选皇帝 bootstrap secret、登录/注册防滥用限制。
+- `email.ingestSecret`：通过 Wrangler Secret 同步给 Cloudflare Email Worker 的投递密钥。
+- `cleanup`、`scheduler`、`monitor`、`offsite`：维护间隔、上限、告警和 rclone 目标。
+
+生成的文件含明文凭据。请限制数据目录权限，将 `config.yaml`、`config.yaml.lkg` 与数据库作为同一恢复集备份，并且不要提交它们。字段摘要与运维命令见[本地部署指南](docs/local-deployment.zh-CN.md)。
+
+Cloudflare Email Worker 的 binding 仍留在 Worker 边界：`EMAIL_INGEST_URL` 写入 Wrangler `vars`，`EMAIL_INGEST_SECRET` 使用 `wrangler secret put` 上传。Wrangler 自己可使用登录态或 CI 凭据；本地 Web/API 不读取这些值。
 
 ## Github OAuth App 配置
 
@@ -919,6 +921,7 @@ MoeMail 同时提供 [MCP](https://modelcontextprotocol.io) 服务器，让任�
    - `Application name`: `<your-app-name>`
    - `Homepage URL`: `https://<your-domain>`
    - `Authorization callback URL`: `https://<your-domain>/api/auth/callback/github`
+4. 在首次启动向导或“运行配置”面板填写 Client ID 与 Client Secret（`data/config.yaml` 中的 `auth.github`）
 
 ## Google OAuth App 配置
 
@@ -929,7 +932,7 @@ MoeMail 同时提供 [MCP](https://modelcontextprotocol.io) 服务器，让任�
    - 已获授权的 Javascript 来源：`https://<your-domain>`
    - 已获授权的重定向 URI：`https://<your-domain>/api/auth/callback/google`
 4. 获取 `Client ID` 和 `Client Secret`
-5. 配置环境变量 `AUTH_GOOGLE_ID` 和 `AUTH_GOOGLE_SECRET`
+5. 在首次启动向导或“运行配置”面板填写 Client ID 与 Client Secret（`data/config.yaml` 中的 `auth.google`）
 
 
 

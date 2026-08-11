@@ -1,0 +1,105 @@
+name: moemail
+
+x-moemail-service: &moemail-service
+  image: moemail-local:latest
+  build:
+    context: .
+    target: runtime
+  volumes:
+    - moemail-data:/app/data
+  stop_grace_period: 30s
+
+services:
+  moemail:
+    <<: *moemail-service
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/internal/health').then(r=>process.exit(r.ok ? 0 : 1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+  cleanup:
+    <<: *moemail-service
+    profiles: [maintenance]
+    restart: "no"
+    healthcheck:
+      disable: true
+    command: [cleanup]
+
+  backup:
+    <<: *moemail-service
+    profiles: [maintenance]
+    restart: "no"
+    healthcheck:
+      disable: true
+    command: [backup]
+
+  scheduler:
+    <<: *moemail-service
+    profiles: [scheduler]
+    restart: unless-stopped
+    depends_on:
+      moemail:
+        condition: service_healthy
+    command: [scheduler]
+    healthcheck:
+      disable: true
+
+  monitor:
+    <<: *moemail-service
+    profiles: [monitoring]
+    restart: unless-stopped
+    network_mode: "service:moemail"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - moemail-data:/app/data:ro
+      - caddy-logs:/var/log/caddy:ro
+    depends_on:
+      moemail:
+        condition: service_healthy
+    command: [monitor-scheduler]
+    healthcheck:
+      disable: true
+
+  offsite-backup:
+    <<: *moemail-service
+    profiles: [offsite]
+    restart: unless-stopped
+    volumes:
+      - moemail-data:/app/data:ro
+    command: [offsite-scheduler]
+    healthcheck:
+      disable: true
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [proxy]
+    restart: unless-stopped
+    depends_on:
+      moemail:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+
+volumes:
+  moemail-data:
+  caddy-data:
+  caddy-config:
+  caddy-logs:

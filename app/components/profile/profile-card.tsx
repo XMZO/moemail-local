@@ -11,9 +11,10 @@ import { WebhookConfig } from "./webhook-config"
 import { PromotePanel } from "./promote-panel"
 import { EmailServiceConfig } from "./email-service-config"
 import { useRolePermission } from "@/hooks/use-role-permission"
-import { PERMISSIONS } from "@/lib/permissions"
+import { PERMISSIONS, ROLES } from "@/lib/permissions"
 import { WebsiteConfigPanel } from "./website-config-panel"
 import { ApiKeyPanel } from "./api-key-panel"
+import { RuntimeConfigPanel } from "./runtime-config-panel"
 
 interface ProfileCardProps {
   user: User
@@ -69,6 +70,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
   const canManageWebhook = checkPermission(PERMISSIONS.MANAGE_WEBHOOK)
   const canPromote = checkPermission(PERMISSIONS.PROMOTE_USER)
   const canManageConfig = checkPermission(PERMISSIONS.MANAGE_CONFIG)
+  const isEmperor = user.roles?.some(role => role.name === ROLES.EMPEROR) ?? false
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -145,6 +147,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
         </div>
       )}
 
+      {isEmperor && <RuntimeConfigPanel />}
       {canManageConfig && <WebsiteConfigPanel />}
       {canManageConfig && <EmailServiceConfig />}
       {canPromote && <PromotePanel />}
@@ -168,4 +171,4 @@ export function ProfileCard({ user }: ProfileCardProps) {
       </div>
     </div>
   )
-} 
+}

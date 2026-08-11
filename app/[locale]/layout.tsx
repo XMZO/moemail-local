@@ -10,8 +10,14 @@ import { cn } from "@/lib/utils"
 import { zpix } from "../fonts"
 import "../globals.css"
 import { Providers } from "../providers"
+import {
+  getConfigStatus,
+  getPublicRuntimeConfig,
+} from "@/lib/config/runtime"
+import { DEFAULT_PUBLIC_RUNTIME_CONFIG } from "@/lib/config/public"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 export const viewport: Viewport = {
   themeColor: '#826DD9',
@@ -45,7 +51,12 @@ export async function generateMetadata({
   const locale = localeFromParams as Locale
   const t = await getTranslations({ locale, namespace: "metadata" })
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://moemail.app"
+  let baseUrl = DEFAULT_PUBLIC_RUNTIME_CONFIG.baseUrl
+  try {
+    baseUrl = getPublicRuntimeConfig().baseUrl
+  } catch {
+    // 初始化前或配置文件损坏且没有 LKG 时使用安全的展示默认值。
+  }
   
   // Generate hreflang links for all supported locales
   const languages: Record<string, string> = {}
@@ -106,6 +117,13 @@ export default async function LocaleLayout({
   }
 
   const messages = await getMessages(locale)
+  const configStatus = getConfigStatus()
+  let runtimeConfig = DEFAULT_PUBLIC_RUNTIME_CONFIG
+  try {
+    runtimeConfig = getPublicRuntimeConfig()
+  } catch {
+    // 初始化向导仍应可渲染，不能被坏配置挡在 WebUI 外。
+  }
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -132,7 +150,11 @@ export default async function LocaleLayout({
           disableTransitionOnChange={false}
           storageKey="temp-mail-theme"
         >
-          <Providers>
+          <Providers
+            runtimeConfig={runtimeConfig}
+            sessionEnabled={configStatus.setupCompleted}
+            runtimeRefreshEnabled={configStatus.setupCompleted}
+          >
             <NextIntlClientProvider locale={locale} messages={messages}>
               {children}
               <FloatMenu />

@@ -1,0 +1,11 @@
+[Unit]
+Description=Send an alert for failed MoeMail unit %i
+
+[Service]
+Type=oneshot
+User=moemail
+Group=moemail
+WorkingDirectory=/opt/moemail
+ExecStart=/usr/bin/pnpm alert %i
+NoNewPrivileges=true
+PrivateTmp=true

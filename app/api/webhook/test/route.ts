@@ -2,14 +2,21 @@ import { callWebhook } from "@/lib/webhook"
 import { WEBHOOK_CONFIG } from "@/config"
 import { z } from "zod"
 import { EmailMessage } from "@/lib/webhook"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 const testSchema = z.object({
   url: z.string().url()
 })
 
 export async function POST(request: Request) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_WEBHOOK,
+  })
+  if (!authorization.ok) return authorization.response
+
   try {
     const body = await request.json()
     const { url } = testSchema.parse(body)
@@ -36,4 +43,4 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
-} 
+}

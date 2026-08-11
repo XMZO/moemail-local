@@ -1,42 +1,50 @@
-import { auth } from "@/lib/auth"
 import { createDb } from "@/lib/db"
 import { webhooks } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { z } from "zod"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
+import { validateWebhookUrl } from "@/lib/webhook"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 const webhookSchema = z.object({
   url: z.string().url(),
   enabled: z.boolean()
 })
 
-export async function GET() {
-  const session = await auth()
+export async function GET(request: Request) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_WEBHOOK,
+  })
+  if (!authorization.ok) return authorization.response
 
   const db = createDb()
   const webhook = await db.query.webhooks.findFirst({
-    where: eq(webhooks.userId, session!.user!.id!)
+    where: eq(webhooks.userId, authorization.principal.userId)
   })
 
   return Response.json(webhook || { enabled: false, url: "" })
 }
 
 export async function POST(request: Request) {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_WEBHOOK,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   try {
     const body = await request.json()
     const { url, enabled } = webhookSchema.parse(body)
+    await validateWebhookUrl(url)
     
     const db = createDb()
     const now = new Date()
 
     const existingWebhook = await db.query.webhooks.findFirst({
-      where: eq(webhooks.userId, session.user.id)
+      where: eq(webhooks.userId, userId)
     })
 
     if (existingWebhook) {
@@ -47,12 +55,12 @@ export async function POST(request: Request) {
           enabled,
           updatedAt: now
         })
-        .where(eq(webhooks.userId, session.user.id))
+        .where(eq(webhooks.userId, userId))
     } else {
       await db
         .insert(webhooks)
         .values({
-          userId: session.user.id,
+          userId,
           url,
           enabled,
         })
@@ -66,4 +74,4 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
-} 
+}

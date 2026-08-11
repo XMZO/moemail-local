@@ -6,7 +6,7 @@ import { BrandHeader } from "@/components/ui/brand-header"
 import { FloatingLanguageSwitcher } from "@/components/layout/floating-language-switcher"
 import { SharedMessageList } from "@/components/emails/shared-message-list"
 import { SharedMessageDetail } from "@/components/emails/shared-message-detail"
-import { EMAIL_CONFIG } from "@/config"
+import { useRuntimeConfig } from "@/providers"
 
 interface Email {
   id: string
@@ -46,6 +46,7 @@ export function SharedEmailPageClient({
 }: SharedEmailPageClientProps) {
   const t = useTranslations("emails")
   const tShared = useTranslations("emails.shared")
+  const { emailPollIntervalMs: pollIntervalMs } = useRuntimeConfig()
 
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [selectedMessage, setSelectedMessage] = useState<MessageDetail | null>(null)
@@ -78,7 +79,7 @@ export function SharedEmailPageClient({
         const messagesData = await messagesResponse.json() as {
           messages: Message[]
           nextCursor: string | null
-          total: number
+          total?: number
         }
 
         if (!cursor) {
@@ -95,19 +96,21 @@ export function SharedEmailPageClient({
             // 没有重复，直接使用新消息
             setMessages(newMessages)
             setNextCursor(messagesData.nextCursor)
-            setTotal(messagesData.total)
+            setTotal(messagesData.total ?? newMessages.length)
             return
           }
           // 有重复，只添加新的消息
           const uniqueNewMessages = newMessages.slice(0, lastDuplicateIndex)
           setMessages([...uniqueNewMessages, ...oldMessages])
-          setTotal(messagesData.total)
+          setTotal(current => messagesData.total ?? current + uniqueNewMessages.length)
           return
         }
         // 加载更多：追加到列表末尾
         setMessages(prev => [...prev, ...(messagesData.messages || [])])
         setNextCursor(messagesData.nextCursor)
-        setTotal(messagesData.total)
+        if (messagesData.total !== undefined) {
+          setTotal(messagesData.total)
+        }
       }
     } catch (err) {
       console.error("Failed to fetch messages:", err)
@@ -123,7 +126,7 @@ export function SharedEmailPageClient({
       if (!refreshing && !loadingMore) {
         fetchMessages()
       }
-    }, EMAIL_CONFIG.POLL_INTERVAL)
+    }, pollIntervalMs)
   }
 
   const stopPolling = () => {
@@ -135,7 +138,30 @@ export function SharedEmailPageClient({
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await fetchMessages()
+    await fetchMessagesWithTotal()
+  }
+
+  const fetchMessagesWithTotal = async () => {
+    const url = new URL(`/api/shared/${token}/messages`, window.location.origin)
+    url.searchParams.set('includeTotal', '1')
+
+    try {
+      const response = await fetch(url)
+      if (!response.ok) return
+
+      const data = await response.json() as {
+        messages: Message[]
+        nextCursor: string | null
+        total?: number
+      }
+      setMessages(data.messages)
+      setNextCursor(data.nextCursor)
+      setTotal(data.total ?? data.messages.length)
+    } catch (error) {
+      console.error("Failed to refresh messages:", error)
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   // 启动轮询
@@ -145,7 +171,7 @@ export function SharedEmailPageClient({
       stopPolling()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [token, pollIntervalMs])
 
   const handleLoadMore = () => {
     if (nextCursor && !loadingMore) {

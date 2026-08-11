@@ -1,6 +1,7 @@
 export const EMAIL_CONFIG = {
   MAX_ACTIVE_EMAILS: 30, // Maximum number of active emails
-  POLL_INTERVAL: 10_000, // Polling interval in milliseconds
+  // 实际轮询间隔来自运行配置 server.emailPollIntervalMs，见 useRuntimeConfig()
+  POLL_INTERVAL: 25_000, // Fallback polling interval in milliseconds
   DEFAULT_DAILY_SEND_LIMITS: {
     emperor: 0,   // 皇帝无限制
     duke: 5,      // 公爵每日5封
@@ -9,4 +10,4 @@ export const EMAIL_CONFIG = {
   },
 } as const
 
-export type EmailConfig = typeof EMAIL_CONFIG 
+export type EmailConfig = typeof EMAIL_CONFIG

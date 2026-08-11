@@ -1,25 +1,22 @@
-name: Deploy
+name: Deploy Cloudflare Baseline (Manual)
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY_BASELINE_6c19aef to deploy the archived Cloudflare baseline
+        required: true
+        type: string
 
 jobs:
   deploy:
+    if: ${{ inputs.confirmation == 'DEPLOY_BASELINE_6c19aef' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Get full git history for checking file changes
-
-      - name: Get previous tag
-        id: previoustag
-        if: github.event_name == 'push'
-        run: |
-          echo "tag=$(git describe --tags --abbrev=0 HEAD^)" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          ref: 6c19aefc71ca60bc194a6003c13bae1e2960363b
+          fetch-depth: 1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2

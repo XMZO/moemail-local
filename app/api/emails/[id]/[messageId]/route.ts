@@ -2,14 +2,20 @@ import { NextResponse } from "next/server"
 import { createDb } from "@/lib/db"
 import { messages, emails } from "@/lib/schema"
 import { and, eq } from "drizzle-orm"
-import { getUserId } from "@/lib/apiKey"
-export const runtime = "edge"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
+export const runtime = "nodejs"
 
 export async function DELETE(
     request: Request,
     { params }: { params: Promise<{ id: string; messageId: string }> }
 ) {
-  const userId = await getUserId()
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   try {
     const db = createDb()
@@ -17,7 +23,7 @@ export async function DELETE(
     const email = await db.query.emails.findFirst({
       where: and(
           eq(emails.id, id),
-          eq(emails.userId, userId!)
+          eq(emails.userId, userId)
       )
     })
 
@@ -55,16 +61,22 @@ export async function DELETE(
   }
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string; messageId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string; messageId: string }> }) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
+
   try {
     const { id, messageId } = await params
     const db = createDb()
-    const userId = await getUserId()
 
     const email = await db.query.emails.findFirst({
       where: and(
         eq(emails.id, id),
-        eq(emails.userId, userId!)
+        eq(emails.userId, userId)
       )
     })
 
@@ -109,4 +121,4 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       { status: 500 }
     )
   }
-} 
+}

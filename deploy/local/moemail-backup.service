@@ -1,0 +1,15 @@
+[Unit]
+Description=Back up the MoeMail database
+After=moemail.service
+OnFailure=moemail-alert@%n.service
+
+[Service]
+Type=oneshot
+User=moemail
+Group=moemail
+WorkingDirectory=/opt/moemail
+ExecStart=/usr/bin/pnpm db:backup
+ExecStartPost=/usr/bin/pnpm backup:offsite
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

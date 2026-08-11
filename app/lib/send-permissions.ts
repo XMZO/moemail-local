@@ -1,8 +1,8 @@
 import { createDb } from "@/lib/db"
 import { userRoles, roles, messages, emails } from "@/lib/schema"
 import { eq, and, gte } from "drizzle-orm"
-import { getRequestContext } from "@cloudflare/next-on-pages"
 import { EMAIL_CONFIG } from "@/config"
+import { CONFIG_KEYS, getConfigValue } from "@/lib/config-store"
 
 export interface SendPermissionResult {
   canSend: boolean
@@ -15,8 +15,7 @@ export async function checkSendPermission(
   skipDailyLimitCheck = false
 ): Promise<SendPermissionResult> {
   try {
-    const env = getRequestContext().env
-    const enabled = await env.SITE_CONFIG.get("EMAIL_SERVICE_ENABLED")
+    const enabled = await getConfigValue(CONFIG_KEYS.EMAIL_SERVICE_ENABLED)
 
     if (enabled !== "true") {
       return {
@@ -91,8 +90,7 @@ async function getUserDailyLimit(userId: string): Promise<number> {
 
     const userRoleNames = userRoleData.map(r => r.roleName)
 
-    const env = getRequestContext().env
-    const roleLimitsStr = await env.SITE_CONFIG.get("EMAIL_ROLE_LIMITS")
+    const roleLimitsStr = await getConfigValue(CONFIG_KEYS.EMAIL_ROLE_LIMITS)
     
     const customLimits = roleLimitsStr ? JSON.parse(roleLimitsStr) : {}
     
@@ -122,4 +120,4 @@ async function getUserDailyLimit(userId: string): Promise<number> {
 
 export async function checkBasicSendPermission(userId: string): Promise<SendPermissionResult> {
   return checkSendPermission(userId, true)
-} 
+}

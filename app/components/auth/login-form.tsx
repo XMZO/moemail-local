@@ -22,6 +22,7 @@ import {
 import { Github, Loader2, KeyRound, User2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Turnstile } from "@/components/auth/turnstile"
+import { useRuntimeConfig } from "@/providers"
 
 interface TurnstileConfigProps {
   enabled: boolean
@@ -49,6 +50,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login")
   const { toast } = useToast()
   const t = useTranslations("auth.loginForm")
+  const { oauth } = useRuntimeConfig()
 
   const turnstileSiteKey = turnstile?.siteKey ?? ""
   const turnstileEnabled = Boolean(turnstile?.enabled && turnstileSiteKey)
@@ -257,6 +259,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
                         errors.password && "border-destructive focus-visible:ring-destructive"
                       )}
                       type="password"
+                      maxLength={256}
                       placeholder={t("fields.password")}
                       value={password}
                       onChange={(e) => {
@@ -282,26 +285,31 @@ export function LoginForm({ turnstile }: LoginFormProps) {
                   {t("actions.login")}
                 </Button>
 
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
+                {(oauth.github || oauth.google) && (
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">
+                        {t("actions.or")}
+                      </span>
+                    </div>
                   </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-background px-2 text-muted-foreground">
-                      {t("actions.or")}
-                    </span>
-                  </div>
-                </div>
+                )}
 
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleGithubLogin}
-                >
-                  <Github className="mr-2 h-4 w-4" />
-                  {t("actions.githubLogin")}
-                </Button>
+                {oauth.github && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleGithubLogin}
+                  >
+                    <Github className="mr-2 h-4 w-4" />
+                    {t("actions.githubLogin")}
+                  </Button>
+                )}
 
+                {oauth.google && (
                 <Button
                   variant="outline"
                   className="w-full"
@@ -327,6 +335,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
                   </svg>
                   {t("actions.googleLogin")}
                 </Button>
+                )}
               </div>
             </TabsContent>
             <TabsContent value="register" className="space-y-4 mt-0">
@@ -365,6 +374,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
                         errors.password && "border-destructive focus-visible:ring-destructive"
                       )}
                       type="password"
+                      maxLength={256}
                       placeholder={t("fields.password")}
                       value={password}
                       onChange={(e) => {
@@ -389,6 +399,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
                         errors.confirmPassword && "border-destructive focus-visible:ring-destructive"
                       )}
                       type="password"
+                      maxLength={256}
                       placeholder={t("fields.confirmPassword")}
                       value={confirmPassword}
                       onChange={(e) => {

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
-import { getRequestContext } from "@cloudflare/next-on-pages"
-import { checkPermission } from "@/lib/auth"
 import { PERMISSIONS } from "@/lib/permissions"
 import { EMAIL_CONFIG } from "@/config"
+import { CONFIG_KEYS, getConfigValues, setConfigValues } from "@/lib/config-store"
+import { authorizeRequest } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 interface EmailServiceConfig {
   enabled: boolean
@@ -15,22 +15,21 @@ interface EmailServiceConfig {
   }
 }
 
-export async function GET() {
-  const canAccess = await checkPermission(PERMISSIONS.MANAGE_CONFIG)
-
-  if (!canAccess) {
-    return NextResponse.json({
-      error: "权限不足"
-    }, { status: 403 })
-  }
+export async function GET(request: Request) {
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_CONFIG,
+  })
+  if (!authorization.ok) return authorization.response
 
   try {
-    const env = getRequestContext().env
-    const [enabled, apiKey, roleLimits] = await Promise.all([
-      env.SITE_CONFIG.get("EMAIL_SERVICE_ENABLED"),
-      env.SITE_CONFIG.get("RESEND_API_KEY"),
-      env.SITE_CONFIG.get("EMAIL_ROLE_LIMITS")
+    const config = await getConfigValues([
+      CONFIG_KEYS.EMAIL_SERVICE_ENABLED,
+      CONFIG_KEYS.RESEND_API_KEY,
+      CONFIG_KEYS.EMAIL_ROLE_LIMITS,
     ])
+    const enabled = config.EMAIL_SERVICE_ENABLED
+    const apiKey = config.RESEND_API_KEY
+    const roleLimits = config.EMAIL_ROLE_LIMITS
 
     const customLimits = roleLimits ? JSON.parse(roleLimits) : {}
     
@@ -54,13 +53,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const canAccess = await checkPermission(PERMISSIONS.MANAGE_CONFIG)
-
-  if (!canAccess) {
-    return NextResponse.json({
-      error: "权限不足"
-    }, { status: 403 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_CONFIG,
+  })
+  if (!authorization.ok) return authorization.response
 
   try {
     const config = await request.json() as EmailServiceConfig
@@ -72,8 +68,6 @@ export async function POST(request: Request) {
       )
     }
 
-    const env = getRequestContext().env
-    
     const customLimits: { duke?: number; knight?: number } = {}
     if (config.roleLimits?.duke !== undefined) {
       customLimits.duke = config.roleLimits.duke
@@ -82,11 +76,11 @@ export async function POST(request: Request) {
       customLimits.knight = config.roleLimits.knight
     }
 
-    await Promise.all([
-      env.SITE_CONFIG.put("EMAIL_SERVICE_ENABLED", config.enabled.toString()),
-      env.SITE_CONFIG.put("RESEND_API_KEY", config.apiKey),
-      env.SITE_CONFIG.put("EMAIL_ROLE_LIMITS", JSON.stringify(customLimits))
-    ])
+    await setConfigValues({
+      EMAIL_SERVICE_ENABLED: config.enabled.toString(),
+      RESEND_API_KEY: config.apiKey,
+      EMAIL_ROLE_LIMITS: JSON.stringify(customLimits),
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -96,4 +90,4 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
-} 
+}

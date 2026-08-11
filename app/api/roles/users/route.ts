@@ -1,16 +1,16 @@
 import { createDb } from "@/lib/db"
 import { users, userRoles, roles } from "@/lib/schema"
-import { eq, like, or, sql } from "drizzle-orm"
-import { checkPermission } from "@/lib/auth"
+import { eq, or, sql } from "drizzle-orm"
 import { PERMISSIONS, ROLES } from "@/lib/permissions"
+import { authorizeRequest } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 export async function GET(request: Request) {
-  const canPromote = await checkPermission(PERMISSIONS.PROMOTE_USER)
-  if (!canPromote) {
-    return Response.json({ error: "权限不足" }, { status: 403 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.PROMOTE_USER,
+  })
+  if (!authorization.ok) return authorization.response
 
   const { searchParams } = new URL(request.url)
   const page = Math.max(1, Number(searchParams.get("page") || "1"))
@@ -22,9 +22,9 @@ export async function GET(request: Request) {
   try {
     const searchCondition = search
       ? or(
-          like(users.username, `%${search}%`),
-          like(users.email, `%${search}%`),
-          like(users.name, `%${search}%`)
+          sql`LOWER(COALESCE(${users.username}, '')) LIKE ${`%${search.toLowerCase()}%`}`,
+          sql`LOWER(COALESCE(${users.email}, '')) LIKE ${`%${search.toLowerCase()}%`}`,
+          sql`LOWER(COALESCE(${users.name}, '')) LIKE ${`%${search.toLowerCase()}%`}`
         )
       : undefined
 
@@ -79,10 +79,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const canPromote = await checkPermission(PERMISSIONS.PROMOTE_USER)
-  if (!canPromote) {
-    return Response.json({ error: "权限不足" }, { status: 403 })
-  }
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.PROMOTE_USER,
+  })
+  if (!authorization.ok) return authorization.response
 
   try {
     const json = await request.json()

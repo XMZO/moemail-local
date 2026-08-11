@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server"
-import { getUserId } from "@/lib/apiKey"
 import { createDb } from "@/lib/db"
 import { emails, messages } from "@/lib/schema"
 import { eq } from "drizzle-orm"
-import { getRequestContext } from "@cloudflare/next-on-pages"
 import { checkSendPermission } from "@/lib/send-permissions"
+import { CONFIG_KEYS, getConfigValue } from "@/lib/config-store"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 interface SendEmailRequest {
   to: string
@@ -49,13 +50,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = await getUserId()
-    if (!userId) {
-      return NextResponse.json(
-        { error: "未授权" },
-        { status: 401 }
-      )
-    }
+    const authorization = await authorizeRequest(request, {
+      permission: PERMISSIONS.MANAGE_EMAIL,
+    })
+    if (!authorization.ok) return authorization.response
+
+    const { userId } = authorization.principal
 
     const { id } = await params
     const db = createDb()
@@ -97,8 +97,7 @@ export async function POST(
       )
     }
 
-    const env = getRequestContext().env
-    const apiKey = await env.SITE_CONFIG.get("RESEND_API_KEY")
+    const apiKey = await getConfigValue(CONFIG_KEYS.RESEND_API_KEY)
 
     if (!apiKey) {
       return NextResponse.json(
@@ -131,4 +130,4 @@ export async function POST(
       { status: 500 }
     )
   }
-} 
+}

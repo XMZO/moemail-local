@@ -1,15 +1,19 @@
 import { createDb } from "@/lib/db"
 import { emailShares, messages } from "@/lib/schema"
-import { eq, and } from "drizzle-orm"
+import { and, eq, isNull, ne, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
+import { setupRequiredResponse } from "@/lib/request-auth"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 // 通过分享token获取消息详情
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string; messageId: string }> }
 ) {
+  const setupRequired = setupRequiredResponse()
+  if (setupRequired) return setupRequired
+
   const { token, messageId } = await params
   const db = createDb()
 
@@ -49,7 +53,11 @@ export async function GET(
     const message = await db.query.messages.findFirst({
       where: and(
         eq(messages.id, messageId),
-        eq(messages.emailId, share.email.id)
+        eq(messages.emailId, share.email.id),
+        or(
+          ne(messages.type, "sent"),
+          isNull(messages.type),
+        ),
       )
     })
 

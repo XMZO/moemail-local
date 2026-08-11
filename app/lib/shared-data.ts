@@ -105,6 +105,14 @@ export async function getSharedEmailMessages(token: string, limit = 20): Promise
     // 获取邮箱的消息列表（多获取一条用于判断是否有更多）
     const messageList = await db.query.messages.findMany({
       where: baseConditions,
+      columns: {
+        id: true,
+        fromAddress: true,
+        toAddress: true,
+        subject: true,
+        receivedAt: true,
+        sentAt: true,
+      },
       orderBy: [desc(messages.receivedAt), desc(messages.id)],
       limit: limit + 1
     })

@@ -3,14 +3,20 @@ import { and, eq, gt, lt, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { emails } from "@/lib/schema"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
-import { getUserId } from "@/lib/apiKey"
+import { authorizeRequest } from "@/lib/request-auth"
+import { PERMISSIONS } from "@/lib/permissions"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 const PAGE_SIZE = 20
 
 export async function GET(request: Request) {
-  const userId = await getUserId()
+  const authorization = await authorizeRequest(request, {
+    permission: PERMISSIONS.MANAGE_EMAIL,
+  })
+  if (!authorization.ok) return authorization.response
+
+  const { userId } = authorization.principal
 
   const { searchParams } = new URL(request.url)
   const cursor = searchParams.get('cursor')
@@ -19,7 +25,7 @@ export async function GET(request: Request) {
 
   try {
     const baseConditions = and(
-      eq(emails.userId, userId!),
+      eq(emails.userId, userId),
       gt(emails.expiresAt, new Date())
     )
 
@@ -73,4 +79,4 @@ export async function GET(request: Request) {
       { status: 500 }
     )
   }
-} 
+}
