@@ -1,10 +1,10 @@
 import { Env } from '../types'
 import { drizzle } from 'drizzle-orm/d1'
-import { messages, emails, webhooks } from '../app/lib/schema'
+import { messages, emails, webhooks } from '../app/lib/schema.sqlite'
 import { eq, sql } from 'drizzle-orm'
 import PostalMime from 'postal-mime'
 import { WEBHOOK_CONFIG } from '../app/config/webhook'
-import { EmailMessage } from '../app/lib/webhook'
+import type { EmailMessage } from '../app/lib/webhook'
 
 const handleEmail = async (message: ForwardableEmailMessage, env: Env) => {
   const db = drizzle(env.DB, { schema: { messages, emails, webhooks } })

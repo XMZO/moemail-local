@@ -338,6 +338,11 @@ assert.match(workflowSource, /push-by-digest=true/)
 assert.match(workflowSource, /Smoke-test native image/)
 assert.match(workflowSource, /docker image inspect --format/)
 assert.match(workflowSource, /docker run --rm --entrypoint/)
+assert.match(workflowSource, /Verify release tag matches package version/)
+assert.match(workflowSource, /pnpm validate:email-worker/)
+assert.match(workflowSource, /pnpm validate:deployment/)
+assert.match(workflowSource, /pnpm exec tsc --noEmit --incremental false/)
+assert.match(workflowSource, /build:\s+needs:\s+- prepare\s+- preflight/m)
 assert.match(workflowSource, /docker buildx imagetools create/)
 assert.match(workflowSource, /Expected exactly 2 native digests/)
 assert.match(
@@ -394,6 +399,7 @@ console.log(JSON.stringify({
   systemdSuccessfulRestart: true,
   singleAuthoritativeWebStartupValidation: true,
   publishWorkflowTagsOrManualOnly: true,
+  publishWorkflowRunsPreflight: true,
   publishWorkflowBuildsThreeImagesOnTwoNativeArchitectures: true,
   publishWorkflowAvoidsQemu: true,
   digestArtifactsAreImageKindDelimited: true,

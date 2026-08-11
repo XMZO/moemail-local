@@ -13,6 +13,7 @@
 - 两份 Compose 文件均通过官方 Compose JSON Schema 与 YAML 解析；`compose.yml` 是不含 PostgreSQL 服务或镜像的 SQLite 部署，`compose.postgres.yml` 是独立的内置 PostgreSQL 部署。二者均无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy，且所有容器都只使用同目录相对 bind mounts。systemd units 无 `EnvironmentFile`。所有 `deploy/**/*.sh` 通过 `bash -n`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
 - `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
 - `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、同版本 GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、manifest 合并）。
+- `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。
 - `pnpm validate:runtime-config` 通过：损坏 YAML、未知字段、不可打开或没有站主的 SQLite 目标均被拒绝且旧值继续生效；有效直接文件修改由约 1 秒 watcher 自动应用。进程内 revision 竞争、外部文件 fingerprint 失效，以及两个真实 Node 进程同时持同一 fingerprint 保存都恰好一个成功；跨进程保存锁在退出后无残留。
 - `pnpm validate:runtime-config:cold` 通过：首份配置、主文件与 LKG 相同、以及仅剩 LKG 三种路径都必须重新验证数据库中恰有一个站主后才开放完成态；不可读目标、空库与无站主 LKG 均被拒绝且不会创建目标文件。坏 PostgreSQL 主配置回退 SQLite LKG 时，实际绑定 driver 与维护 CLI 也只使用已验证的 SQLite 配置。坏配置仍允许 Web 恢复入口启动。
 - `pnpm validate:setup` 通过：首次 SQLite setup、已暂存 pepper 的同账号续跑、不同既有站主 409、两个真实 Node 进程争用同一 setup operation lock，以及坏 YAML/非对象 payload 拒绝均通过；另覆盖进程 A 完成后进程 B 持旧内存 token 的顺序竞争，B 在取锁后重新加载并以 409 拒绝。该测试构造等价的 staged 状态，不冒充进程崩溃注入测试。
@@ -87,7 +88,7 @@
 - 较早的真实 production HTTP 曾将注册/登录客户端上限临时设为 2，注册依次返回 `201/409/429`，Credentials callback 依次返回 `302/302/429`；两种 429 都带 `Retry-After` 和 `AUTH_RATE_LIMITED`。当前 `pnpm validate:auth-abuse` 已按配置对象覆盖进程全局上限、有界客户端 Map、代理头 opt-in、忽略 `X-User-Id` 与 scrypt 并发快速失败。
 - Webhook 保存前和发送时均执行 SSRF 校验；loopback、private、link-local、metadata、localhost 与 IPv4-mapped IPv6 被拒绝，发送时使用已验证 IP 且不跟随重定向。
 
-可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
+可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:email-worker`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
 
 ## SQLite 轮询基线
 
@@ -105,13 +106,14 @@
 
 ## Cloudflare Worker
 
-以下三条 Wrangler dry-run 均通过：
+以下三种 Worker 配置使用 Wrangler 4.120.1 dry-run 均通过：
 
-- 直连 HTTPS POST：`wrangler.email.example.json`，上传 6.18 KiB。
-- R2 + Queue 耐久模式：`wrangler.email.durable.example.json`，上传 33.05 KiB，bindings/cron 配置可解析。
-- 原 D1 回退 Worker：`wrangler.email.d1.legacy.example.json`，上传 348.66 KiB。
+- 直连 HTTPS POST：`wrangler.email.example.json`，上传 6.37 KiB。
+- R2 + Queue 耐久模式：`wrangler.email.durable.example.json`，上传 6.37 KiB，bindings/cron 配置可解析。
+- 原 D1 回退 Worker：`wrangler.email.d1.legacy.example.json`，上传 286.09 KiB；入口显式绑定 SQLite schema，不会打包本地 PostgreSQL/SQLite 驱动。
 
-当前环境没有 Cloudflare 账号资源，因此未伪造真实 Email Routing、R2、Queue、DLQ 或 scheduled 恢复结果。Wrangler 3.93.0 的 v4 更新提示不影响本轮 dry-run，但上线前应单独评估升级。
+直连模式已在真实 Cloudflare Email Routing 上完成 MX、catch-all、Worker Secret、实时 tail 与公网 HTTPS 入库验证。验收时发现 Cloudflare 边缘运行时不实现 Fetch 的 `redirect: "error"`；现已改为 `manual`，由非 2xx 检查拒绝重定向，真实邮件复测通过。R2、Queue、DLQ 与 scheduled 恢复仍只有 dry-run，未冒充目标账号实网验收。
+
 
 ## 仍需部署环境验收
 

@@ -183,7 +183,10 @@ async function forwardEmail(
         "X-MoeMail-Raw-Size": String(envelope.rawSize),
       },
       body,
-      redirect: "error",
+      // Cloudflare Workers implements only "follow" and "manual". Keep
+      // redirects fail-closed by inspecting response.ok below instead of
+      // following them to a potentially different origin.
+      redirect: "manual",
       signal: controller.signal,
     })
 

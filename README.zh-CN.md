@@ -28,8 +28,8 @@
 
 | 部署方式 | 文件 | 启动命令 | 拉取的镜像 |
 | --- | --- | --- | --- |
-| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:v0.16.2` |
-| 内置 PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `v0.16.2` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
+| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:v0.16.3` |
+| 内置 PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `v0.16.3` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
 
 两个文件都是完整、独立的部署定义。**禁止使用多个 `-f` 参数叠加它们**，也不要让两套部署同时使用同一个 `./data`。它们使用相同的项目名、回环端口和持久化路径。切换数据库需要按迁移流程执行，不能靠 Compose 覆盖完成。
 
@@ -62,7 +62,7 @@ set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.2/compose.yml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.3/compose.yml \
   -o compose.yml
 docker compose config --quiet
 docker compose up -d
@@ -75,16 +75,16 @@ docker compose ps
 
 PostgreSQL 部署会拉取三个镜像：
 
-- `ghcr.io/xmzo/moemail-local:v0.16.2`
-- `ghcr.io/xmzo/moemail-local-postgres:v0.16.2`
-- `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.2`
+- `ghcr.io/xmzo/moemail-local:v0.16.3`
+- `ghcr.io/xmzo/moemail-local-postgres:v0.16.3`
+- `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.3`
 
 ```bash
 set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.2/compose.postgres.yml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.3/compose.postgres.yml \
   -o compose.postgres.yml
 docker compose -f compose.postgres.yml config --quiet
 docker compose -f compose.postgres.yml up -d
@@ -161,7 +161,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.16.2 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.3 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -264,7 +264,7 @@ docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.16.2 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.3 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -272,6 +272,7 @@ pnpm build
 pnpm exec tsc --noEmit --incremental false
 pnpm validate:no-local-env
 pnpm validate:deployment
+pnpm validate:email-worker
 ```
 
 开发服务器使用 `pnpm dev`。本地运行也必须完成首次初始化，之后应用路由才可正常使用。
