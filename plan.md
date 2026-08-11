@@ -59,7 +59,7 @@ Docker Compose scheduler/monitor/offsite profiles
 | R2 + Queue 耐久转发 | 源码/配置完成；实网待验收 | `wrangler.email.durable.example.json` |
 | D1 Worker 回退资产 | 已保留 | `workers/email-receiver-d1.legacy.ts` |
 | systemd 动态 maintenance scheduler | 源码/本机 LKG 验证完成；Linux unit 待验收 | `scripts/ops/runtime-scheduler.ts`、`deploy/local/` |
-| Docker Compose 单文件部署 | 单个 `compose.yaml`、同目录 bind mounts、无内置 Caddy、无 env/build；官方 Compose v5.4.0 默认/全 profiles `config` 通过，实际 `docker compose up -d` 待目标 Docker 主机验收 | `compose.yaml`、`.github/workflows/publish-docker.yml` |
+| Docker Compose 双文件部署 | `compose.yml` 为纯 SQLite，`compose.postgres.yml` 为独立内置 PostgreSQL；二者均使用同目录 bind mounts、无内置 Caddy、无 env/build，且不能叠加；官方 Compose v5.4.0 默认/全 profiles `config` 通过，实际 pull/up 待目标 Docker 主机验收 | `compose.yml`、`compose.postgres.yml`、`.github/workflows/publish-docker.yml` |
 | 定时备份、监控、异地同步 | 源码/配置完成；目标环境待验收 | `scripts/ops/`、Compose profiles、systemd units |
 | 唯一站主安全初始化 | 首次 WebUI 创建；数据库缺失站主时回到 token 保护的恢复向导 | `app/lib/setup-service.ts`、`app/lib/emperor.ts` |
 | Credentials 密码、运行时 secret 与防滥用 | 已完成 | `app/lib/password.ts`、`app/lib/auth-abuse-guard.ts`、`scripts/validate-config.ts` |

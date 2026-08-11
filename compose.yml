@@ -1,0 +1,120 @@
+name: moemail
+
+x-images:
+  app: &app-image ghcr.io/xmzo/moemail-local:v0.16.2
+
+x-moemail-service: &moemail-service
+  image: *app-image
+  pull_policy: always
+  volumes:
+    - ./data:/app/data
+  depends_on:
+    storage-init:
+      condition: service_completed_successfully
+  stop_grace_period: 30s
+
+services:
+  storage-init:
+    image: *app-image
+    pull_policy: always
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        install -d -o 10001 -g 10001 -m 0700 /app/data /app/data/backups
+    volumes:
+      - ./data:/app/data
+
+  moemail:
+    <<: *moemail-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/internal/health').then(r=>process.exit(r.ok ? 0 : 1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+  cleanup:
+    <<: *moemail-service
+    profiles: [maintenance]
+    restart: "no"
+    command: [cleanup]
+    healthcheck:
+      disable: true
+
+  backup:
+    <<: *moemail-service
+    profiles: [maintenance]
+    restart: "no"
+    command: [backup]
+    healthcheck:
+      disable: true
+
+  restore:
+    <<: *moemail-service
+    profiles: [restore]
+    restart: "no"
+    entrypoint:
+      - /app/deploy/docker/entrypoint.sh
+      - restore
+    command: []
+    healthcheck:
+      disable: true
+
+  scheduler:
+    <<: *moemail-service
+    profiles: [scheduler]
+    restart: unless-stopped
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      moemail:
+        condition: service_healthy
+    command: [scheduler]
+    healthcheck:
+      disable: true
+
+  monitor:
+    image: *app-image
+    pull_policy: always
+    profiles: [monitoring]
+    restart: unless-stopped
+    user: "10001:10001"
+    stop_grace_period: 30s
+    network_mode: "service:moemail"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      moemail:
+        condition: service_healthy
+    command: [monitor-scheduler]
+    healthcheck:
+      disable: true
+
+  offsite-backup:
+    <<: *moemail-service
+    profiles: [offsite]
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data:ro
+    command: [offsite-scheduler]
+    healthcheck:
+      disable: true

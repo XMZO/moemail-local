@@ -16,13 +16,15 @@ function visitCompose(value: unknown, path = "") {
   }
 }
 
-const composeSource = readFileSync("compose.yaml", "utf8")
-assert.doesNotMatch(
-  composeSource,
-  /\$\{[^}]+\}/,
-  "compose.yaml must not read shell or .env interpolation",
-)
-visitCompose(parse(composeSource), "compose.yaml")
+for (const file of ["compose.yml", "compose.postgres.yml"]) {
+  const composeSource = readFileSync(file, "utf8")
+  assert.doesNotMatch(
+    composeSource,
+    /\$\{[^}]+\}/,
+    `${file} must not read shell or .env interpolation`,
+  )
+  visitCompose(parse(composeSource), file)
+}
 
 function sourceFiles(path: string): string[] {
   return readdirSync(path, { withFileTypes: true }).flatMap(entry => {
@@ -67,11 +69,15 @@ for (const file of readdirSync("deploy/local")) {
 }
 
 assert.equal(existsSync(".env.example"), false)
+assert.equal(existsSync("compose.yml"), true)
+assert.equal(existsSync("compose.postgres.yml"), true)
+assert.equal(existsSync("compose.yaml"), false)
 assert.equal(existsSync("compose.postgres.yaml"), false)
 console.log(JSON.stringify({
   composeEnvironmentKeysAbsent: true,
   composeInterpolationAbsent: true,
-  composePostgresVariantRemoved: true,
+  dualComposeFilesPresent: true,
+  legacyComposeYamlRemoved: true,
   appEnvironmentConfigReadsAbsent: true,
   systemdEnvironmentInjectionAbsent: true,
   envExampleRemoved: true,
