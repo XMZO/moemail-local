@@ -1,7 +1,7 @@
 name: moemail
 
 x-images:
-  app: &app-image ghcr.io/xmzo/moemail-local:v0.16.3
+  app: &app-image ghcr.io/xmzo/moemail-local:latest
 
 x-moemail-service: &moemail-service
   image: *app-image

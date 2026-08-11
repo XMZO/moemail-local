@@ -12,7 +12,7 @@
 - Web 源码未发现 `runtime = "edge"`、`getRequestContext()`、`SITE_CONFIG`、`drizzle-orm/d1` 或 `env.DB` 残留；D1 依赖只存在于明确标记的 legacy Worker/官方回退资产。
 - 两份 Compose 文件均通过官方 Compose JSON Schema 与 YAML 解析；`compose.yml` 是不含 PostgreSQL 服务或镜像的 SQLite 部署，`compose.postgres.yml` 是独立的内置 PostgreSQL 部署。二者均无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy，且所有容器都只使用同目录相对 bind mounts。systemd units 无 `EnvironmentFile`。所有 `deploy/**/*.sh` 通过 `bash -n`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
 - `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
-- `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、同版本 GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、manifest 合并）。
+- `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、统一 `latest` GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、manifest 合并）。
 - `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。
 - `pnpm validate:runtime-config` 通过：损坏 YAML、未知字段、不可打开或没有站主的 SQLite 目标均被拒绝且旧值继续生效；有效直接文件修改由约 1 秒 watcher 自动应用。进程内 revision 竞争、外部文件 fingerprint 失效，以及两个真实 Node 进程同时持同一 fingerprint 保存都恰好一个成功；跨进程保存锁在退出后无残留。
 - `pnpm validate:runtime-config:cold` 通过：首份配置、主文件与 LKG 相同、以及仅剩 LKG 三种路径都必须重新验证数据库中恰有一个站主后才开放完成态；不可读目标、空库与无站主 LKG 均被拒绝且不会创建目标文件。坏 PostgreSQL 主配置回退 SQLite LKG 时，实际绑定 driver 与维护 CLI 也只使用已验证的 SQLite 配置。坏配置仍允许 Web 恢复入口启动。

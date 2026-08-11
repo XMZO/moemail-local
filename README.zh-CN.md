@@ -28,8 +28,8 @@
 
 | 部署方式 | 文件 | 启动命令 | 拉取的镜像 |
 | --- | --- | --- | --- |
-| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:v0.16.3` |
-| 内置 PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `v0.16.3` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
+| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:latest` |
+| 内置 PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `latest` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
 
 两个文件都是完整、独立的部署定义。**禁止使用多个 `-f` 参数叠加它们**，也不要让两套部署同时使用同一个 `./data`。它们使用相同的项目名、回环端口和持久化路径。切换数据库需要按迁移流程执行，不能靠 Compose 覆盖完成。
 
@@ -62,7 +62,7 @@ set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.3/compose.yml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.yml \
   -o compose.yml
 docker compose config --quiet
 docker compose up -d
@@ -75,16 +75,16 @@ docker compose ps
 
 PostgreSQL 部署会拉取三个镜像：
 
-- `ghcr.io/xmzo/moemail-local:v0.16.3`
-- `ghcr.io/xmzo/moemail-local-postgres:v0.16.3`
-- `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.3`
+- `ghcr.io/xmzo/moemail-local:latest`
+- `ghcr.io/xmzo/moemail-local-postgres:latest`
+- `ghcr.io/xmzo/moemail-local-postgres-tools:latest`
 
 ```bash
 set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.3/compose.postgres.yml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.postgres.yml \
   -o compose.postgres.yml
 docker compose -f compose.postgres.yml config --quiet
 docker compose -f compose.postgres.yml up -d
@@ -249,7 +249,7 @@ docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
 
 1. 记录部署使用的是 `compose.yml` 还是 `compose.postgres.yml`；普通镜像升级期间禁止切换方案。
 2. 使用当前版本生成有效的数据库 + `config.yaml.lkg` 配对备份，并导出到 `./data` 之外。
-3. 将目标 release 中的同名 Compose 下载为临时文件，执行 `docker compose -f <临时文件> config --quiet`。
+3. Compose 结构有更新时，从 `master` 下载同名文件为临时文件，并执行 `docker compose -f <临时文件> config --quiet`；仅更新镜像时可保留现有文件。
 4. 只替换所选文件，然后使用该文件依次执行 `pull`、`up -d`、`ps`、数据库校验、登录、收信和备份检查。
 5. 定期在独立目录恢复演练；只修改 Compose project name 不能隔离相对路径 bind mount。
 
@@ -258,7 +258,7 @@ docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
 - 禁止叠加两个 Compose 文件，也不要发布内置 PostgreSQL 端口。
 - `data/config.yaml`、`data/config.yaml.lkg`、数据库和备份都含敏感信息，禁止提交 `data/`。
 - 应用只通过宿主 HTTPS 反代开放，并且只启用确实需要的集成。
-- 使用固定版本 tag 或 digest，不在生产中使用 `latest`；每次升级前先制作可恢复备份。
+- Compose 有意跟踪 `latest`；只在整个镜像发布 Action 成功后执行 `pull`，每次更新前先制作可恢复备份。需要回滚时，将同一方案的全部镜像一起固定到同一个旧 tag 或 digest。
 - 对公网提供服务前，完整阅读[部署与运维指南](docs/local-deployment.zh-CN.md)。
 
 ## 开发与验证

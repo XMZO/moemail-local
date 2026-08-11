@@ -28,8 +28,8 @@ This repository is the local-first fork of [beilunyang/moemail](https://github.c
 
 | Deployment | File | Start command | Images pulled |
 | --- | --- | --- | --- |
-| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:v0.16.3` |
-| Bundled PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | App, PostgreSQL, and PostgreSQL tools images at `v0.16.3` |
+| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:latest` |
+| Bundled PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | App, PostgreSQL, and PostgreSQL tools images at `latest` |
 
 Both files are complete, standalone deployments. **Do not combine them** with multiple `-f` arguments, and do not run both against the same `./data` directory. They use the same project name, loopback port, and persistent paths. Switching databases requires a planned migration, not Compose overlaying.
 
@@ -62,7 +62,7 @@ set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.3/compose.yml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.yml \
   -o compose.yml
 docker compose config --quiet
 docker compose up -d
@@ -75,16 +75,16 @@ Keep the setup wizard's default database path, `data/moemail.db`.
 
 The PostgreSQL deployment pulls these three images:
 
-- `ghcr.io/xmzo/moemail-local:v0.16.3`
-- `ghcr.io/xmzo/moemail-local-postgres:v0.16.3`
-- `ghcr.io/xmzo/moemail-local-postgres-tools:v0.16.3`
+- `ghcr.io/xmzo/moemail-local:latest`
+- `ghcr.io/xmzo/moemail-local-postgres:latest`
+- `ghcr.io/xmzo/moemail-local-postgres-tools:latest`
 
 ```bash
 set -euo pipefail
 mkdir -p moemail
 cd moemail
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/v0.16.3/compose.postgres.yml \
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.postgres.yml \
   -o compose.postgres.yml
 docker compose -f compose.postgres.yml config --quiet
 docker compose -f compose.postgres.yml up -d
@@ -249,7 +249,7 @@ Do not run both the Compose scheduler and the host systemd scheduler. Configure 
 
 1. Record whether the deployment uses `compose.yml` or `compose.postgres.yml`; never change variants as part of a routine image upgrade.
 2. Create and export a verified database + `config.yaml.lkg` pair outside `./data` using the current version.
-3. Download the same filename from the target release to a temporary file and run `docker compose -f <temporary-file> config --quiet`.
+3. When the Compose structure changes, download the same filename from `master` to a temporary file and run `docker compose -f <temporary-file> config --quiet`; keep the existing file for an image-only update.
 4. Replace only the selected Compose file, then run `pull`, `up -d`, `ps`, database verification, login, ingestion, and backup checks with that file.
 5. Regularly restore into a separate directory/project. Changing only the Compose project name does not isolate relative bind mounts.
 
@@ -258,7 +258,7 @@ Keep these production boundaries in place:
 - Never combine the two Compose files or publish the bundled PostgreSQL port.
 - Protect `data/config.yaml`, `data/config.yaml.lkg`, database files, and backups as secrets. Never commit `data/`.
 - Keep the app on loopback behind HTTPS and enable only the integrations you need.
-- Use version tags or digests rather than `latest`, and take a recoverable backup before every upgrade.
+- Compose intentionally tracks `latest`. Pull only after the complete image publishing workflow succeeds, and take a recoverable backup first. For rollback, pin every image in the selected variant to the same previous tag or digest.
 - Review the full [deployment and operations guide](docs/local-deployment.zh-CN.md) before serving production traffic.
 
 ## Development and validation

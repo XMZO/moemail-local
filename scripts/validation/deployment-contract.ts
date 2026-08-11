@@ -10,7 +10,7 @@ const packageDocument = JSON.parse(readFileSync("package.json", "utf8")) as {
 
 assert.match(packageDocument.version ?? "", /^\d+\.\d+\.\d+$/)
 assert.equal(packageDocument.packageManager, "pnpm@11.21.0")
-const releaseTag = `v${packageDocument.version}`
+const composeImageTag = "latest"
 
 type Healthcheck = {
   disable?: boolean
@@ -128,7 +128,7 @@ assert.equal(sqliteServices["postgres-restore"], undefined)
 assert.doesNotMatch(sqlite.source, /moemail-local-postgres(?:-tools)?/)
 
 for (const name of Object.keys(sqliteServices)) {
-  assert.equal(sqliteServices[name]?.image, `ghcr.io/xmzo/moemail-local:${releaseTag}`)
+  assert.equal(sqliteServices[name]?.image, `ghcr.io/xmzo/moemail-local:${composeImageTag}`)
   assert.equal(sqliteServices[name]?.pull_policy, "always")
   assert.equal(sqliteServices[name]?.build, undefined)
 }
@@ -196,14 +196,14 @@ for (const name of [
   "monitor",
   "offsite-backup",
 ]) {
-  assert.equal(postgresServices[name]?.image, `ghcr.io/xmzo/moemail-local:${releaseTag}`)
+  assert.equal(postgresServices[name]?.image, `ghcr.io/xmzo/moemail-local:${composeImageTag}`)
   assert.equal(postgresServices[name]?.pull_policy, "always")
   assert.equal(postgresServices[name]?.build, undefined)
 }
-assert.equal(postgresServices.postgres?.image, `ghcr.io/xmzo/moemail-local-postgres:${releaseTag}`)
+assert.equal(postgresServices.postgres?.image, `ghcr.io/xmzo/moemail-local-postgres:${composeImageTag}`)
 assert.equal(postgresServices.postgres?.pull_policy, "always")
 for (const name of ["postgres-backup", "postgres-backup-scheduler", "postgres-restore"]) {
-  assert.equal(postgresServices[name]?.image, `ghcr.io/xmzo/moemail-local-postgres-tools:${releaseTag}`)
+  assert.equal(postgresServices[name]?.image, `ghcr.io/xmzo/moemail-local-postgres-tools:${composeImageTag}`)
   assert.equal(postgresServices[name]?.pull_policy, "always")
   assert.equal(postgresServices[name]?.user, "10001:10001")
 }
@@ -366,12 +366,11 @@ const dockerfileSource = readFileSync("Dockerfile", "utf8")
 assert.match(dockerfileSource, /npm install --global pnpm@11\.21\.0/)
 for (const readmePath of ["README.md", "README.zh-CN.md"]) {
   const readme = readFileSync(readmePath, "utf8")
-  assert.ok(readme.includes(`/${releaseTag}/compose.yml`))
-  assert.ok(readme.includes(`/${releaseTag}/compose.postgres.yml`))
-  assert.ok(readme.includes(`moemail-local:${releaseTag}`))
-  assert.ok(readme.includes(`moemail-local-postgres:${releaseTag}`))
-  assert.ok(readme.includes(`moemail-local-postgres-tools:${releaseTag}`))
-  assert.doesNotMatch(readme, /moemail-local(?:-postgres|-postgres-tools)?:latest/)
+  assert.ok(readme.includes("/master/compose.yml"))
+  assert.ok(readme.includes("/master/compose.postgres.yml"))
+  assert.ok(readme.includes("moemail-local:latest"))
+  assert.ok(readme.includes("moemail-local-postgres:latest"))
+  assert.ok(readme.includes("moemail-local-postgres-tools:latest"))
   assert.doesNotMatch(
     readme,
     /raw\.githubusercontent\.com\/[^\s]+\/compose(?:\.postgres)?\.yaml/,
@@ -403,5 +402,5 @@ console.log(JSON.stringify({
   publishWorkflowBuildsThreeImagesOnTwoNativeArchitectures: true,
   publishWorkflowAvoidsQemu: true,
   digestArtifactsAreImageKindDelimited: true,
-  releaseVersionPinnedConsistently: true,
+  composeTracksLatestImages: true,
 }, null, 2))

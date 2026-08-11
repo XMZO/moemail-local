@@ -4,9 +4,9 @@
 
 Cloudflare Email Routing 与 Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。
 
-Docker 发布两个互斥的 standalone 文件：`compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:v0.16.3`；`compose.postgres.yml` 运行 Web、内置 PostgreSQL 17 与 PostgreSQL 备份/恢复工具，固定拉取同版本的 `moemail-local`、`moemail-local-postgres` 和 `moemail-local-postgres-tools`。两个文件都完整定义自己的服务，不能用多个 `-f` 参数叠加，也不能同时指向同一个 `./data`。镜像只在 Docker-compatible Git tag（例如 `v0.16.3`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
+Docker 发布两个互斥的 standalone 文件：`compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:latest`；`compose.postgres.yml` 运行 Web、内置 PostgreSQL 17 与 PostgreSQL 备份/恢复工具，统一拉取三个 package 的 `latest`。两个文件都完整定义自己的服务，不能用多个 `-f` 参数叠加，也不能同时指向同一个 `./data`。镜像只在 Docker-compatible Git tag（例如 `v0.16.3`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
 
-首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 也会刷新 `latest`，但生产继续使用文件中固定的版本 tag，不能混用版本，也不通过 `.env` 选 tag。升级时必须下载目标 tag 中与当前方案同名的文件，不能借升级切换数据库方案。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
+首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会刷新 `latest`，Compose 有意跟踪它以简化服务器更新。必须等待整个发布 Action 成功后再执行 `pull`，避免在三个 manifest 尚未全部合并时混用版本；回滚时把所选方案的全部镜像一起固定到同一个旧 tag 或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
 从 `v0.16.1` 的旧 `compose.yaml` 升级时，先用 `docker compose -f compose.yaml --profile '*' down` 停止旧服务，再执行 `mv compose.yaml compose.v0.16.1.yaml`。禁止添加 `-v`，必须保留 `./data`；随后只下载下文与你所选数据库一致的一个 `.yml` 文件。旧 `compose.yaml` 不得留在原路径，否则无 `-f` 的命令可能继续选择旧部署定义。
 
@@ -113,9 +113,9 @@ pnpm start --hostname 127.0.0.1 --port 3000
 
 ```bash
 set -euo pipefail
-release_tag=v0.16.3
+compose_ref=master
 curl -fsSL \
-  "https://raw.githubusercontent.com/XMZO/moemail-local/$release_tag/compose.yml" \
+  "https://raw.githubusercontent.com/XMZO/moemail-local/$compose_ref/compose.yml" \
   -o compose.yml
 docker compose config --quiet
 docker compose up -d
@@ -174,9 +174,9 @@ docker compose --profile maintenance run --rm --no-deps -T \
   > "$archive_dir/$backup_name.config.yaml.lkg"
 test -s "$archive_dir/$backup_name"
 test -s "$archive_dir/$backup_name.config.yaml.lkg"
-release_tag=v0.16.3
+compose_ref=master
 curl -fsSL \
-  "https://raw.githubusercontent.com/XMZO/moemail-local/$release_tag/compose.yml" \
+  "https://raw.githubusercontent.com/XMZO/moemail-local/$compose_ref/compose.yml" \
   -o compose.yml.next
 docker compose -f compose.yml.next config --quiet
 mv -T compose.yml.next compose.yml
@@ -201,13 +201,13 @@ verify 成功后再开放 Web，并只重新启动此前启用的 profiles。
 
 ## 4. Docker Compose：内置 PostgreSQL standalone
 
-`compose.postgres.yml` 是另一套完整定义，不能与 `compose.yml` 叠加。它拉取同版本的应用、PostgreSQL 17 和 PostgreSQL 18 工具镜像；内置数据库不发布 5432，只连接 Compose 的 `internal: true` 网络并在隔离网内使用 trust 认证。
+`compose.postgres.yml` 是另一套完整定义，不能与 `compose.yml` 叠加。它从同一次成功发布的 `latest` 拉取应用、PostgreSQL 17 和 PostgreSQL 18 工具镜像；内置数据库不发布 5432，只连接 Compose 的 `internal: true` 网络并在隔离网内使用 trust 认证。
 
 ```bash
 set -euo pipefail
-release_tag=v0.16.3
+compose_ref=master
 curl -fsSL \
-  "https://raw.githubusercontent.com/XMZO/moemail-local/$release_tag/compose.postgres.yml" \
+  "https://raw.githubusercontent.com/XMZO/moemail-local/$compose_ref/compose.postgres.yml" \
   -o compose.postgres.yml
 docker compose -f compose.postgres.yml config --quiet
 docker compose -f compose.postgres.yml up -d
@@ -276,9 +276,9 @@ test -s "$archive_dir/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg"
 
 ```bash
 set -euo pipefail
-release_tag=v0.16.3
+compose_ref=master
 curl -fsSL \
-  "https://raw.githubusercontent.com/XMZO/moemail-local/$release_tag/compose.postgres.yml" \
+  "https://raw.githubusercontent.com/XMZO/moemail-local/$compose_ref/compose.postgres.yml" \
   -o compose.postgres.yml.next
 docker compose -f compose.postgres.yml.next config --quiet
 mv -T compose.postgres.yml.next compose.postgres.yml
