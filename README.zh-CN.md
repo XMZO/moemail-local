@@ -158,7 +158,41 @@ mail.example.com {
             -> https://mail.example.com/api/internal/email -> 本地 MoeMail 数据库
 ```
 
-Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。直连模式和具备 R2 + Queue 缓冲的耐久模式见[本地部署指南的 Email Worker 章节](docs/local-deployment.zh-CN.md#6-cloudflare-email-worker)。
+Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
+
+```bash
+git clone --branch v0.16.2 --depth 1 https://github.com/XMZO/moemail-local.git
+cd moemail-local
+corepack enable
+pnpm install --frozen-lockfile
+pnpm exec wrangler login
+cp wrangler.email.example.json wrangler.email.json
+```
+
+仅将 `wrangler.email.json` 中已有的 `EMAIL_INGEST_URL` 改成 MoeMail 的公网 HTTPS 地址；下面是配置片段，不要用它覆盖整个文件：
+
+```json
+{
+  "vars": {
+    "EMAIL_INGEST_URL": "https://mail.example.com/api/internal/email"
+  }
+}
+```
+
+在首次向导成功页或皇帝账号的“运行配置”中复制 `email.ingestSecret`。Secret 只在下面的 Wrangler 提示中粘贴，不要写入 JSON 或提交 Git：
+
+```bash
+pnpm exec wrangler secret put EMAIL_INGEST_SECRET --config wrangler.email.json
+pnpm deploy:email
+```
+
+首次执行 `secret put` 时，如果 Wrangler 询问是否创建 `email-receiver-worker`，确认创建即可。部署完成后，先在 Cloudflare 控制台为域名启用 Email Routing 并按提示配置 MX，再进入 **Email Routing → Routing rules**，将 catch-all 或指定收件地址设置为 **Send to a Worker**，并选择 `email-receiver-worker`。发送一封测试邮件，同时查看实时日志：
+
+```bash
+pnpm exec wrangler tail --config wrangler.email.json
+```
+
+直连模式要求 `EMAIL_INGEST_URL` 是完整的公网 HTTPS `/api/internal/email` 地址，不能使用 `localhost` 或 Compose service 名；本地离线时不保证耐久重试。需要 R2 + Queue 缓冲时，改用[本地部署指南中的耐久模式](docs/local-deployment.zh-CN.md#62-r2--queue-耐久模式)。
 
 ## 持久化与整目录迁移
 
