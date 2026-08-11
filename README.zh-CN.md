@@ -29,7 +29,7 @@
 | 部署方式 | 文件 | 启动命令 | 拉取的镜像 |
 | --- | --- | --- | --- |
 | SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:latest` |
-| 内置 PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `latest` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
+| 内置 PostgreSQL 18 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `latest` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
 
 两个文件都是完整、独立的部署定义。**禁止使用多个 `-f` 参数叠加它们**，也不要让两套部署同时使用同一个 `./data`。它们使用相同的项目名、回环端口和持久化路径。切换数据库需要按迁移流程执行，不能靠 Compose 覆盖完成。
 
@@ -98,6 +98,7 @@ postgresql://moemail@postgres:5432/moemail
 ```
 
 内置数据库只在隔离的 Compose 网络中使用 trust 认证，不向宿主机发布 5432。
+已有的内置 PostgreSQL 17 部署必须先按[部署指南](docs/local-deployment.zh-CN.md)执行配对逻辑备份/恢复，再启动 PostgreSQL 18 镜像。PostgreSQL 大版本不能靠普通 `pull`/`up` 原地升级；容器发现旧数据目录时会保持文件不变并拒绝启动。
 
 ### 完成首次初始化
 
@@ -272,6 +273,7 @@ pnpm build
 pnpm exec tsc --noEmit --incremental false
 pnpm validate:no-local-env
 pnpm validate:deployment
+pnpm validate:postgres-entrypoint
 pnpm validate:email-worker
 ```
 

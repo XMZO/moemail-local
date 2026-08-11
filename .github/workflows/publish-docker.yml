@@ -119,6 +119,7 @@ jobs:
         run: |
           pnpm validate:email-worker
           pnpm validate:deployment
+          pnpm validate:postgres-entrypoint
           pnpm exec tsc --noEmit --incremental false
 
   build:
@@ -250,7 +251,43 @@ jobs:
 
           case "$IMAGE_KIND" in
             app) docker run --rm --entrypoint node "$image_ref" --version ;;
-            postgres) docker run --rm --entrypoint postgres "$image_ref" --version ;;
+            postgres)
+              docker run --rm --entrypoint postgres "$image_ref" --version
+              container_name="moemail-postgres-smoke-${GITHUB_RUN_ID}-${RANDOM}"
+              cleanup_postgres_smoke() {
+                docker rm --force --volumes "$container_name" >/dev/null 2>&1 || true
+              }
+              trap cleanup_postgres_smoke EXIT
+              docker run --detach --name "$container_name" "$image_ref" >/dev/null
+              ready=false
+              for _ in $(seq 1 30); do
+                if docker exec "$container_name" \
+                  pg_isready --host 127.0.0.1 --username moemail --dbname moemail >/dev/null 2>&1; then
+                  ready=true
+                  break
+                fi
+                sleep 2
+              done
+              if [[ "$ready" != true ]]; then
+                docker logs "$container_name" >&2
+                echo "PostgreSQL image did not become ready" >&2
+                exit 1
+              fi
+              docker exec "$container_name" \
+                sh -ceu 'test "$(cat /var/lib/postgresql/data/PG_VERSION)" = 18
+                  grep -Fqx "# moemail-compose-internal-trust" /var/lib/postgresql/data/pg_hba.conf'
+              server_check="$(docker exec "$container_name" \
+                psql --host 127.0.0.1 --username moemail --dbname moemail \
+                --tuples-only --no-align \
+                --command "SELECT current_setting('server_version_num')::integer / 10000 = 18 AND current_database() = 'moemail'")"
+              if [[ "$server_check" != t ]]; then
+                docker logs "$container_name" >&2
+                echo "PostgreSQL 18 SQL smoke check failed: $server_check" >&2
+                exit 1
+              fi
+              cleanup_postgres_smoke
+              trap - EXIT
+              ;;
             postgres-tools) docker run --rm --entrypoint pg_dump "$image_ref" --version ;;
             *)
               echo "Unknown image kind: $IMAGE_KIND" >&2

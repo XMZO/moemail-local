@@ -50,6 +50,7 @@
     "validate:restore": "tsx scripts/validation/node-restore.ts",
     "validate:no-local-env": "tsx scripts/validation/no-local-env.ts",
     "validate:deployment": "tsx scripts/validation/deployment-contract.ts",
+    "validate:postgres-entrypoint": "bash scripts/validation/postgres-entrypoint.sh",
     "validate:email-worker": "tsx scripts/validation/email-worker.ts",
     "load:polling": "tsx scripts/validation/load-polling.ts",
     "db:migrate-local": "tsx scripts/migrate.ts local",

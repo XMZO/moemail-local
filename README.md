@@ -29,7 +29,7 @@ This repository is the local-first fork of [beilunyang/moemail](https://github.c
 | Deployment | File | Start command | Images pulled |
 | --- | --- | --- | --- |
 | SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:latest` |
-| Bundled PostgreSQL 17 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | App, PostgreSQL, and PostgreSQL tools images at `latest` |
+| Bundled PostgreSQL 18 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | App, PostgreSQL, and PostgreSQL tools images at `latest` |
 
 Both files are complete, standalone deployments. **Do not combine them** with multiple `-f` arguments, and do not run both against the same `./data` directory. They use the same project name, loopback port, and persistent paths. Switching databases requires a planned migration, not Compose overlaying.
 
@@ -98,6 +98,7 @@ postgresql://moemail@postgres:5432/moemail
 ```
 
 The bundled database uses trust authentication only on its isolated Compose network and does not publish port 5432.
+An existing deployment created with bundled PostgreSQL 17 must use the paired logical backup/restore procedure in the [deployment guide](docs/local-deployment.zh-CN.md) before starting the PostgreSQL 18 image. A plain `pull`/`up` cannot perform a PostgreSQL major upgrade; the container rejects the old data directory without modifying it.
 
 ### Complete first-run setup
 
@@ -272,6 +273,7 @@ pnpm build
 pnpm exec tsc --noEmit --incremental false
 pnpm validate:no-local-env
 pnpm validate:deployment
+pnpm validate:postgres-entrypoint
 pnpm validate:email-worker
 ```
 
