@@ -4,7 +4,7 @@
 
 Cloudflare Email Routing 与 Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。
 
-Docker 发布两个互斥的 standalone 文件：`compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:latest`；`compose.postgres.yml` 运行 Web、内置 PostgreSQL 18 与 PostgreSQL 18 备份/恢复工具，统一拉取三个 package 的 `latest`。两个文件都完整定义自己的服务，不能用多个 `-f` 参数叠加，也不能同时指向同一个 `./data`。镜像只在 Docker-compatible Git tag（例如 `v0.16.3`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
+Docker 发布两个互斥的 standalone 文件：`compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:latest`；`compose.postgres.yml` 运行 Web、内置 PostgreSQL 18 与 PostgreSQL 备份/恢复工具，统一拉取三个 package 的 `latest`。两个文件都完整定义自己的服务，不能用多个 `-f` 参数叠加，也不能同时指向同一个 `./data`。镜像只在 Docker-compatible Git tag（例如 `v0.16.4`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会刷新 `latest`，Compose 有意跟踪它以简化服务器更新。必须等待整个发布 Action 成功后再执行 `pull`，避免在三个 manifest 尚未全部合并时混用版本；回滚时把所选方案的全部镜像一起固定到同一个旧 tag 或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -201,7 +201,7 @@ verify 成功后再开放 Web，并只重新启动此前启用的 profiles。
 
 ## 4. Docker Compose：内置 PostgreSQL standalone
 
-`compose.postgres.yml` 是另一套完整定义，不能与 `compose.yml` 叠加。它从同一次成功发布的 `latest` 拉取应用、PostgreSQL 18 和 PostgreSQL 18 工具镜像；内置数据库不发布 5432，只连接 Compose 的 `internal: true` 网络并在隔离网内使用 trust 认证。
+`compose.postgres.yml` 是另一套完整定义，不能与 `compose.yml` 叠加。它从同一次成功发布的 `latest` 拉取应用、内置 PostgreSQL 18 服务和同版本备份/恢复工具镜像；内置数据库不发布 5432，只连接 Compose 的 `internal: true` 网络并在隔离网内使用 trust 认证。
 
 ```bash
 set -euo pipefail
@@ -272,135 +272,7 @@ test -s "$archive_dir/moemail-2026-08-11T03-23-00Z.dump"
 test -s "$archive_dir/moemail-2026-08-11T03-23-00Z.dump.config.yaml.lkg"
 ```
 
-### PostgreSQL 17 → 18 大版本升级
-
-PostgreSQL 物理数据目录不能跨大版本直接启动。`v0.16.3` 的内置数据库是 17；升级到首个内置 18 的版本时，禁止直接执行普通 `pull`/`up`。新入口发现 `PG_VERSION=17` 会以 78 退出且不修改旧目录，但此时 Web 也不会启动。
-
-升级前先下载并缓存固定为旧版本的 rollback Compose。必须使用旧 PostgreSQL 17 服务生成一次新的严格配对逻辑备份；不要先替换 Compose，也不要依赖仍会移动的 `latest` 标签：
-
-```bash
-set -euo pipefail
-old_release=v0.16.3
-rollback_compose=compose.postgres.pg17.rollback.yml
-curl -fsSL \
-  "https://raw.githubusercontent.com/XMZO/moemail-local/$old_release/compose.postgres.yml" \
-  -o "$rollback_compose.next"
-docker compose -f "$rollback_compose.next" config --quiet
-mv -T "$rollback_compose.next" "$rollback_compose"
-docker compose -f "$rollback_compose" pull
-docker compose -f "$rollback_compose" --profile maintenance \
-  run --rm postgres-backup
-```
-
-上一条命令最后输出 `postgres.backup.ok` JSON。把其中本次新建的 `destination` 原样填到 `upgrade_dump`；它必须位于 `/app/data/postgres-backups/`，相邻 pair 必须存在。以下命令会先验证归档和 pair，再复制到卷外；示例中不要保留占位文件名：
-
-```bash
-set -euo pipefail
-rollback_compose=compose.postgres.pg17.rollback.yml
-upgrade_dump=/app/data/postgres-backups/moemail-替换为本次输出.dump
-upgrade_pair="${upgrade_dump}.config.yaml.lkg"
-case "$upgrade_dump" in
-  /app/data/postgres-backups/*.dump) ;;
-  *) echo "Unexpected backup path: $upgrade_dump" >&2; exit 64 ;;
-esac
-host_dump="${upgrade_dump#/app/}"
-host_pair="${upgrade_pair#/app/}"
-sudo test -s "$host_dump"
-sudo test -s "$host_pair"
-docker compose -f "$rollback_compose" --profile maintenance \
-  run --rm --no-deps --entrypoint pg_restore postgres-backup \
-  --list "$upgrade_dump" >/dev/null
-docker compose -f "$rollback_compose" --profile maintenance \
-  run --rm --no-deps --entrypoint node postgres-backup \
-  /opt/moemail/config-reader.mjs --file "$upgrade_pair" validate-complete >/dev/null
-archive_dir=/srv/moemail-offsite
-sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$archive_dir"
-dump_name="$(basename "$upgrade_dump")"
-sudo install -m 0600 -o "$(id -u)" -g "$(id -g)" \
-  "$host_dump" "$archive_dir/$dump_name"
-sudo install -m 0600 -o "$(id -u)" -g "$(id -g)" \
-  "$host_pair" "$archive_dir/$dump_name.config.yaml.lkg"
-test -s "$archive_dir/$dump_name"
-test -s "$archive_dir/$dump_name.config.yaml.lkg"
-```
-
-等待目标发布 Action 的三个镜像全部成功后，预拉取新 Compose 并在不启动数据库的情况下确认目标 server binary 确实为 18。确认后停止旧集群，把 PG17 物理目录整体移到旁路保留，再让新镜像初始化空的 PG18 目录：
-
-```bash
-set -euo pipefail
-rollback_compose=compose.postgres.pg17.rollback.yml
-upgrade_dump=/app/data/postgres-backups/moemail-替换为本次输出.dump
-upgrade_pair="${upgrade_dump}.config.yaml.lkg"
-compose_ref=master
-curl -fsSL \
-  "https://raw.githubusercontent.com/XMZO/moemail-local/$compose_ref/compose.postgres.yml" \
-  -o compose.postgres.yml.next
-docker compose -f compose.postgres.yml.next config --quiet
-docker compose -f compose.postgres.yml.next pull
-server_version="$(docker compose -f compose.postgres.yml.next \
-  run --rm --no-deps --entrypoint postgres postgres --version)"
-case "$server_version" in
-  *" 18."*) ;;
-  *) echo "Expected PostgreSQL 18, got: $server_version" >&2; exit 65 ;;
-esac
-docker compose -f "$rollback_compose" --profile '*' down
-old_major="$(sudo sh -c 'tr -d "[:space:]" < data/postgres/PG_VERSION')"
-test "$old_major" = 17
-legacy_dir="../moemail-postgres-pg17-$(date -u +%Y%m%d%H%M%S)"
-sudo test ! -e "$legacy_dir"
-sudo mv -- data/postgres "$legacy_dir"
-sudo install -d -m 0700 data/postgres
-printf 'PG17 physical rollback directory: %s\n' "$legacy_dir"
-mv -T compose.postgres.yml.next compose.postgres.yml
-docker compose -f compose.postgres.yml up -d --wait postgres
-new_major="$(sudo sh -c 'tr -d "[:space:]" < data/postgres/PG_VERSION')"
-test "$new_major" = 18
-docker compose -f compose.postgres.yml --profile maintenance \
-  run --rm --no-deps --entrypoint node postgres-backup \
-  /opt/moemail/config-reader.mjs --file "$upgrade_pair" postgres-target
-```
-
-此处必须暂停，确认脱敏后的 host、port、database、user 都指向内置 `postgres:5432/moemail`。然后在同一个 shell 中恢复备份、执行完整结构校验，全部成功后才启动 Web：
-
-```bash
-set -euo pipefail
-upgrade_dump=/app/data/postgres-backups/moemail-替换为本次输出.dump
-docker compose -f compose.postgres.yml --profile restore \
-  run --rm postgres-restore "$upgrade_dump" --confirm
-docker compose -f compose.postgres.yml run --rm --no-deps moemail verify
-server_version="$(docker compose -f compose.postgres.yml exec -T postgres \
-  psql --username moemail --dbname moemail --tuples-only --no-align \
-  --command 'SHOW server_version;')"
-case "$server_version" in
-  18.*) ;;
-  *) echo "Unexpected restored server version: $server_version" >&2; exit 65 ;;
-esac
-docker compose -f compose.postgres.yml up -d moemail
-docker compose -f compose.postgres.yml ps
-```
-
-确认站点、登录、收信和新备份都正常之前，保留 `$legacy_dir`、`$rollback_compose` 及卷外 dump/pair。需要回滚时执行下列独立流程，把示例目录替换为升级阶段实际打印的值。它只移动目录，不删除或覆盖任一物理集群：
-
-```bash
-set -euo pipefail
-rollback_compose=compose.postgres.pg17.rollback.yml
-legacy_dir=../moemail-postgres-pg17-替换为实际时间戳
-failed_pg18_dir="../moemail-postgres-pg18-failed-$(date -u +%Y%m%d%H%M%S)"
-test -s "$rollback_compose"
-sudo test "$(sudo sh -c 'tr -d "[:space:]" < "$1/PG_VERSION"' sh "$legacy_dir")" = 17
-sudo test ! -e "$failed_pg18_dir"
-docker compose -f compose.postgres.yml --profile '*' down
-sudo mv -- data/postgres "$failed_pg18_dir"
-sudo mv -- "$legacy_dir" data/postgres
-docker compose -f "$rollback_compose" up -d --wait postgres moemail
-docker compose -f "$rollback_compose" exec -T postgres postgres --version
-docker compose -f "$rollback_compose" run --rm --no-deps moemail verify
-printf 'Failed PG18 directory retained at: %s\n' "$failed_pg18_dir"
-```
-
-### PostgreSQL 18 内的常规更新
-
-只有上述卷外文件有效后才升级。确认目标仍是 PostgreSQL 18 后，下载并校验同名 PostgreSQL 文件，不得下载或叠加 SQLite 文件：
+只有上述卷外文件有效后才升级；下载并校验目标 tag 的同名 PostgreSQL 文件，不得下载或叠加 SQLite 文件：
 
 ```bash
 set -euo pipefail
@@ -415,8 +287,6 @@ docker compose -f compose.postgres.yml up -d
 docker compose -f compose.postgres.yml ps
 docker compose -f compose.postgres.yml run --rm --no-deps moemail verify
 ```
-
-### PostgreSQL 恢复
 
 恢复前再次制作当前备份并把目标 `.dump` 与相邻 pair 放回备份目录。先打印脱敏目标，人工确认 host/port/database/user 后，才执行破坏性恢复：
 
@@ -521,7 +391,7 @@ Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.16.3 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.16.4 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \
@@ -754,7 +624,6 @@ pnpm validate:setup:http:postgres
 pnpm validate:scheduler
 pnpm validate:rclone-config
 pnpm validate:deployment
-pnpm validate:postgres-entrypoint
 pnpm build
 ```
 

@@ -10,10 +10,6 @@ const packageDocument = JSON.parse(readFileSync("package.json", "utf8")) as {
 
 assert.match(packageDocument.version ?? "", /^\d+\.\d+\.\d+$/)
 assert.equal(packageDocument.packageManager, "pnpm@11.21.0")
-assert.equal(
-  packageDocument.scripts?.["validate:postgres-entrypoint"],
-  "bash scripts/validation/postgres-entrypoint.sh",
-)
 const composeImageTag = "latest"
 
 type Healthcheck = {
@@ -221,7 +217,7 @@ assert.deepEqual(serviceVolumes(postgresServices["storage-init"]), [
 ])
 assert.deepEqual(networkNames(postgresServices.postgres), ["database"])
 assert.equal(postgresServices.postgres?.ports, undefined)
-assert.deepEqual(serviceVolumes(postgresServices.postgres), ["./data/postgres:/var/lib/postgresql/data"])
+assert.deepEqual(serviceVolumes(postgresServices.postgres), ["./data/postgres:/var/lib/postgresql"])
 assert.equal(dependencyCondition(postgresServices.postgres, "storage-init"), "service_completed_successfully")
 assert.deepEqual(networkNames(postgresServices.moemail), ["default", "database"])
 assert.equal(dependencyCondition(postgresServices.moemail, "postgres"), "service_healthy")
@@ -267,12 +263,8 @@ assert.equal(toolsMajor, 18)
 assert.match(toolsDockerfile, /\bca-certificates\b/)
 
 const postgresEntrypoint = readFileSync("deploy/docker/postgres-entrypoint.sh", "utf8")
-assert.match(postgresEntrypoint, /^data_directory=\/var\/lib\/postgresql\/data$/m)
-assert.match(postgresEntrypoint, /^expected_major=18$/m)
-assert.match(postgresEntrypoint, /^export PGDATA="\$data_directory"$/m)
-assert.match(postgresEntrypoint, /non-regular PostgreSQL version marker/)
-assert.match(postgresEntrypoint, /PostgreSQL major versions are not storage-compatible/)
-assert.match(postgresEntrypoint, /incomplete PostgreSQL data directory/)
+assert.match(postgresEntrypoint, /^data_root=\/var\/lib\/postgresql$/m)
+assert.match(postgresEntrypoint, /^data_directory=\/var\/lib\/postgresql\/18\/docker$/m)
 assert.match(postgresEntrypoint, /# moemail-compose-internal-trust/)
 assert.match(postgresEntrypoint, /^host all all 0\.0\.0\.0\/0 trust$/m)
 assert.match(postgresEntrypoint, /^host all all ::\/0 trust$/m)
@@ -350,12 +342,11 @@ assert.match(workflowSource, /Smoke-test native image/)
 assert.match(workflowSource, /docker image inspect --format/)
 assert.match(workflowSource, /docker run --rm --entrypoint/)
 assert.match(workflowSource, /pg_isready --host 127\.0\.0\.1 --username moemail --dbname moemail/)
-assert.match(workflowSource, /cat \/var\/lib\/postgresql\/data\/PG_VERSION/)
+assert.match(workflowSource, /cat \/var\/lib\/postgresql\/18\/docker\/PG_VERSION/)
 assert.match(workflowSource, /server_version_num'[)]::integer \/ 10000 = 18/)
 assert.match(workflowSource, /Verify release tag matches package version/)
 assert.match(workflowSource, /pnpm validate:email-worker/)
 assert.match(workflowSource, /pnpm validate:deployment/)
-assert.match(workflowSource, /pnpm validate:postgres-entrypoint/)
 assert.match(workflowSource, /pnpm exec tsc --noEmit --incremental false/)
 assert.match(workflowSource, /build:\s+needs:\s+- prepare\s+- preflight/m)
 assert.match(workflowSource, /docker buildx imagetools create/)

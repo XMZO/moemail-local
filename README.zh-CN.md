@@ -98,7 +98,6 @@ postgresql://moemail@postgres:5432/moemail
 ```
 
 内置数据库只在隔离的 Compose 网络中使用 trust 认证，不向宿主机发布 5432。
-已有的内置 PostgreSQL 17 部署必须先按[部署指南](docs/local-deployment.zh-CN.md)执行配对逻辑备份/恢复，再启动 PostgreSQL 18 镜像。PostgreSQL 大版本不能靠普通 `pull`/`up` 原地升级；容器发现旧数据目录时会保持文件不变并拒绝启动。
 
 ### 完成首次初始化
 
@@ -162,7 +161,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.16.3 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.4 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -265,7 +264,7 @@ docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.16.3 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.4 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -273,7 +272,6 @@ pnpm build
 pnpm exec tsc --noEmit --incremental false
 pnpm validate:no-local-env
 pnpm validate:deployment
-pnpm validate:postgres-entrypoint
 pnpm validate:email-worker
 ```
 

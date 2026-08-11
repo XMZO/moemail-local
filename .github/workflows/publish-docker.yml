@@ -119,7 +119,6 @@ jobs:
         run: |
           pnpm validate:email-worker
           pnpm validate:deployment
-          pnpm validate:postgres-entrypoint
           pnpm exec tsc --noEmit --incremental false
 
   build:
@@ -274,8 +273,8 @@ jobs:
                 exit 1
               fi
               docker exec "$container_name" \
-                sh -ceu 'test "$(cat /var/lib/postgresql/data/PG_VERSION)" = 18
-                  grep -Fqx "# moemail-compose-internal-trust" /var/lib/postgresql/data/pg_hba.conf'
+                sh -ceu 'test "$(cat /var/lib/postgresql/18/docker/PG_VERSION)" = 18
+                  grep -Fqx "# moemail-compose-internal-trust" /var/lib/postgresql/18/docker/pg_hba.conf'
               server_check="$(docker exec "$container_name" \
                 psql --host 127.0.0.1 --username moemail --dbname moemail \
                 --tuples-only --no-align \

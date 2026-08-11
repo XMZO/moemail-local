@@ -47,7 +47,7 @@ services:
       storage-init:
         condition: service_completed_successfully
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql
     networks:
       - database
     healthcheck:
