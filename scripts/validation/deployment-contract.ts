@@ -123,6 +123,8 @@ assert.deepEqual(
     "moemail",
     "cleanup",
     "backup",
+    "migrate",
+    "verify",
     "restore",
     "scheduler",
     "monitor",
@@ -135,8 +137,22 @@ assert.equal(sqliteServices["postgres-backup-scheduler"], undefined)
 assert.equal(sqliteServices["postgres-restore"], undefined)
 assert.doesNotMatch(sqlite.source, /moemail-local-postgres(?:-tools)?/)
 
-for (const name of Object.keys(sqliteServices)) {
+for (const name of ["storage-init", "moemail"] as const) {
   assert.equal(sqliteServices[name]?.image, `ghcr.io/xmzo/moemail-local:${composeImageTag}`)
+  assert.equal(sqliteServices[name]?.pull_policy, "always")
+  assert.equal(sqliteServices[name]?.build, undefined)
+}
+for (const name of [
+  "cleanup",
+  "backup",
+  "migrate",
+  "verify",
+  "restore",
+  "scheduler",
+  "monitor",
+  "offsite-backup",
+] as const) {
+  assert.equal(sqliteServices[name]?.image, `ghcr.io/xmzo/moemail-local:${composeImageTag}-tools`)
   assert.equal(sqliteServices[name]?.pull_policy, "always")
   assert.equal(sqliteServices[name]?.build, undefined)
 }
@@ -150,7 +166,7 @@ assert.match(
 assert.deepEqual(serviceVolumes(sqliteServices.moemail), ["./data:/app/data"])
 assert.deepEqual(sqliteServices.moemail?.ports, ["127.0.0.1:3000:3000"])
 assert.equal(dependencyCondition(sqliteServices.moemail, "storage-init"), "service_completed_successfully")
-for (const name of ["cleanup", "backup"] as const) {
+for (const name of ["cleanup", "backup", "migrate", "verify"] as const) {
   assert.deepEqual(sqliteServices[name]?.profiles, ["maintenance"])
   assert.equal(sqliteServices[name]?.restart, "no")
   assert.equal(sqliteServices[name]?.healthcheck?.disable, true)
@@ -185,6 +201,8 @@ assert.deepEqual(
     "postgres",
     "moemail",
     "cleanup",
+    "migrate",
+    "verify",
     "postgres-backup",
     "scheduler",
     "postgres-backup-scheduler",
@@ -199,12 +217,13 @@ assert.equal(postgresServices.backup, undefined, "PostgreSQL compose must not ex
 for (const name of [
   "storage-init",
   "moemail",
-  "cleanup",
-  "scheduler",
-  "monitor",
-  "offsite-backup",
 ]) {
   assert.equal(postgresServices[name]?.image, `ghcr.io/xmzo/moemail-local:${composeImageTag}`)
+  assert.equal(postgresServices[name]?.pull_policy, "always")
+  assert.equal(postgresServices[name]?.build, undefined)
+}
+for (const name of ["cleanup", "migrate", "verify", "scheduler", "monitor", "offsite-backup"]) {
+  assert.equal(postgresServices[name]?.image, `ghcr.io/xmzo/moemail-local:${composeImageTag}-tools`)
   assert.equal(postgresServices[name]?.pull_policy, "always")
   assert.equal(postgresServices[name]?.build, undefined)
 }
@@ -232,6 +251,11 @@ assert.equal(dependencyCondition(postgresServices.moemail, "postgres"), "service
 assert.deepEqual(serviceVolumes(postgresServices.moemail), ["./data:/app/data"])
 assert.deepEqual(postgresServices.cleanup?.profiles, ["maintenance"])
 assert.equal(postgresServices.cleanup?.restart, "no")
+for (const name of ["migrate", "verify"] as const) {
+  assert.deepEqual(postgresServices[name]?.profiles, ["maintenance"])
+  assert.equal(postgresServices[name]?.restart, "no")
+  assert.equal(dependencyCondition(postgresServices[name], "postgres"), "service_healthy")
+}
 for (const name of ["postgres-backup", "postgres-backup-scheduler", "postgres-restore"]) {
   const networks = new Set(networkNames(postgresServices[name]))
   assert.ok(networks.has("database"), `${name} cannot reach built-in PostgreSQL`)
@@ -361,7 +385,7 @@ assert.doesNotMatch(dockerEntrypoint, /pnpm db:startup/)
 assert.doesNotMatch(dockerEntrypoint, /smtp-server|smtp:server/)
 assert.match(
   dockerEntrypoint,
-  /restore\)\s*[\s\S]*?exec pnpm db:restore "\$@"/,
+  /restore\)\s*[\s\S]*?exec node "\$maintenance" restore "\$@"/,
   "Docker restore must bootstrap from the backup pair",
 )
 assert.doesNotMatch(webSystemdUnit, /^ExecStartPre=.*db:startup$/m)
@@ -384,6 +408,10 @@ assert.match(workflowSource, /expected_uname:\s+aarch64/m)
 assert.match(workflowSource, /uname -m/)
 assert.doesNotMatch(workflowSource, /setup-qemu-action|qemu/i)
 assert.match(workflowSource, /push-by-digest=true/)
+assert.match(workflowSource, /image_kind: maintenance/)
+assert.match(workflowSource, /target: maintenance/)
+assert.match(workflowSource, /tag_suffix="-tools"/)
+assert.match(workflowSource, /latest\$\{tag_suffix\}/)
 assert.match(workflowSource, /Smoke-test native image/)
 assert.match(workflowSource, /docker image inspect --format/)
 assert.match(workflowSource, /docker run --rm --entrypoint/)
@@ -397,6 +425,7 @@ assert.match(workflowSource, /pnpm validate:imap-inbound/)
 assert.match(workflowSource, /pnpm validate:runtime-fields/)
 assert.match(workflowSource, /pnpm validate:no-local-env/)
 assert.match(workflowSource, /pnpm validate:deployment/)
+assert.match(workflowSource, /pnpm validate:maintenance-bundle/)
 assert.match(workflowSource, /pnpm exec tsc --noEmit --incremental false/)
 assert.match(workflowSource, /build:\s+needs:\s+- prepare\s+- preflight/m)
 assert.match(workflowSource, /docker buildx imagetools create/)
@@ -416,15 +445,38 @@ assert.match(workflowSource, /linux\/arm64/)
 assert.match(workflowSource, /ghcr\.io\/xmzo\/moemail-local"/)
 assert.match(workflowSource, /ghcr\.io\/xmzo\/moemail-local-postgres"/)
 assert.match(workflowSource, /ghcr\.io\/xmzo\/moemail-local-postgres-tools"/)
-assert.equal((workflowSource.match(/dockerfile:/g) ?? []).length, 6)
+assert.equal((workflowSource.match(/dockerfile:/g) ?? []).length, 8)
 
 const dockerfileSource = readFileSync("Dockerfile", "utf8")
 assert.match(dockerfileSource, /npm install --global pnpm@11\.21\.0/)
+assert.match(dockerfileSource, /FROM runtime-base AS maintenance/)
+assert.match(dockerfileSource, /HEALTHCHECK NONE/)
+assert.match(dockerfileSource, /\.next\/standalone/)
+assert.match(dockerfileSource, /pnpm build:maintenance/)
+assert.match(dockerfileSource, /maintenance\.mjs/)
+assert.doesNotMatch(dockerfileSource, /pnpm prune --prod/)
+assert.doesNotMatch(dockerfileSource, /npm install --global tsx/)
+assert.doesNotMatch(dockerfileSource, /COPY --from=production-dependencies/)
+const maintenanceStage = dockerfileSource.split("FROM runtime-base AS maintenance")[1] ?? ""
+assert.doesNotMatch(maintenanceStage, /\.next\/standalone|\/app\/public/)
+assert.match(maintenanceStage, /\.next\/maintenance\/node_modules/)
+assert.equal(existsSync("public/fonts/zpix.ttf"), false, "font must not be duplicated in public")
+assert.equal(existsSync("app/zpix.ttf"), false, "uncompressed runtime font must not be shipped")
+assert.equal(existsSync("app/zpix.woff2"), true)
+assert.ok(
+  readFileSync("app/zpix.woff2").byteLength < 1_000_000,
+  "WOFF2 font must remain below the 1 MB runtime budget",
+)
+
+const dockerEntrypointSource = readFileSync("deploy/docker/entrypoint.sh", "utf8")
+assert.match(dockerEntrypointSource, /maintenance="\/app\/deploy\/docker\/maintenance\.mjs"/)
+assert.doesNotMatch(dockerEntrypointSource, /\bpnpm\b|\btsx\b/)
 for (const readmePath of ["README.md", "README.zh-CN.md"]) {
   const readme = readFileSync(readmePath, "utf8")
   assert.ok(readme.includes("/master/sqlite/docker-compose.yml"))
   assert.ok(readme.includes("/master/postgres/docker-compose.yml"))
   assert.ok(readme.includes("moemail-local:latest"))
+  assert.ok(readme.includes("moemail-local:latest-tools"))
   assert.ok(readme.includes("moemail-local-postgres:latest"))
   assert.ok(readme.includes("moemail-local-postgres-tools:latest"))
   assert.doesNotMatch(
@@ -437,7 +489,8 @@ for (const readmePath of ["README.md", "README.zh-CN.md"]) {
 console.log(JSON.stringify({
   dualComposeFilesPresent: true,
   legacyComposeYamlRemoved: true,
-  sqliteComposeUsesOnlyAppImage: true,
+  sqliteDefaultUsesOnlyStandaloneAppImage: true,
+  maintenanceServicesUseOnDemandToolsImage: true,
   sqliteComposeHasNoBundledPostgres: true,
   sqliteComposeBindsAllStateUnderData: true,
   sqliteComposeRestoreProfilePresent: true,
@@ -456,7 +509,7 @@ console.log(JSON.stringify({
   singleAuthoritativeWebStartupValidation: true,
   publishWorkflowTagsOrManualOnly: true,
   publishWorkflowRunsPreflight: true,
-  publishWorkflowBuildsThreeImagesOnTwoNativeArchitectures: true,
+  publishWorkflowBuildsFourImageVariantsOnTwoNativeArchitectures: true,
   publishWorkflowAvoidsQemu: true,
   digestArtifactsAreImageKindDelimited: true,
   composeTracksLatestImages: true,

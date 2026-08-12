@@ -12,7 +12,8 @@
 - Web 运行源码未发现 `runtime = "edge"`、`getRequestContext()`、`SITE_CONFIG`、`drizzle-orm/d1` 或 `env.DB` 残留；旧 Pages/D1/Cleanup Worker 部署资产已从当前运行分支删除，D1 只保留离线数据导入工具。
 - 两份 Compose 文件均通过 YAML 与部署契约解析；`sqlite/docker-compose.yml` 是不含 PostgreSQL 服务或镜像的 SQLite 部署，`postgres/docker-compose.yml` 是独立的内置 PostgreSQL 部署。仓库根目录刻意不放默认 Compose 文件；进入所选目录后均可直接使用 `docker compose`，相邻 `./data` 也天然隔离。二者均无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy。systemd units 无 `EnvironmentFile`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
 - `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
-- `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、统一 `latest` GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 server/工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、真实启动 PostgreSQL 18 后再合并 manifest）。
+- `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、轻量 Web `latest` 与按需维护 `latest-tools` 契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 server/工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、四种镜像变体按 digest 推送并在合并 manifest 前执行原生 smoke）。
+- `pnpm validate:maintenance-bundle` 通过：构建约 1.3 MiB 的维护 dispatcher/config reader，并只携带 SQLite native binding 等必要运行文件；真实完成 SQLite setup 后由 bundle 执行 self-check、完整 schema verify、原子 DB+LKG 配对备份和 cleanup。工具镜像不再继承 Web 文件，也不需要 Next、pnpm、tsx、TypeScript 或完整应用源码。
 - `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。
 - `pnpm validate:mail-policies` 通过：每个域可独立选择 Worker/IMAP/关闭收件和 Resend/SMTP/关闭发件，Resend 请求与真实 TCP SMTP `verify`/AUTH/发件使用各域自己的凭据；旧 SMTP 配置默认迁移为自动协商，另一个真实 TCP SMTP 会话验证强制 `AUTH LOGIN` 的用户名/密码挑战流程；角色与单用户覆盖的权限、邮箱数量、有效期、每日收发和消息大小额度按预期合并，皇帝策略固定为全权限且不限额。
 - `pnpm validate:imap-inbound` 通过：在隔离 SQLite 数据库和随机 TCP 端口上完成真实 IMAP 登录、只读 mailbox、UID SEARCH/FETCH 对话；`X-Original-To` 正确映射到本地邮箱，伪造的 MIME `To` 不会旁路投递，原始 RFC822 入库，持久 UID 游标和 UIDVALIDITY 重置重扫都保持幂等，且客户端从未发送 STORE/MOVE/COPY/EXPUNGE。同一验证器也在临时 PostgreSQL 18 数据库、`poolMax=1` 下通过，短事务租约不会长期占住唯一连接。
@@ -26,7 +27,7 @@
 - `pnpm start` 由 Next.js Node instrumentation 在加载业务路由前等待唯一一次冷启动校验；Docker/systemd 不再用独立预进程重复探测同一坏候选。未初始化或校验失败时仍启动 Web 恢复入口，首次访问向导时生成/复用一次性 setup token。secret 长度、占位符、重复值、认证限流和 scrypt 并发参数均由同一 schema 约束。
 - 生成的 Service Worker 不含 `apis`、`others`、`start-url` 或其他运行时缓存路由，只预缓存静态资源；激活脚本会删除旧运行时 cache，且 `/api/*` 实测带 `private, no-store`。
 
-安全审计后升级了 Next.js、next-intl、Radix UI、YAML、tsx、Tailwind/PostCSS 及相关传递依赖，并强制 Next.js 使用 Sharp 0.35.0。使用 pnpm 11.21.0 执行 `pnpm audit --prod --audit-level high` 返回 `No known vulnerabilities found`，`pnpm peers check` 无 peer dependency 问题。
+安全审计后升级了 Next.js、next-intl、Radix UI、YAML、tsx、Tailwind/PostCSS 及相关传递依赖，并强制 Next.js 使用 Sharp 0.35.0。Auth.js beta 仍声明 Nodemailer `^7.0.7 || ^8.0.5`，但该范围受 GHSA-p6gq-j5cr-w38f 影响；项目固定已修复的 Nodemailer 9.0.5，并仅为这一项声明精确 peer 例外，真实 TCP SMTP `verify`/AUTH/发件回归通过。使用 pnpm 11.21.0 执行 `pnpm audit --prod --audit-level high` 返回 `No known vulnerabilities found`，`pnpm peers check` 无其余 peer dependency 问题。
 
 ## Debian 13 VPS Docker SQLite（旧配置链路记录）
 
@@ -91,7 +92,7 @@
 - 较早的真实 production HTTP 曾将注册/登录客户端上限临时设为 2，注册依次返回 `201/409/429`，Credentials callback 依次返回 `302/302/429`；两种 429 都带 `Retry-After` 和 `AUTH_RATE_LIMITED`。当前 `pnpm validate:auth-abuse` 已按配置对象覆盖进程全局上限、有界客户端 Map、代理头 opt-in、忽略 `X-User-Id` 与 scrypt 并发快速失败。
 - Webhook 保存前和发送时均执行 SSRF 校验；loopback、private、link-local、metadata、localhost 与 IPv4-mapped IPv6 被拒绝，发送时使用已验证 IP 且不跟随重定向。
 
-可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:imap-inbound`、`pnpm validate:runtime-fields`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
+可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:maintenance-bundle`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:imap-inbound`、`pnpm validate:runtime-fields`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
 
 ## SQLite 轮询基线
 
@@ -129,7 +130,7 @@
 - Caddy/Nginx 真实证书、代理头与日志权限。
 - 真实浏览器点击/可访问性与移动端视觉；当前已覆盖 production HTML 和向导背后的完整 HTTP/Session API，不把 API 验收冒充浏览器自动化。
 - Linux systemd `Restart=always` 与 `moemail-scheduler.service` 的实际安装、权限、进程重启；本机测试已验证相同 Next 退出/重启语义与 scheduler 的 LKG 读取。
-- 当前两份 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过：SQLite 默认解析出 `storage-init`、`moemail`，完整配置为 8 个服务且只有应用镜像；PostgreSQL 默认解析出 `storage-init`、`postgres`、`moemail`，完整配置为 10 个服务和三类 GHCR 镜像。本机仍没有 Docker daemon，因此尚未实跑 pull/up、bind mount 权限、backup/restore、IMAP 容器出站连通与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
+- 当前两份 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过：SQLite 默认解析出 `storage-init`、`moemail`，完整配置为 10 个服务；PostgreSQL 默认解析出 `storage-init`、`postgres`、`moemail`，完整配置为 12 个服务。默认 Web 使用 standalone `latest`，维护服务使用按需 `latest-tools`；PostgreSQL 另有 server/tools 两个 package。本机仍没有 Docker daemon，因此新镜像尚未实跑 pull/up、bind mount 权限、backup/restore、IMAP 容器出站连通与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
 - rclone 到真实异机/对象存储后的 checksum、immutable 与独立恢复演练。
 
 这些属于生产环境验收，不是剩余源码实现；部署时按 `docs/local-deployment.zh-CN.md` 的上线清单逐项打勾。

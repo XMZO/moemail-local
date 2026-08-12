@@ -4,9 +4,9 @@
 
 选择 Cloudflare Email Routing 时，Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。选择外部 IMAP 时无需 Cloudflare，但邮局必须提供 catch-all/全域转发，并保留可识别原始收件地址的 Header。
 
-仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:latest`；`postgres/docker-compose.yml` 运行 Web、内置 PostgreSQL 18 与 PostgreSQL 备份/恢复工具，统一拉取三个 package 的 `latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.16.5`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
+仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.16.6`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
 
-首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会刷新 `latest`，Compose 有意跟踪它以简化服务器更新。必须等待整个发布 Action 成功后再执行 `pull`，避免在三个 manifest 尚未全部合并时混用版本；回滚时把所选方案的全部镜像一起固定到同一个旧 tag 或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
+首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会同时刷新 `latest` 与应用维护用的 `latest-tools`。必须等待整个发布 Action 的四个 manifest 全部成功后再执行 `pull`；回滚时把所选方案的 Web、维护、数据库和数据库工具标签一起固定到同一旧版本或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
 从 `v0.16.1` 的旧 `compose.yaml` 升级时，先用 `docker compose -f compose.yaml --profile '*' down` 停止旧服务，再执行 `mv compose.yaml compose.v0.16.1.yaml`。禁止添加 `-v`，必须保留 `./data`；随后只下载下文与你所选数据库一致的一个 `.yml` 文件。旧 `compose.yaml` 不得留在原路径，否则无 `-f` 的命令可能继续选择旧部署定义。
 
@@ -164,7 +164,7 @@ archive_dir=/srv/moemail-offsite
 sudo install -d -m 0700 -o "$(id -un)" -g "$(id -gn)" "$archive_dir"
 umask 077
 backup_dir="$(docker compose --profile maintenance run --rm --no-deps -T \
-  --entrypoint node backup /app/deploy/docker/config-reader.mjs \
+  --entrypoint node backup /app/deploy/docker/config-reader.cjs \
   get database.sqlite.backupDir data/backups)"
 backup_name="moemail-upgrade-$(date -u +%Y-%m-%dT%H-%M-%S-%N)-$$.db"
 backup_path="/app/$backup_dir/$backup_name"
@@ -195,7 +195,7 @@ docker compose --profile maintenance run --rm --no-deps backup
 docker compose --profile '*' stop
 docker compose --profile restore run --rm restore \
   /app/data/backups/moemail-2026-08-11T03-23-00.000Z.db --force
-docker compose run --rm --no-deps moemail verify
+docker compose --profile maintenance run --rm --no-deps verify
 docker compose up -d moemail
 ```
 
@@ -288,7 +288,7 @@ mv -T docker-compose.yml.next docker-compose.yml
 docker compose pull
 docker compose up -d
 docker compose ps
-docker compose run --rm --no-deps moemail verify
+docker compose --profile maintenance run --rm --no-deps verify
 ```
 
 恢复前再次制作当前备份并把目标 `.dump` 与相邻 pair 放回备份目录。先打印脱敏目标，人工确认 host/port/database/user 后，才执行破坏性恢复：
@@ -319,7 +319,7 @@ set -euo pipefail
 docker compose up -d postgres
 docker compose --profile restore \
   run --rm postgres-restore /backups/restore.dump --confirm
-docker compose run --rm --no-deps moemail verify
+docker compose --profile maintenance run --rm --no-deps verify
 docker compose up -d moemail
 ```
 
@@ -417,7 +417,7 @@ IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也�
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.16.5 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.16.6 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \
@@ -551,7 +551,7 @@ docker compose -p "$recovery_project" run --rm --no-deps --user 0:0 \
 docker compose -p "$recovery_project" --profile restore run --rm --no-deps \
   --volume "$restore_input:/restore:ro" \
   restore /restore/restore.db --force
-docker compose -p "$recovery_project" run --rm --no-deps moemail verify
+docker compose -p "$recovery_project" --profile maintenance run --rm --no-deps verify
 ```
 
 verify 成功后，先停止或切走同宿主仍占用 3000 端口的旧 Web，再执行 `docker compose -p "$recovery_project" up -d moemail`；确认新实例健康后才能运行 `docker volume rm "$restore_input"`。任何一步失败时 `set -e` 会停止，保留临时输入卷和独立恢复目录供排错，不会启动 Web 或删除原部署。
@@ -591,8 +591,8 @@ docker compose -p "$recovery_project" up -d postgres
 docker compose -p "$recovery_project" --profile restore \
   run --rm --volume "$restore_input:/restore:ro" postgres-restore \
   /restore/restore.dump --confirm
-docker compose -p "$recovery_project" \
-  run --rm --no-deps moemail verify
+docker compose -p "$recovery_project" --profile maintenance \
+  run --rm --no-deps verify
 ```
 
 verify 成功后，先停止或切走同宿主旧 Web，再执行 `docker compose -p "$recovery_project" up -d moemail`；确认健康后才能删除 `$restore_input`。失败时保留恢复目录和输入卷，不要启动 Web。

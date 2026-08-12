@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { spawn, type ChildProcess } from "node:child_process"
+import { execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
 import {
   cpSync,
@@ -27,6 +27,7 @@ const postgresUrl = process.argv
   ?.slice("--postgres-url=".length) ?? null
 const expectedDriver = postgresUrl ? "postgres" : "sqlite"
 const stagedRedactionProbe = process.argv.includes("--staged-lkg-redaction")
+const verifyMaintenanceBundle = process.argv.includes("--verify-maintenance-bundle")
 const stagedRcloneSecret = "staged-rclone-secret-must-not-appear-in-setup-html"
 
 class CookieJar {
@@ -87,6 +88,27 @@ async function stop(child: ChildProcess) {
     new Promise<void>(resolvePromise => setTimeout(resolvePromise, 5_000)),
   ])
   if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+}
+
+async function verifyCompressedFontAsset(baseUrl: string, html: string) {
+  const cssPaths = [...html.matchAll(/href="([^"]+\.css(?:\?[^"]*)?)"/g)]
+    .map(match => match[1])
+  assert.ok(cssPaths.length > 0, "setup page must link at least one stylesheet")
+
+  const stylesheets = await Promise.all(cssPaths.map(async path => {
+    const response = await fetch(new URL(path, baseUrl))
+    assert.equal(response.status, 200)
+    return response.text()
+  }))
+  const fontPath = stylesheets.join("\n")
+    .match(/\/_next\/static\/media\/[^)"']+\.woff2/)?.[0]
+  assert.ok(fontPath, "built CSS must reference the compressed WOFF2 font")
+
+  const response = await fetch(new URL(fontPath, baseUrl))
+  assert.equal(response.status, 200)
+  assert.match(response.headers.get("content-type") ?? "", /woff2/i)
+  const bytes = (await response.arrayBuffer()).byteLength
+  assert.ok(bytes > 0 && bytes < 1_000_000, "served WOFF2 font must stay below 1 MB")
 }
 
 let server: ChildProcess | null = null
@@ -160,6 +182,7 @@ try {
   assert.equal(setupPage.status, 200)
   const setupHtml = await setupPage.text()
   assert.match(setupHtml, /MoeMail/)
+  await verifyCompressedFontAsset(baseUrl, setupHtml)
   if (stagedRedactionProbe) {
     assert.doesNotMatch(setupHtml, new RegExp(stagedRcloneSecret))
     assert.match(setupHtml, /Existing advanced values are preserved/)
@@ -515,6 +538,22 @@ try {
     return response.ok && body.status === "ok" && !body.configError ? body : null
   }, 8_000)
 
+  let maintenanceBundleVerified = false
+  if (verifyMaintenanceBundle) {
+    const maintenanceBundle = resolve(repositoryRoot, ".next/maintenance/maintenance.mjs")
+    const migrateOutput = execFileSync(process.execPath, [maintenanceBundle, "migrate"], {
+      cwd: temporaryRoot,
+      encoding: "utf8",
+    })
+    assert.match(migrateOutput, new RegExp(`"driver":"${expectedDriver}"`))
+    const verifyOutput = execFileSync(process.execPath, [maintenanceBundle, "verify"], {
+      cwd: temporaryRoot,
+      encoding: "utf8",
+    })
+    assert.match(verifyOutput, new RegExp(`"driver":"${expectedDriver}"`))
+    maintenanceBundleVerified = true
+  }
+
   console.log(JSON.stringify({
     firstRunRedirectsToWebUi: true,
     setupTokenGate: true,
@@ -535,6 +574,8 @@ try {
     independentOutboundDisable: true,
     emperorAccessImmutable: true,
     appearanceValidation: true,
+    compressedFontAsset: true,
+    maintenanceBundleVerified,
   }, null, 2))
 } catch (error) {
   const sanitized = `${stdout}\n${stderr}`

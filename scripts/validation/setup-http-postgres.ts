@@ -30,6 +30,10 @@ async function freePort() {
 }
 
 try {
+  execFileSync(process.execPath, [
+    resolve(repositoryRoot, "scripts/build-maintenance.mjs"),
+  ], { cwd: repositoryRoot, stdio: "inherit" })
+
   const port = await freePort()
   execFileSync("initdb", [
     "--pgdata", clusterRoot,
@@ -52,6 +56,7 @@ try {
     tsxCli,
     httpValidation,
     `--postgres-url=${url}`,
+    "--verify-maintenance-bundle",
   ], {
     cwd: repositoryRoot,
     stdio: "inherit",
@@ -116,6 +121,7 @@ try {
     postgresPoolMaxOneImapLease: true,
     dockerPostgresVerifier: true,
     postgresVerifierRejectsIndexDefinitionTampering: true,
+    postgresMaintenanceBundle: true,
   }, null, 2))
 } finally {
   if (started) {

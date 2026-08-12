@@ -57,7 +57,11 @@ mv compose.yaml compose.v0.16.1.yaml
 
 ### 方案 A：SQLite
 
-SQLite 是最精简的部署，只拉取应用镜像：
+SQLite 是最精简的部署。默认 `up -d` 只拉取 standalone Web 镜像；启用维护
+profile 时才会按需拉取同一 Package 的工具标签：
+
+- `ghcr.io/xmzo/moemail-local:latest`
+- `ghcr.io/xmzo/moemail-local:latest-tools`（仅维护 profiles 使用）
 
 ```bash
 set -euo pipefail
@@ -75,11 +79,13 @@ docker compose ps
 
 ### 方案 B：内置 PostgreSQL
 
-PostgreSQL 部署会拉取三个镜像：
+PostgreSQL 默认只启动 standalone Web 与 PostgreSQL 18；维护 profile 仅在调用时
+按需拉取两种工具镜像：
 
 - `ghcr.io/xmzo/moemail-local:latest`
+- `ghcr.io/xmzo/moemail-local:latest-tools`（应用维护 profiles）
 - `ghcr.io/xmzo/moemail-local-postgres:latest`
-- `ghcr.io/xmzo/moemail-local-postgres-tools:latest`
+- `ghcr.io/xmzo/moemail-local-postgres-tools:latest`（PostgreSQL 备份/恢复 profiles）
 
 ```bash
 set -euo pipefail
@@ -184,7 +190,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.16.5 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.6 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -266,6 +272,7 @@ SQLite 使用默认文件：
 ```bash
 docker compose --profile maintenance run --rm --no-deps cleanup
 docker compose --profile maintenance run --rm --no-deps backup
+docker compose --profile maintenance run --rm --no-deps verify
 docker compose --profile scheduler up -d scheduler
 docker compose --profile monitoring up -d monitor
 docker compose --profile offsite up -d offsite-backup
@@ -275,6 +282,7 @@ PostgreSQL 同样使用默认文件名，因此命令也保持简短：
 
 ```bash
 docker compose --profile maintenance run --rm postgres-backup
+docker compose --profile maintenance run --rm --no-deps verify
 docker compose --profile scheduler up -d scheduler postgres-backup-scheduler
 docker compose --profile monitoring up -d monitor
 docker compose --profile offsite up -d offsite-backup
@@ -301,7 +309,7 @@ docker compose --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.16.5 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.6 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -309,6 +317,7 @@ pnpm build
 pnpm exec tsc --noEmit --incremental false
 pnpm validate:no-local-env
 pnpm validate:deployment
+pnpm validate:maintenance-bundle
 pnpm validate:email-worker
 pnpm validate:mail-policies
 pnpm validate:imap-inbound

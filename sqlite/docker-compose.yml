@@ -2,6 +2,7 @@ name: moemail
 
 x-images:
   app: &app-image ghcr.io/xmzo/moemail-local:latest
+  maintenance: &maintenance-image ghcr.io/xmzo/moemail-local:latest-tools
 
 x-moemail-service: &moemail-service
   image: *app-image
@@ -12,6 +13,18 @@ x-moemail-service: &moemail-service
     storage-init:
       condition: service_completed_successfully
   stop_grace_period: 30s
+
+x-maintenance-service: &maintenance-service
+  image: *maintenance-image
+  pull_policy: always
+  volumes:
+    - ./data:/app/data
+  depends_on:
+    storage-init:
+      condition: service_completed_successfully
+  stop_grace_period: 30s
+  healthcheck:
+    disable: true
 
 services:
   storage-init:
@@ -46,34 +59,40 @@ services:
       retries: 3
 
   cleanup:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [maintenance]
     restart: "no"
     command: [cleanup]
-    healthcheck:
-      disable: true
 
   backup:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [maintenance]
     restart: "no"
     command: [backup]
-    healthcheck:
-      disable: true
+
+  migrate:
+    <<: *maintenance-service
+    profiles: [maintenance]
+    restart: "no"
+    command: [migrate]
+
+  verify:
+    <<: *maintenance-service
+    profiles: [maintenance]
+    restart: "no"
+    command: [verify]
 
   restore:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [restore]
     restart: "no"
     entrypoint:
       - /app/deploy/docker/entrypoint.sh
       - restore
     command: []
-    healthcheck:
-      disable: true
 
   scheduler:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [scheduler]
     restart: unless-stopped
     depends_on:
@@ -82,11 +101,9 @@ services:
       moemail:
         condition: service_healthy
     command: [scheduler]
-    healthcheck:
-      disable: true
 
   monitor:
-    image: *app-image
+    image: *maintenance-image
     pull_policy: always
     profiles: [monitoring]
     restart: unless-stopped
@@ -110,7 +127,7 @@ services:
       disable: true
 
   offsite-backup:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [offsite]
     restart: unless-stopped
     volumes:

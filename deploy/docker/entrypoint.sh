@@ -3,7 +3,8 @@ set -eu
 
 umask 077
 
-config_reader="/app/deploy/docker/config-reader.mjs"
+config_reader="/app/deploy/docker/config-reader.cjs"
+maintenance="/app/deploy/docker/maintenance.mjs"
 
 config_state() {
   node "$config_reader" state
@@ -26,11 +27,11 @@ database_driver() {
 }
 
 run_migrate() {
-  pnpm "db:$(database_driver):migrate"
+  node "$maintenance" migrate
 }
 
 run_verify() {
-  pnpm "db:$(database_driver):verify"
+  node "$maintenance" verify
 }
 
 command="${1:-serve}"
@@ -40,7 +41,7 @@ fi
 
 case "$command" in
   serve)
-    exec pnpm start --hostname 0.0.0.0 --port 3000 "$@"
+    exec node server.js "$@"
     ;;
   migrate)
     require_ready
@@ -52,7 +53,7 @@ case "$command" in
     ;;
   cleanup)
     require_ready
-    exec pnpm cleanup "$@"
+    exec node "$maintenance" cleanup "$@"
     ;;
   backup)
     require_ready
@@ -60,13 +61,19 @@ case "$command" in
       echo "PostgreSQL backups use the postgres-backup Compose service." >&2
       exit 64
     fi
-    exec pnpm db:sqlite:backup "$@"
+    exec node "$maintenance" backup "$@"
+    ;;
+  monitor)
+    exec node "$maintenance" monitor "$@"
+    ;;
+  offsite-backup)
+    exec node "$maintenance" offsite-backup "$@"
     ;;
   restore)
     # 恢复点旁的严格 pair 是目标数据库与配置的权威来源；全新卷或损坏
     # installed config 时也必须能自举。PostgreSQL Compose 仍应使用其
     # 带 pg_restore 的专用 postgres-restore service。
-    exec pnpm db:restore "$@"
+    exec node "$maintenance" restore "$@"
     ;;
   scheduler)
     exec /app/deploy/docker/scheduler.sh "$@"

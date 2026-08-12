@@ -8,6 +8,13 @@ allowBuilds:
   unrs-resolver: true
   workerd: true
 
+# Auth.js beta still declares Nodemailer <=8, but that line is affected by
+# GHSA-p6gq-j5cr-w38f. Keep the audited 9.x release; our SMTP integration uses
+# the stable createTransport/verify/sendMail surface and has a real TCP test.
+peerDependencyRules:
+  allowedVersions:
+    nodemailer: 9.0.5
+
 overrides:
   'sharp@^0.34.3': 0.35.0
   '@babel/core@^7': 7.29.7

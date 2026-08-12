@@ -123,6 +123,7 @@ jobs:
           pnpm validate:runtime-fields
           pnpm validate:no-local-env
           pnpm validate:deployment
+          pnpm validate:maintenance-bundle
           pnpm exec tsc --noEmit --incremental false
 
   build:
@@ -143,6 +144,18 @@ jobs:
           - image_kind: app
             dockerfile: Dockerfile
             target: runtime
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            expected_uname: aarch64
+          - image_kind: maintenance
+            dockerfile: Dockerfile
+            target: maintenance
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            expected_uname: x86_64
+          - image_kind: maintenance
+            dockerfile: Dockerfile
+            target: maintenance
             runner: ubuntu-24.04-arm
             platform: linux/arm64
             expected_uname: aarch64
@@ -185,7 +198,7 @@ jobs:
           set -euo pipefail
 
           case "$IMAGE_KIND" in
-            app) image_name="$APP_IMAGE" ;;
+            app|maintenance) image_name="$APP_IMAGE" ;;
             postgres) image_name="$POSTGRES_IMAGE" ;;
             postgres-tools) image_name="$POSTGRES_TOOLS_IMAGE" ;;
             *)
@@ -241,6 +254,7 @@ jobs:
           IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
           DIGEST: ${{ steps.build.outputs.digest }}
           EXPECTED_PLATFORM: ${{ matrix.platform }}
+          EXPECTED_UNAME: ${{ matrix.expected_uname }}
         run: |
           set -euo pipefail
 
@@ -253,7 +267,91 @@ jobs:
           fi
 
           case "$IMAGE_KIND" in
-            app) docker run --rm --entrypoint node "$image_ref" --version ;;
+            app)
+              docker run --rm --entrypoint node "$image_ref" --version
+              container_name="moemail-app-smoke-${GITHUB_RUN_ID}-${RANDOM}"
+              cleanup_app_smoke() {
+                docker rm --force --volumes "$container_name" >/dev/null 2>&1 || true
+              }
+              trap cleanup_app_smoke EXIT
+              started_at="$(date +%s)"
+              docker run --detach --name "$container_name" "$image_ref" >/dev/null
+              ready=false
+              for _ in $(seq 1 45); do
+                if docker exec "$container_name" node -e \
+                  "fetch('http://127.0.0.1:3000/api/internal/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+                  ready=true
+                  break
+                fi
+                sleep 1
+              done
+              if [[ "$ready" != true ]]; then
+                docker logs "$container_name" >&2
+                echo "Standalone app image did not become ready" >&2
+                exit 1
+              fi
+              docker exec -i "$container_name" node --input-type=module <<'NODE'
+              const origin = "http://127.0.0.1:3000"
+              const [setup, asset, image] = await Promise.all([
+                fetch(`${origin}/zh-CN/setup`),
+                fetch(`${origin}/icons/icon-192x192.png`),
+                fetch(`${origin}/_next/image?url=%2Ficons%2Ficon-192x192.png&w=256&q=75`),
+              ])
+              if (!setup.ok) throw new Error(`setup page failed: ${setup.status}`)
+              if (!asset.ok || !String(asset.headers.get("content-type")).startsWith("image/")) {
+                throw new Error(`static asset failed: ${asset.status}`)
+              }
+              if (!image.ok || !String(image.headers.get("content-type")).startsWith("image/")) {
+                throw new Error(`image optimizer failed: ${image.status}`)
+              }
+              const html = await setup.text()
+              const cssPaths = [...html.matchAll(/href="([^"]+\.css(?:\?[^"]*)?)"/g)]
+                .map(match => match[1])
+              if (cssPaths.length === 0) throw new Error("setup page did not link a stylesheet")
+              const stylesheets = await Promise.all(cssPaths.map(async path => {
+                const response = await fetch(new URL(path, origin))
+                if (!response.ok) throw new Error(`stylesheet failed: ${response.status}`)
+                return response.text()
+              }))
+              const fontPath = stylesheets.join("\n")
+                .match(/\/_next\/static\/media\/[^)"']+\.woff2/)?.[0]
+              if (!fontPath) throw new Error("built CSS did not reference the WOFF2 font")
+              const font = await fetch(new URL(fontPath, origin))
+              const fontBytes = (await font.arrayBuffer()).byteLength
+              if (!font.ok || !/woff2/i.test(font.headers.get("content-type") ?? "")) {
+                throw new Error(`font asset failed: ${font.status}`)
+              }
+              if (fontBytes <= 0 || fontBytes >= 1000000) {
+                throw new Error(`font asset exceeded size budget: ${fontBytes}`)
+              }
+              await Promise.all([asset.arrayBuffer(), image.arrayBuffer()])
+          NODE
+              startup_seconds="$(( $(date +%s) - started_at ))"
+              image_bytes="$(docker image inspect --format '{{.Size}}' "$image_ref")"
+              echo "standalone_startup_seconds=$startup_seconds image_uncompressed_bytes=$image_bytes"
+              printf 'image_kind=app\nplatform=%s\nuncompressed_bytes=%s\nstartup_seconds=%s\n' \
+                "$EXPECTED_PLATFORM" "$image_bytes" "$startup_seconds" \
+                > "$RUNNER_TEMP/$IMAGE_KIND-$EXPECTED_UNAME-metrics.txt"
+              if (( image_bytes > 536870912 )); then
+                echo "Standalone app image exceeds the 512 MiB uncompressed budget" >&2
+                exit 1
+              fi
+              if (( startup_seconds > 20 )); then
+                echo "Standalone app startup exceeded the 20 second budget" >&2
+                exit 1
+              fi
+              cleanup_app_smoke
+              trap - EXIT
+              ;;
+            maintenance)
+              docker run --rm --entrypoint node "$image_ref" \
+                /app/deploy/docker/maintenance.mjs self-check
+              docker run --rm --entrypoint rclone "$image_ref" version
+              image_bytes="$(docker image inspect --format '{{.Size}}' "$image_ref")"
+              printf 'image_kind=maintenance\nplatform=%s\nuncompressed_bytes=%s\n' \
+                "$EXPECTED_PLATFORM" "$image_bytes" \
+                > "$RUNNER_TEMP/$IMAGE_KIND-$EXPECTED_UNAME-metrics.txt"
+              ;;
             postgres)
               docker run --rm --entrypoint postgres "$image_ref" --version
               container_name="moemail-postgres-smoke-${GITHUB_RUN_ID}-${RANDOM}"
@@ -298,6 +396,21 @@ jobs:
               ;;
           esac
 
+          if [[ ! -f "$RUNNER_TEMP/$IMAGE_KIND-$EXPECTED_UNAME-metrics.txt" ]]; then
+            image_bytes="$(docker image inspect --format '{{.Size}}' "$image_ref")"
+            printf 'image_kind=%s\nplatform=%s\nuncompressed_bytes=%s\n' \
+              "$IMAGE_KIND" "$EXPECTED_PLATFORM" "$image_bytes" \
+              > "$RUNNER_TEMP/$IMAGE_KIND-$EXPECTED_UNAME-metrics.txt"
+          fi
+
+      - name: Upload native image metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-${{ matrix.image_kind }}--${{ matrix.expected_uname }}
+          path: ${{ runner.temp }}/${{ matrix.image_kind }}-${{ matrix.expected_uname }}-metrics.txt
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Export digest for manifest merge
         shell: bash
         env:
@@ -327,6 +440,7 @@ jobs:
       matrix:
         image_kind:
           - app
+          - maintenance
           - postgres
           - postgres-tools
     steps:
@@ -342,7 +456,7 @@ jobs:
           set -euo pipefail
 
           case "$IMAGE_KIND" in
-            app) image_name="$APP_IMAGE" ;;
+            app|maintenance) image_name="$APP_IMAGE" ;;
             postgres) image_name="$POSTGRES_IMAGE" ;;
             postgres-tools) image_name="$POSTGRES_TOOLS_IMAGE" ;;
             *)
@@ -395,13 +509,18 @@ jobs:
           done
 
           declare -A tag_set=()
-          tag_set["$PUBLISH_TAG"]=1
-          tag_set["$SHA_TAG"]=1
+          tag_suffix=""
+          if [[ "$IMAGE_KIND" == "maintenance" ]]; then
+            tag_suffix="-tools"
+          fi
+          primary_tag="${PUBLISH_TAG}${tag_suffix}"
+          tag_set["$primary_tag"]=1
+          tag_set["${SHA_TAG}${tag_suffix}"]=1
           if [[ -n "$SEMVER_TAG" ]]; then
-            tag_set["$SEMVER_TAG"]=1
+            tag_set["${SEMVER_TAG}${tag_suffix}"]=1
           fi
           if [[ "$PUBLISH_LATEST" == "true" ]]; then
-            tag_set["latest"]=1
+            tag_set["latest${tag_suffix}"]=1
           fi
 
           tag_args=()
@@ -410,6 +529,6 @@ jobs:
           done
 
           docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
-          docker buildx imagetools inspect "$IMAGE_NAME:$PUBLISH_TAG" > "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt"
+          docker buildx imagetools inspect "$IMAGE_NAME:$primary_tag" > "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt"
           grep -F "linux/amd64" "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt" >/dev/null
           grep -F "linux/arm64" "$RUNNER_TEMP/$IMAGE_KIND-manifest.txt" >/dev/null

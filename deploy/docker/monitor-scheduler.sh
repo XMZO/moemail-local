@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-config_reader=/app/deploy/docker/config-reader.mjs
+config_reader=/app/deploy/docker/config-reader.cjs
 
 while :; do
   state="$(node "$config_reader" state)"
@@ -35,7 +35,7 @@ while :; do
     printf '{"event":"scheduler.config.applied","key":"monitor.intervalSeconds","value":%s}\n' "$interval"
   fi
   if [ "$now" -ge "$next_run" ]; then
-    if ! pnpm monitor; then
+    if ! /app/deploy/docker/entrypoint.sh monitor; then
       printf '{"event":"scheduler.job.failed","job":"monitor"}\n' >&2
       exit 1
     fi

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-config_reader=/app/deploy/docker/config-reader.mjs
+config_reader=/app/deploy/docker/config-reader.cjs
 
 config_get() {
   node "$config_reader" get "$1" "$2"

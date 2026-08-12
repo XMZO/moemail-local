@@ -2,6 +2,7 @@ name: moemail
 
 x-images:
   app: &app-image ghcr.io/xmzo/moemail-local:latest
+  maintenance: &maintenance-image ghcr.io/xmzo/moemail-local:latest-tools
   postgres: &postgres-image ghcr.io/xmzo/moemail-local-postgres:latest
   postgres-tools: &postgres-tools-image ghcr.io/xmzo/moemail-local-postgres-tools:latest
 
@@ -17,6 +18,21 @@ x-moemail-service: &moemail-service
     storage-init:
       condition: service_completed_successfully
   stop_grace_period: 30s
+
+x-maintenance-service: &maintenance-service
+  image: *maintenance-image
+  pull_policy: always
+  volumes:
+    - ./data:/app/data
+  networks:
+    - default
+    - database
+  depends_on:
+    storage-init:
+      condition: service_completed_successfully
+  stop_grace_period: 30s
+  healthcheck:
+    disable: true
 
 services:
   storage-init:
@@ -80,7 +96,7 @@ services:
       retries: 3
 
   cleanup:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [maintenance]
     restart: "no"
     depends_on:
@@ -89,8 +105,28 @@ services:
       postgres:
         condition: service_healthy
     command: [cleanup]
-    healthcheck:
-      disable: true
+
+  migrate:
+    <<: *maintenance-service
+    profiles: [maintenance]
+    restart: "no"
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    command: [migrate]
+
+  verify:
+    <<: *maintenance-service
+    profiles: [maintenance]
+    restart: "no"
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    command: [verify]
 
   postgres-backup:
     image: *postgres-tools-image
@@ -113,7 +149,7 @@ services:
     entrypoint: [moemail-postgres-backup]
 
   scheduler:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [scheduler]
     restart: unless-stopped
     depends_on:
@@ -124,8 +160,6 @@ services:
       moemail:
         condition: service_healthy
     command: [scheduler]
-    healthcheck:
-      disable: true
 
   postgres-backup-scheduler:
     image: *postgres-tools-image
@@ -148,7 +182,7 @@ services:
     entrypoint: [moemail-postgres-backup-scheduler]
 
   monitor:
-    image: *app-image
+    image: *maintenance-image
     pull_policy: always
     profiles: [monitoring]
     restart: unless-stopped
@@ -176,7 +210,7 @@ services:
       disable: true
 
   offsite-backup:
-    <<: *moemail-service
+    <<: *maintenance-service
     profiles: [offsite]
     restart: unless-stopped
     volumes:
