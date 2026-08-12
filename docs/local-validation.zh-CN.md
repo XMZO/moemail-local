@@ -14,6 +14,7 @@
 - `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
 - `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、轻量 Web `latest` 与按需维护 `latest-tools` 契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 server/工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、四种镜像变体按 digest 推送并在合并 manifest 前执行原生 smoke）。
 - `pnpm validate:maintenance-bundle` 通过：构建约 1.3 MiB 的维护 dispatcher/config reader，并只携带 SQLite native binding 等必要运行文件；真实完成 SQLite setup 后由 bundle 执行 self-check、完整 schema verify、原子 DB+LKG 配对备份和 cleanup。工具镜像不再继承 Web 文件，也不需要 Next、pnpm、tsx、TypeScript 或完整应用源码。
+- `v0.16.6` 的 [Publish Docker Images](https://github.com/XMZO/moemail-local/actions/runs/31595636029) 在原生 amd64/arm64 runner 上全部通过。Web smoke 实际启动 standalone server、health、首次向导、静态文件、WOFF2 字体和 Sharp 图片优化；维护 smoke 实际加载 Linux `better-sqlite3` native binding 与 rclone。amd64 Web 压缩层由 `v0.16.5` 的 290.54 MiB 降至 106.65 MiB（-63.3%），arm64 由 285.94 MiB 降至 107.17 MiB（-62.5%）；未压缩分别为 316.90/335.72 MiB，冷启动为 2/1 秒。按需维护镜像压缩后为 95.79/94.19 MiB，未压缩为 275.92/293.07 MiB。四种 `latest`/`latest-tools` 均与本次 version tag 的 OCI index digest 一致并包含 linux/amd64、linux/arm64。
 - `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。
 - `pnpm validate:mail-policies` 通过：每个域可独立选择 Worker/IMAP/关闭收件和 Resend/SMTP/关闭发件，Resend 请求与真实 TCP SMTP `verify`/AUTH/发件使用各域自己的凭据；旧 SMTP 配置默认迁移为自动协商，另一个真实 TCP SMTP 会话验证强制 `AUTH LOGIN` 的用户名/密码挑战流程；角色与单用户覆盖的权限、邮箱数量、有效期、每日收发和消息大小额度按预期合并，皇帝策略固定为全权限且不限额。
 - `pnpm validate:imap-inbound` 通过：在隔离 SQLite 数据库和随机 TCP 端口上完成真实 IMAP 登录、只读 mailbox、UID SEARCH/FETCH 对话；`X-Original-To` 正确映射到本地邮箱，伪造的 MIME `To` 不会旁路投递，原始 RFC822 入库，持久 UID 游标和 UIDVALIDITY 重置重扫都保持幂等，且客户端从未发送 STORE/MOVE/COPY/EXPUNGE。同一验证器也在临时 PostgreSQL 18 数据库、`poolMax=1` 下通过，短事务租约不会长期占住唯一连接。
@@ -130,7 +131,7 @@
 - Caddy/Nginx 真实证书、代理头与日志权限。
 - 真实浏览器点击/可访问性与移动端视觉；当前已覆盖 production HTML 和向导背后的完整 HTTP/Session API，不把 API 验收冒充浏览器自动化。
 - Linux systemd `Restart=always` 与 `moemail-scheduler.service` 的实际安装、权限、进程重启；本机测试已验证相同 Next 退出/重启语义与 scheduler 的 LKG 读取。
-- 当前两份 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过：SQLite 默认解析出 `storage-init`、`moemail`，完整配置为 10 个服务；PostgreSQL 默认解析出 `storage-init`、`postgres`、`moemail`，完整配置为 12 个服务。默认 Web 使用 standalone `latest`，维护服务使用按需 `latest-tools`；PostgreSQL 另有 server/tools 两个 package。本机仍没有 Docker daemon，因此新镜像尚未实跑 pull/up、bind mount 权限、backup/restore、IMAP 容器出站连通与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
+- 当前两份 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过：SQLite 默认解析出 `storage-init`、`moemail`，完整配置为 10 个服务；PostgreSQL 默认解析出 `storage-init`、`postgres`、`moemail`，完整配置为 12 个服务。默认 Web 使用 standalone `latest`，维护服务使用按需 `latest-tools`；PostgreSQL 另有 server/tools 两个 package。新镜像已在 GitHub 原生 Linux runner 完成逐镜像 pull/run smoke，但本机仍没有 Docker daemon，因此尚未按两份 Compose 实跑 bind mount 权限、backup/restore、IMAP 容器出站连通与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
 - rclone 到真实异机/对象存储后的 checksum、immutable 与独立恢复演练。
 
 这些属于生产环境验收，不是剩余源码实现；部署时按 `docs/local-deployment.zh-CN.md` 的上线清单逐项打勾。
