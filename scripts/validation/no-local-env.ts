@@ -16,7 +16,7 @@ function visitCompose(value: unknown, path = "") {
   }
 }
 
-for (const file of ["compose.yml", "compose.postgres.yml"]) {
+for (const file of ["sqlite/docker-compose.yml", "postgres/docker-compose.yml"]) {
   const composeSource = readFileSync(file, "utf8")
   assert.doesNotMatch(
     composeSource,
@@ -69,9 +69,13 @@ for (const file of readdirSync("deploy/local")) {
 }
 
 assert.equal(existsSync(".env.example"), false)
-assert.equal(existsSync("compose.yml"), true)
-assert.equal(existsSync("compose.postgres.yml"), true)
+assert.equal(existsSync("sqlite/docker-compose.yml"), true)
+assert.equal(existsSync("postgres/docker-compose.yml"), true)
+assert.equal(existsSync("compose.yml"), false)
+assert.equal(existsSync("docker-compose.yml"), false)
 assert.equal(existsSync("compose.yaml"), false)
+assert.equal(existsSync("docker-compose.yaml"), false)
+assert.equal(existsSync("compose.postgres.yml"), false)
 assert.equal(existsSync("compose.postgres.yaml"), false)
 console.log(JSON.stringify({
   composeEnvironmentKeysAbsent: true,

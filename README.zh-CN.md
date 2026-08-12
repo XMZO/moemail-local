@@ -26,14 +26,14 @@
 - 周期清理、数据库备份、监控与 rclone 异地备份。
 - 提供 CLI 与 MCP 客户端，便于自动化及 AI Agent 使用。
 
-## 只能选择一个 Compose 文件
+## 只能选择一个部署目录
 
-| 部署方式 | 文件 | 启动命令 | 拉取的镜像 |
-| --- | --- | --- | --- |
-| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:latest` |
-| 内置 PostgreSQL 18 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | `latest` 的应用、PostgreSQL 与 PostgreSQL 工具镜像 |
+| 部署方式 | 仓库文件 | 启动命令 |
+| --- | --- | --- |
+| SQLite | `sqlite/docker-compose.yml` | 进入 SQLite 部署目录后执行 `docker compose up -d` |
+| 内置 PostgreSQL 18 | `postgres/docker-compose.yml` | 进入 PostgreSQL 部署目录后执行 `docker compose up -d` |
 
-两个文件都是完整、独立的部署定义。**禁止使用多个 `-f` 参数叠加它们**，也不要让两套部署同时使用同一个 `./data`。它们使用相同的项目名、回环端口和持久化路径。切换数据库需要按迁移流程执行，不能靠 Compose 覆盖完成。
+每个目录都只有一份完整、独立的 `docker-compose.yml`。进入且只进入所选部署目录，所有操作都使用普通的 `docker compose ...`。**禁止用多个 `-f` 参数叠加它们**。每个目录会在旁边生成自己的 `data/`，复制或打包整个目录即可同时带走部署定义和数据。切换数据库需要按迁移流程执行，不能靠 Compose 覆盖完成。
 
 两个方案都不使用 `.env`、Compose 应用环境变量、服务器本地镜像构建或内置 Caddy 容器；Web 都只绑定 `127.0.0.1:3000`，全部状态都位于 `./data`。
 
@@ -44,7 +44,7 @@ docker compose -f compose.yaml --profile '*' down
 mv compose.yaml compose.v0.16.1.yaml
 ```
 
-不要添加 `-v`，必须保留 bind mount 的 `./data`。也不要让 `compose.yaml` 留在原处，否则普通 `docker compose` 仍可能优先选中旧文件，而不是新的 `compose.yml`。
+不要添加 `-v`，必须保留 bind mount 的 `./data`。也不要让 `compose.yaml` 留在原处，否则普通 `docker compose` 仍可能优先选中旧文件，而不是新的 `docker-compose.yml`。
 
 ## 生产部署
 
@@ -61,11 +61,11 @@ SQLite 是最精简的部署，只拉取应用镜像：
 
 ```bash
 set -euo pipefail
-mkdir -p moemail
-cd moemail
+mkdir -p moemail-sqlite
+cd moemail-sqlite
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.yml \
-  -o compose.yml
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/sqlite/docker-compose.yml \
+  -o docker-compose.yml
 docker compose config --quiet
 docker compose up -d
 docker compose ps
@@ -83,14 +83,38 @@ PostgreSQL 部署会拉取三个镜像：
 
 ```bash
 set -euo pipefail
-mkdir -p moemail
-cd moemail
+mkdir -p moemail-postgres
+cd moemail-postgres
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.postgres.yml \
-  -o compose.postgres.yml
-docker compose -f compose.postgres.yml config --quiet
-docker compose -f compose.postgres.yml up -d
-docker compose -f compose.postgres.yml ps
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/postgres/docker-compose.yml \
+  -o docker-compose.yml
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+```
+
+已有 PostgreSQL 部署可以一次性改名，不会改变容器、Compose 项目名或 `./data`。命令会先确认选中的旧文件确实含 `postgres` 服务，并保留冲突的默认文件而不是删除：
+
+```bash
+set -euo pipefail
+test ! -e docker-compose.yml
+if [ -f compose.postgres.yml ]; then
+  legacy_compose=compose.postgres.yml
+elif [ -f compose.yml ]; then
+  legacy_compose=compose.yml
+else
+  echo "No legacy PostgreSQL Compose file found" >&2
+  exit 1
+fi
+docker compose -f "$legacy_compose" config --services | grep -qx postgres
+for old_default in compose.yml compose.yaml docker-compose.yaml; do
+  if [ "$old_default" != "$legacy_compose" ] && [ -e "$old_default" ]; then
+    mv "$old_default" "$old_default.disabled"
+  fi
+done
+mv "$legacy_compose" docker-compose.yml
+docker compose config --quiet
+docker compose up -d
 ```
 
 首次向导选择 PostgreSQL，并使用：
@@ -103,15 +127,10 @@ postgresql://moemail@postgres:5432/moemail
 
 ### 完成首次初始化
 
-先通过 SSH 隧道或 HTTPS 反向代理访问站点。加载 setup 页面后才会生成一次性 token，然后执行与所选方案对应的命令：
+先通过 SSH 隧道或 HTTPS 反向代理访问站点。加载 setup 页面后才会生成一次性 token；两种方案都使用同一条命令：
 
 ```bash
-# SQLite
 docker compose exec -T moemail sh -c 'cat /app/data/setup-token'
-
-# PostgreSQL
-docker compose -f compose.postgres.yml \
-  exec -T moemail sh -c 'cat /app/data/setup-token'
 ```
 
 在向导中填写公网地址、数据库、首个皇帝账号、运行密钥和可选集成。登录后先进入 **个人中心 → 域名收发**，把默认示例域名替换成自己的域名并选择每个域的收发方式；权限额度、完整运行配置和全站字体也都在个人中心。所有应用设置写入 `data/config.yaml` 或所选数据库的 `site_config`；应用不会从环境变量读取部署配置。
@@ -208,7 +227,6 @@ pnpm exec wrangler tail --config wrangler.email.json
 
 ```bash
 docker compose logs -f moemail
-# PostgreSQL 部署加：-f compose.postgres.yml
 ```
 
 ## 出站发件
@@ -229,16 +247,14 @@ IMAP、SMTP 与 Resend 凭据保存在所选数据库中，也会进入数据库
 
 删除容器或镜像不会删除这些 bind mount 文件；只有显式删除 `./data` 才会丢失本地状态。
 
-需要冷打包时，将 `compose_file` 设置为实际部署的唯一文件：
+需要冷打包时，在所选部署目录内执行：
 
 ```bash
 set -euo pipefail
-compose_file=compose.yml
-# PostgreSQL 部署改为：compose_file=compose.postgres.yml
-docker compose -f "$compose_file" --profile '*' stop
+docker compose --profile '*' stop
 sudo tar --numeric-owner -czf \
-  "../moemail-$(date -u +%Y%m%d%H%M%S).tar.gz" "$compose_file" data
-docker compose -f "$compose_file" --profile '*' start
+  "../moemail-$(date -u +%Y%m%d%H%M%S).tar.gz" docker-compose.yml data
+docker compose --profile '*' start
 ```
 
 日常灾备演练使用逻辑备份和独立恢复流程，不要直接复制正在写入的 PostgreSQL 物理目录。详见[备份、恢复与异地同步](docs/local-deployment.zh-CN.md#8-备份恢复与异地同步)。
@@ -255,25 +271,23 @@ docker compose --profile monitoring up -d monitor
 docker compose --profile offsite up -d offsite-backup
 ```
 
-PostgreSQL 的每条命令都必须指定其独立文件：
+PostgreSQL 同样使用默认文件名，因此命令也保持简短：
 
 ```bash
-docker compose -f compose.postgres.yml --profile maintenance \
-  run --rm postgres-backup
-docker compose -f compose.postgres.yml --profile scheduler \
-  up -d scheduler postgres-backup-scheduler
-docker compose -f compose.postgres.yml --profile monitoring up -d monitor
-docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
+docker compose --profile maintenance run --rm postgres-backup
+docker compose --profile scheduler up -d scheduler postgres-backup-scheduler
+docker compose --profile monitoring up -d monitor
+docker compose --profile offsite up -d offsite-backup
 ```
 
 不要同时运行 Compose scheduler 和宿主机 systemd scheduler。启用 profile 前，先在 WebUI 中设置监控阈值、保留周期和异地凭据。PostgreSQL 恢复刻意要求显式操作，请严格按照恢复手册执行。
 
 ## 升级与安全检查
 
-1. 记录部署使用的是 `compose.yml` 还是 `compose.postgres.yml`；普通镜像升级期间禁止切换方案。
+1. 记录部署目录来自 `sqlite/` 还是 `postgres/`；普通镜像升级期间禁止切换方案。
 2. 使用当前版本生成有效的数据库 + `config.yaml.lkg` 配对备份，并导出到 `./data` 之外。
 3. Compose 结构有更新时，从 `master` 下载同名文件为临时文件，并执行 `docker compose -f <临时文件> config --quiet`；仅更新镜像时可保留现有文件。
-4. 只替换所选文件，然后使用该文件依次执行 `pull`、`up -d`、`ps`、数据库校验、登录、收信和备份检查。
+4. 将匹配的仓库文件下载为 `docker-compose.yml.next`，校验后替换服务器的 `docker-compose.yml`，再用普通的 `docker compose pull`、`up -d`、`ps` 执行数据库校验、登录、收信和备份检查。
 5. 定期在独立目录恢复演练；只修改 Compose project name 不能隔离相对路径 bind mount。
 
 生产环境必须守住以下边界：

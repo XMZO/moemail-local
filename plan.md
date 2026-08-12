@@ -69,7 +69,7 @@ Docker Compose scheduler/monitor/offsite profiles
 | 外部 IMAP 收件 | 真实 TCP IMAP 登录、只读 FETCH、原始收件人映射和持久 UID 去重通过；真实邮局待部署验收 | `app/lib/imap-inbound.ts`、`scripts/validation/imap-inbound.ts` |
 | R2 + Queue 耐久转发 | 源码/配置完成；实网待验收 | `wrangler.email.durable.example.json` |
 | systemd 动态 maintenance scheduler | 源码/本机 LKG 验证完成；Linux unit 待验收 | `scripts/ops/runtime-scheduler.ts`、`deploy/local/` |
-| Docker Compose 双文件部署 | `compose.yml` 为纯 SQLite，`compose.postgres.yml` 为独立内置 PostgreSQL；二者均使用同目录 bind mounts、无内置 Caddy、无 env/build，且不能叠加；官方 Compose v5.4.0 默认/全 profiles `config` 通过，实际 pull/up 待目标 Docker 主机验收 | `compose.yml`、`compose.postgres.yml`、`.github/workflows/publish-docker.yml` |
+| Docker Compose 双目录部署 | `sqlite/docker-compose.yml` 为纯 SQLite，`postgres/docker-compose.yml` 为独立内置 PostgreSQL；进入所选目录后都直接使用 `docker compose`，各自的 `./data` 天然隔离；二者均无内置 Caddy、env/build，且不能叠加；实际 pull/up 仍需目标 Docker 主机验收 | `sqlite/docker-compose.yml`、`postgres/docker-compose.yml`、`.github/workflows/publish-docker.yml` |
 | 定时备份、监控、异地同步 | 源码/配置完成；目标环境待验收 | `scripts/ops/`、Compose profiles、systemd units |
 | 唯一站主安全初始化 | 首次 WebUI 创建；数据库缺失站主时回到 token 保护的恢复向导 | `app/lib/setup-service.ts`、`app/lib/emperor.ts` |
 | Credentials 密码、运行时 secret 与防滥用 | 已完成 | `app/lib/password.ts`、`app/lib/auth-abuse-guard.ts`、`scripts/validate-config.ts` |

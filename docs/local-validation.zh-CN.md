@@ -10,7 +10,7 @@
 - `pnpm build`：Next.js 15.5.23 production build 通过，Node Route、middleware、PWA 与页面均成功生成。
 - `git diff --check`：通过。
 - Web 运行源码未发现 `runtime = "edge"`、`getRequestContext()`、`SITE_CONFIG`、`drizzle-orm/d1` 或 `env.DB` 残留；旧 Pages/D1/Cleanup Worker 部署资产已从当前运行分支删除，D1 只保留离线数据导入工具。
-- 两份 Compose 文件均通过官方 Compose JSON Schema 与 YAML 解析；`compose.yml` 是不含 PostgreSQL 服务或镜像的 SQLite 部署，`compose.postgres.yml` 是独立的内置 PostgreSQL 部署。二者均无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy，且所有容器都只使用同目录相对 bind mounts。systemd units 无 `EnvironmentFile`。所有 `deploy/**/*.sh` 通过 `bash -n`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
+- 两份 Compose 文件均通过 YAML 与部署契约解析；`sqlite/docker-compose.yml` 是不含 PostgreSQL 服务或镜像的 SQLite 部署，`postgres/docker-compose.yml` 是独立的内置 PostgreSQL 部署。仓库根目录刻意不放默认 Compose 文件；进入所选目录后均可直接使用 `docker compose`，相邻 `./data` 也天然隔离。二者均无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy。systemd units 无 `EnvironmentFile`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
 - `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
 - `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、统一 `latest` GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 server/工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、真实启动 PostgreSQL 18 后再合并 manifest）。
 - `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。

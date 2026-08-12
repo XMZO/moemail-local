@@ -26,14 +26,14 @@ This repository is the local-first fork of [beilunyang/moemail](https://github.c
 - Scheduled cleanup, database backups, monitoring, and rclone off-site copies.
 - CLI and MCP clients for automated and agent workflows.
 
-## Choose exactly one Compose file
+## Choose exactly one deployment directory
 
-| Deployment | File | Start command | Images pulled |
-| --- | --- | --- | --- |
-| SQLite | `compose.yml` | `docker compose up -d` | `ghcr.io/xmzo/moemail-local:latest` |
-| Bundled PostgreSQL 18 | `compose.postgres.yml` | `docker compose -f compose.postgres.yml up -d` | App, PostgreSQL, and PostgreSQL tools images at `latest` |
+| Deployment | Repository file | Start command |
+| --- | --- | --- |
+| SQLite | `sqlite/docker-compose.yml` | Run `docker compose up -d` inside the SQLite deployment directory |
+| Bundled PostgreSQL 18 | `postgres/docker-compose.yml` | Run `docker compose up -d` inside the PostgreSQL deployment directory |
 
-Both files are complete, standalone deployments. **Do not combine them** with multiple `-f` arguments, and do not run both against the same `./data` directory. They use the same project name, loopback port, and persistent paths. Switching databases requires a planned migration, not Compose overlaying.
+Each directory contains one complete, standalone `docker-compose.yml`. Enter exactly one deployment directory and use plain `docker compose ...` commands. **Do not combine the files** with multiple `-f` arguments. Each directory creates its own adjacent `data/`, so copying or archiving that directory keeps its Compose definition and state together. Switching databases requires a planned migration, not Compose overlaying.
 
 Neither variant uses `.env`, Compose application environment variables, a local image build, or a bundled Caddy container. Both bind Web to `127.0.0.1:3000` and keep all state under `./data`.
 
@@ -44,7 +44,7 @@ docker compose -f compose.yaml --profile '*' down
 mv compose.yaml compose.v0.16.1.yaml
 ```
 
-Do not add `-v`; the bind-mounted `./data` directory must be preserved. Leaving `compose.yaml` in place is unsafe because a plain `docker compose` may continue selecting the legacy file instead of `compose.yml`.
+Do not add `-v`; the bind-mounted `./data` directory must be preserved. Leaving `compose.yaml` in place is unsafe because a plain `docker compose` may continue selecting the legacy file instead of `docker-compose.yml`.
 
 ## Production deployment
 
@@ -61,11 +61,11 @@ SQLite is the smallest deployment and pulls only the application image:
 
 ```bash
 set -euo pipefail
-mkdir -p moemail
-cd moemail
+mkdir -p moemail-sqlite
+cd moemail-sqlite
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.yml \
-  -o compose.yml
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/sqlite/docker-compose.yml \
+  -o docker-compose.yml
 docker compose config --quiet
 docker compose up -d
 docker compose ps
@@ -83,14 +83,38 @@ The PostgreSQL deployment pulls these three images:
 
 ```bash
 set -euo pipefail
-mkdir -p moemail
-cd moemail
+mkdir -p moemail-postgres
+cd moemail-postgres
 curl -fsSL \
-  https://raw.githubusercontent.com/XMZO/moemail-local/master/compose.postgres.yml \
-  -o compose.postgres.yml
-docker compose -f compose.postgres.yml config --quiet
-docker compose -f compose.postgres.yml up -d
-docker compose -f compose.postgres.yml ps
+  https://raw.githubusercontent.com/XMZO/moemail-local/master/postgres/docker-compose.yml \
+  -o docker-compose.yml
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+```
+
+Existing PostgreSQL deployments can switch filenames once without changing containers or data. The command first proves that the selected old file really contains the `postgres` service, and preserves conflicting defaults instead of deleting them:
+
+```bash
+set -euo pipefail
+test ! -e docker-compose.yml
+if [ -f compose.postgres.yml ]; then
+  legacy_compose=compose.postgres.yml
+elif [ -f compose.yml ]; then
+  legacy_compose=compose.yml
+else
+  echo "No legacy PostgreSQL Compose file found" >&2
+  exit 1
+fi
+docker compose -f "$legacy_compose" config --services | grep -qx postgres
+for old_default in compose.yml compose.yaml docker-compose.yaml; do
+  if [ "$old_default" != "$legacy_compose" ] && [ -e "$old_default" ]; then
+    mv "$old_default" "$old_default.disabled"
+  fi
+done
+mv "$legacy_compose" docker-compose.yml
+docker compose config --quiet
+docker compose up -d
 ```
 
 Select PostgreSQL in the setup wizard and use:
@@ -103,15 +127,10 @@ The bundled database uses trust authentication only on its isolated Compose netw
 
 ### Complete first-run setup
 
-First open the site through an SSH tunnel or your HTTPS reverse proxy. Loading the setup page creates the one-time setup token. Then read it with the command matching your chosen deployment:
+First open the site through an SSH tunnel or your HTTPS reverse proxy. Loading the setup page creates the one-time setup token. Both deployments then use the same command:
 
 ```bash
-# SQLite
 docker compose exec -T moemail sh -c 'cat /app/data/setup-token'
-
-# PostgreSQL
-docker compose -f compose.postgres.yml \
-  exec -T moemail sh -c 'cat /app/data/setup-token'
 ```
 
 Complete the wizard to configure the public URL, database, first Emperor account, runtime secrets, and optional integrations. After signing in, open **Profile → Domain mail** first, replace the example domain, and select inbound/outbound delivery for each domain. Access policies, the complete runtime config, and the global font are also under Profile. Settings are stored in `data/config.yaml` or the selected database's `site_config`; the application does not read deployment settings from environment variables.
@@ -208,7 +227,6 @@ Polling uses read-only `EXAMINE` and PEEK operations, so it never marks messages
 
 ```bash
 docker compose logs -f moemail
-# Add -f compose.postgres.yml for PostgreSQL.
 ```
 
 ## Outbound email
@@ -229,16 +247,14 @@ Both variants keep state beside their selected Compose file:
 
 Removing containers or images leaves these bind-mounted files intact. Only deleting `./data` destroys local state.
 
-For a cold portable archive, set `compose_file` to the one file you actually deployed:
+For a cold portable archive, run this inside the selected deployment directory:
 
 ```bash
 set -euo pipefail
-compose_file=compose.yml
-# PostgreSQL deployment: compose_file=compose.postgres.yml
-docker compose -f "$compose_file" --profile '*' stop
+docker compose --profile '*' stop
 sudo tar --numeric-owner -czf \
-  "../moemail-$(date -u +%Y%m%d%H%M%S).tar.gz" "$compose_file" data
-docker compose -f "$compose_file" --profile '*' start
+  "../moemail-$(date -u +%Y%m%d%H%M%S).tar.gz" docker-compose.yml data
+docker compose --profile '*' start
 ```
 
 Use logical backups and independent restore procedures for routine recovery drills; never copy a live PostgreSQL physical directory. See [Backup and restore](docs/local-deployment.zh-CN.md#8-备份恢复与异地同步).
@@ -255,25 +271,23 @@ docker compose --profile monitoring up -d monitor
 docker compose --profile offsite up -d offsite-backup
 ```
 
-PostgreSQL commands always identify its standalone file:
+PostgreSQL uses the same default filename and therefore the same short command form:
 
 ```bash
-docker compose -f compose.postgres.yml --profile maintenance \
-  run --rm postgres-backup
-docker compose -f compose.postgres.yml --profile scheduler \
-  up -d scheduler postgres-backup-scheduler
-docker compose -f compose.postgres.yml --profile monitoring up -d monitor
-docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
+docker compose --profile maintenance run --rm postgres-backup
+docker compose --profile scheduler up -d scheduler postgres-backup-scheduler
+docker compose --profile monitoring up -d monitor
+docker compose --profile offsite up -d offsite-backup
 ```
 
 Do not run both the Compose scheduler and the host systemd scheduler. Configure monitoring, retention, and off-site credentials in the WebUI before enabling those profiles. PostgreSQL restore is intentionally explicit; follow the recovery runbook instead of improvising a command.
 
 ## Upgrade and security checklist
 
-1. Record whether the deployment uses `compose.yml` or `compose.postgres.yml`; never change variants as part of a routine image upgrade.
+1. Record whether the deployment directory came from `sqlite/` or `postgres/`; never change variants as part of a routine image upgrade.
 2. Create and export a verified database + `config.yaml.lkg` pair outside `./data` using the current version.
 3. When the Compose structure changes, download the same filename from `master` to a temporary file and run `docker compose -f <temporary-file> config --quiet`; keep the existing file for an image-only update.
-4. Replace only the selected Compose file, then run `pull`, `up -d`, `ps`, database verification, login, ingestion, and backup checks with that file.
+4. Download the matching repository file as `docker-compose.yml.next`, validate it, replace the installed `docker-compose.yml`, then run plain `docker compose pull`, `up -d`, `ps`, database verification, login, ingestion, and backup checks.
 5. Regularly restore into a separate directory/project. Changing only the Compose project name does not isolate relative bind mounts.
 
 Keep these production boundaries in place:

@@ -99,13 +99,17 @@ function parseCompose(path: string) {
   return { source, compose, services }
 }
 
-assert.equal(existsSync("compose.yml"), true)
-assert.equal(existsSync("compose.postgres.yml"), true)
+assert.equal(existsSync("sqlite/docker-compose.yml"), true)
+assert.equal(existsSync("postgres/docker-compose.yml"), true)
+assert.equal(existsSync("compose.yml"), false, "repository root must not select a deployment implicitly")
+assert.equal(existsSync("docker-compose.yml"), false, "repository root must not select a deployment implicitly")
 assert.equal(existsSync("compose.yaml"), false, "legacy compose.yaml must be removed")
+assert.equal(existsSync("docker-compose.yaml"), false, "legacy docker-compose.yaml must be removed")
+assert.equal(existsSync("compose.postgres.yml"), false, "legacy root PostgreSQL compose must be removed")
 assert.equal(existsSync("compose.postgres.yaml"), false, "legacy compose.postgres.yaml must be removed")
 assert.equal(existsSync("deploy/docker/Caddyfile"), false, "Docker must not bundle Caddy")
 
-const sqlite = parseCompose("compose.yml")
+const sqlite = parseCompose("sqlite/docker-compose.yml")
 const sqliteServices = sqlite.services
 assert.equal(sqlite.compose.name, "moemail")
 assert.equal(sqlite.compose.volumes, undefined, "SQLite compose must use bind mounts")
@@ -167,7 +171,7 @@ assert.equal(sqliteServices.monitor?.cap_add, undefined)
 assert.deepEqual(sqliteServices["offsite-backup"]?.profiles, ["offsite"])
 assert.deepEqual(serviceVolumes(sqliteServices["offsite-backup"]), ["./data:/app/data:ro"])
 
-const postgresCompose = parseCompose("compose.postgres.yml")
+const postgresCompose = parseCompose("postgres/docker-compose.yml")
 const postgresServices = postgresCompose.services
 assert.equal(postgresCompose.compose.name, "moemail")
 assert.equal(postgresCompose.compose.volumes, undefined, "PostgreSQL compose must use bind mounts")
@@ -418,14 +422,14 @@ const dockerfileSource = readFileSync("Dockerfile", "utf8")
 assert.match(dockerfileSource, /npm install --global pnpm@11\.21\.0/)
 for (const readmePath of ["README.md", "README.zh-CN.md"]) {
   const readme = readFileSync(readmePath, "utf8")
-  assert.ok(readme.includes("/master/compose.yml"))
-  assert.ok(readme.includes("/master/compose.postgres.yml"))
+  assert.ok(readme.includes("/master/sqlite/docker-compose.yml"))
+  assert.ok(readme.includes("/master/postgres/docker-compose.yml"))
   assert.ok(readme.includes("moemail-local:latest"))
   assert.ok(readme.includes("moemail-local-postgres:latest"))
   assert.ok(readme.includes("moemail-local-postgres-tools:latest"))
   assert.doesNotMatch(
     readme,
-    /raw\.githubusercontent\.com\/[^\s]+\/compose(?:\.postgres)?\.yaml/,
+    /raw\.githubusercontent\.com\/[^\s]+\/(?:compose(?:\.postgres)?\.ya?ml|docker-compose\.yaml)/,
     "README must not download a legacy Compose filename",
   )
 }

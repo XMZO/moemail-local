@@ -20,6 +20,8 @@
 # production
 /build
 /data/
+/sqlite/data/
+/postgres/data/
 
 # misc
 .DS_Store
