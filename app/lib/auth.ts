@@ -6,6 +6,7 @@ import { createDb, Db } from "./db"
 import { accounts, users, roles, userRoles } from "./schema"
 import { and, eq } from "drizzle-orm"
 import { ROLES, Role } from "./permissions"
+import { getEffectiveAccessPolicy } from "./access-policies"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { hashPassword, verifyPassword } from "@/lib/password"
 import { authSchema, AuthSchema } from "@/lib/validation"
@@ -248,6 +249,13 @@ export const {
         session.user.roles = userRoleRecords.map(ur => ({
           name: ur.role.name,
         }))
+
+        const normalizedRoles = session.user.roles.map(role => role.name as Role)
+        const access = await getEffectiveAccessPolicy(session.user.id, normalizedRoles)
+        session.user.permissions = Object.entries(access.permissions)
+          .filter(([, enabled]) => enabled)
+          .map(([permission]) => permission)
+        session.user.quotas = access.quotas
 
         const userAccounts = await db.query.accounts.findMany({
           where: eq(accounts.userId, session.user.id),

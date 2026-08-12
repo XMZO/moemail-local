@@ -10,6 +10,10 @@ if (!recipient || !secret) {
 }
 const testRecipient = recipient
 const ingestSecret = secret
+const recipientDomain = testRecipient.slice(testRecipient.lastIndexOf("@") + 1)
+if (!recipientDomain || recipientDomain === testRecipient) {
+  throw new Error("INGEST_TEST_RECIPIENT must be a complete mailbox address")
+}
 
 function email(headers: string[], body: string) {
   return Buffer.from([...headers, "MIME-Version: 1.0", "", body].join("\r\n"))
@@ -124,7 +128,9 @@ if (replay.status !== "duplicate") {
 }
 
 const unknownRecipient = await ingest(fixtures[0].raw, {
-  envelopeTo: `missing-${marker}@invalid.example`,
+  // Keep the configured Worker domain so this exercises mailbox lookup rather
+  // than the independent per-domain transport gate.
+  envelopeTo: `missing-${marker}@${recipientDomain}`,
 })
 if (unknownRecipient.status !== "ignored" || unknownRecipient.reason !== "unknown_recipient") {
   throw new Error(`Expected unknown recipient to be ignored, received ${unknownRecipient.status || "unknown"}`)

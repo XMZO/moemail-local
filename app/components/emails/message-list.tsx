@@ -9,6 +9,8 @@ import { useThrottle } from "@/hooks/use-throttle"
 import { useRuntimeConfig } from "@/providers"
 import { useToast } from "@/components/ui/use-toast"
 import { ShareMessageDialog } from "./share-message-dialog"
+import { useRolePermission } from "@/hooks/use-role-permission"
+import { PERMISSIONS } from "@/lib/permissions"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,6 +65,9 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
   const [total, setTotal] = useState(0)
   const [messageToDelete, setMessageToDelete] = useState<Message | null>(null)
   const { toast } = useToast()
+  const { checkPermission } = useRolePermission()
+  const canShare = checkPermission(PERMISSIONS.SHARE_EMAIL)
+  const canDelete = checkPermission(PERMISSIONS.DELETE_EMAIL)
 
   // 当 messages 改变时更新 ref
   useEffect(() => {
@@ -258,8 +263,8 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                       </span>
                     </div>
                   </div>
-                  <div className="opacity-0 group-hover:opacity-100 flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <ShareMessageDialog
+                  {(canShare || canDelete) && <div className="opacity-0 group-hover:opacity-100 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    {canShare && <ShareMessageDialog
                       emailId={email.id}
                       messageId={message.id}
                       messageSubject={message.subject}
@@ -272,8 +277,8 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                           <Share2 className="h-4 w-4" />
                         </Button>
                       }
-                    />
-                    <Button
+                    />}
+                    {canDelete && <Button
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
@@ -283,8 +288,8 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                       }}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
+                    </Button>}
+                  </div>}
                 </div>
               </div>
             ))}

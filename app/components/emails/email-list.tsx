@@ -9,7 +9,6 @@ import { Mail, RefreshCw, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useThrottle } from "@/hooks/use-throttle"
-import { EMAIL_CONFIG } from "@/config"
 import { useToast } from "@/components/ui/use-toast"
 import {
   AlertDialog,
@@ -21,9 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { ROLES } from "@/lib/permissions"
-import { useUserRole } from "@/hooks/use-user-role"
-import { useConfig } from "@/hooks/use-config"
+import { PERMISSIONS } from "@/lib/permissions"
+import { useRolePermission } from "@/hooks/use-role-permission"
 
 interface Email {
   id: string
@@ -45,8 +43,10 @@ interface EmailResponse {
 
 export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
   const { data: session } = useSession()
-  const { config } = useConfig()
-  const { role } = useUserRole()
+  const { checkPermission } = useRolePermission()
+  const canCreate = checkPermission(PERMISSIONS.CREATE_EMAIL)
+  const canDelete = checkPermission(PERMISSIONS.DELETE_EMAIL)
+  const canShare = checkPermission(PERMISSIONS.SHARE_EMAIL)
   const t = useTranslations("emails.list")
   const tCommon = useTranslations("common.actions")
   const [emails, setEmails] = useState<Email[]>([])
@@ -175,14 +175,14 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
               <RefreshCw className="h-4 w-4" />
             </Button>
             <span className="text-xs text-gray-500">
-              {role === ROLES.EMPEROR ? (
+              {(session.user.quotas?.maxActiveMailboxes ?? 0) === 0 ? (
                 t("emailCountUnlimited", { count: total })
               ) : (
-                t("emailCount", { count: total, max: config?.maxEmails || EMAIL_CONFIG.MAX_ACTIVE_EMAILS })
+                t("emailCount", { count: total, max: session.user.quotas?.maxActiveMailboxes ?? 0 })
               )}
             </span>
           </div>
-          <CreateDialog onEmailCreated={handleRefresh} />
+          {canCreate && <CreateDialog onEmailCreated={handleRefresh} />}
         </div>
         
         <div className="flex-1 overflow-auto p-2" onScroll={handleScroll}>
@@ -210,9 +210,9 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
                       )}
                     </div>
                   </div>
-                  <div className="opacity-0 group-hover:opacity-100 flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <ShareDialog emailId={email.id} emailAddress={email.address} />
-                    <Button
+                  {(canShare || canDelete) && <div className="opacity-0 group-hover:opacity-100 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    {canShare && <ShareDialog emailId={email.id} emailAddress={email.address} />}
+                    {canDelete && <Button
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
@@ -222,8 +222,8 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
                       }}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
+                    </Button>}
+                  </div>}
                 </div>
               ))}
               {loadingMore && (
@@ -261,4 +261,4 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
       </AlertDialog>
     </>
   )
-} 
+}

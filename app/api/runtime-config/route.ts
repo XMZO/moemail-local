@@ -11,7 +11,7 @@ import {
   reloadConfig,
   saveConfig,
 } from "@/lib/config/runtime"
-import { parseConfig } from "@/lib/config/schema"
+import { createDefaultConfig, parseConfig } from "@/lib/config/schema"
 import { checkDriverBinding } from "@/lib/db"
 import { ROLES } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
@@ -55,6 +55,7 @@ function readYaml() {
   const yaml = snapshot?.raw ?? stringifyConfig(getConfig())
   return {
     yaml,
+    config: getConfig(),
     fingerprint: configFingerprint(snapshot?.raw ?? null),
     status,
   }
@@ -66,9 +67,11 @@ export async function GET(request: Request) {
 
   try {
     await reloadConfig()
-    const { yaml, fingerprint, status } = readYaml()
+    const { yaml, config, fingerprint, status } = readYaml()
     return json({
       yaml,
+      config,
+      defaults: createDefaultConfig(),
       fingerprint,
       revision: status.revision,
       path: status.path,
@@ -95,11 +98,15 @@ export async function POST(request: Request) {
     return json({ error: "请求格式无效", issues: [] }, 400)
   }
 
-  const { yaml, fingerprint } = payload as { yaml?: unknown; fingerprint?: unknown }
-  if (typeof yaml !== "string") {
+  const { yaml, config, fingerprint } = payload as {
+    yaml?: unknown
+    config?: unknown
+    fingerprint?: unknown
+  }
+  if (typeof yaml !== "string" && config === undefined) {
     return json({
-      error: "必须提供 YAML 配置文本",
-      issues: [{ path: "yaml", message: "必须是字符串" }],
+      error: "必须提供 YAML 文本或视觉配置对象",
+      issues: [{ path: "config", message: "缺少配置内容" }],
     }, 400)
   }
   if (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
@@ -109,17 +116,19 @@ export async function POST(request: Request) {
     }, 400)
   }
 
-  let document: unknown
-  try {
-    document = parseConfigDocument(yaml)
-  } catch (error) {
-    return json({
-      error: "YAML 解析失败",
-      issues: [{
-        path: "(file)",
-        message: error instanceof Error ? error.message : String(error),
-      }],
-    }, 400)
+  let document: unknown = config
+  if (typeof yaml === "string") {
+    try {
+      document = parseConfigDocument(yaml)
+    } catch (error) {
+      return json({
+        error: "YAML 解析失败",
+        issues: [{
+          path: "(file)",
+          message: error instanceof Error ? error.message : String(error),
+        }],
+      }, 400)
+    }
   }
 
   const parsed = parseConfig(document)
@@ -147,6 +156,8 @@ export async function POST(request: Request) {
     return json({
       ok: true,
       yaml: stringifyConfig(result.config),
+      config: result.config,
+      defaults: createDefaultConfig(),
       fingerprint: configFingerprint(stringifyConfig(result.config)),
       revision: result.revision,
       path: status.path,

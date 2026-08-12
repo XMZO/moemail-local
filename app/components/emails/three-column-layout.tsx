@@ -23,7 +23,10 @@ export function ThreeColumnLayout() {
   const [selectedMessageType, setSelectedMessageType] = useState<'received' | 'sent'>('received')
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const { copyToClipboard } = useCopy()
-  const { canSend: canSendEmails } = useSendPermission()
+  const {
+    canSend: canSendEmails,
+    checkPermission: refreshSendPermission,
+  } = useSendPermission(selectedEmail?.id)
 
   const columnClass = "border-2 border-primary/20 bg-background rounded-lg overflow-hidden flex flex-col"
   const headerClass = "p-2 border-b-2 border-primary/20 flex items-center justify-between shrink-0"
@@ -49,6 +52,7 @@ export function ThreeColumnLayout() {
 
   const handleSendSuccess = () => {
     setRefreshTrigger(prev => prev + 1)
+    void refreshSendPermission()
   }
 
   return (
@@ -207,4 +211,4 @@ export function ThreeColumnLayout() {
       </div>
     </div>
   )
-} 
+}

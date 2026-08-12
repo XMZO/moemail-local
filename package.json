@@ -1,6 +1,6 @@
 {
   "name": "moemail",
-  "version": "0.16.4",
+  "version": "0.16.5",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -8,7 +8,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:pages": "npx @cloudflare/next-on-pages",
     "db:sqlite:generate": "drizzle-kit generate --config drizzle.local.config.ts",
     "db:sqlite:migrate": "tsx scripts/sqlite/migrate.ts",
     "db:sqlite:verify": "tsx scripts/sqlite/verify.ts",
@@ -51,18 +50,13 @@
     "validate:no-local-env": "tsx scripts/validation/no-local-env.ts",
     "validate:deployment": "tsx scripts/validation/deployment-contract.ts",
     "validate:email-worker": "tsx scripts/validation/email-worker.ts",
+    "validate:mail-policies": "tsx scripts/validation/mail-policies.ts",
+    "validate:imap-inbound": "tsx scripts/validation/imap-inbound.ts",
     "load:polling": "tsx scripts/validation/load-polling.ts",
-    "db:migrate-local": "tsx scripts/migrate.ts local",
-    "db:migrate-remote": "tsx scripts/migrate.ts remote",
     "webhook-test-server": "bun run scripts/webhook-test-server.ts",
-    "generate-test-data": "wrangler dev scripts/generate-test-data.ts",
-    "dev:cleanup": "wrangler dev --config wrangler.cleanup.json --test-scheduled",
-    "test:cleanup": "curl http://localhost:8787/__scheduled",
     "deploy:email": "wrangler deploy --config wrangler.email.json",
     "deploy:email:durable": "wrangler deploy --config wrangler.email.durable.json",
-    "deploy:email:d1-legacy": "wrangler deploy --config wrangler.email.d1.legacy.json",
-    "deploy:cleanup": "wrangler deploy --config wrangler.cleanup.json",
-    "deploy:pages": "npm run build:pages && wrangler pages deploy .vercel/output/static --branch main"
+    "validate:runtime-fields": "tsx scripts/validation/runtime-config-fields.ts"
   },
   "type": "module",
   "dependencies": {
@@ -82,6 +76,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "drizzle-orm": "^0.45.2",
+    "imapflow": "1.6.6",
     "lucide-react": "^0.468.0",
     "nanoid": "^5.1.16",
     "next": "15.5.23",
@@ -89,6 +84,7 @@
     "next-intl": "^4.13.6",
     "next-pwa": "^5.6.0",
     "next-themes": "^0.2.1",
+    "nodemailer": "9.0.5",
     "pg": "8.16.3",
     "postal-mime": "^2.3.2",
     "react": "19.0.0",
@@ -103,28 +99,20 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "1.13.16",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@types/better-sqlite3": "9.6.0",
     "@types/bun": "^1.1.14",
     "@types/node": "^20",
+    "@types/nodemailer": "8.0.1",
     "@types/pg": "8.15.5",
     "@types/react": "19.0.0",
     "@types/react-dom": "19.0.0",
     "bun": "^1.1.39",
-    "cloudflare": "^4.1.0",
-    "dotenv": "^16.4.7",
     "drizzle-kit": "^0.31.10",
     "eslint": "^8",
     "eslint-config-next": "15.5.23",
     "postcss": "^8.5.26",
     "tailwindcss": "^3.4.19",
-    "vercel": "39.1.1",
     "wrangler": "^3.114.17"
-  },
-  "overrides": {
-    "next": {
-      "sharp": "0.35.0"
-    }
   }
 }

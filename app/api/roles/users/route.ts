@@ -3,6 +3,7 @@ import { users, userRoles, roles } from "@/lib/schema"
 import { eq, or, sql } from "drizzle-orm"
 import { PERMISSIONS, ROLES } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
+import { getAccessPolicies } from "@/lib/access-policies"
 
 export const runtime = "nodejs"
 
@@ -59,6 +60,7 @@ export async function GET(request: Request) {
       .limit(pageSize)
       .offset((page - 1) * pageSize)
 
+    const accessPolicies = await getAccessPolicies()
     return Response.json({
       users: userList.map((u) => ({
         id: u.id,
@@ -67,6 +69,7 @@ export async function GET(request: Request) {
         email: u.email,
         image: u.image,
         role: u.role || null,
+        accessOverride: accessPolicies.users[u.id] ?? null,
       })),
       total,
       page,

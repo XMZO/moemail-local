@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label"
 import { useTheme } from "next-themes"
 import { useToast } from "@/components/ui/use-toast"
 import { ShareMessageDialog } from "./share-message-dialog"
+import { useRolePermission } from "@/hooks/use-role-permission"
+import { PERMISSIONS } from "@/lib/permissions"
 
 interface Message {
   id: string
@@ -32,6 +34,8 @@ type ViewMode = "html" | "text"
 export function MessageView({ emailId, messageId, messageType = 'received' }: MessageViewProps) {
   const t = useTranslations("emails.messageView")
   const tList = useTranslations("emails.list")
+  const { checkPermission } = useRolePermission()
+  const canShare = checkPermission(PERMISSIONS.SHARE_EMAIL)
   const [message, setMessage] = useState<Message | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -212,16 +216,16 @@ export function MessageView({ emailId, messageId, messageType = 'received' }: Me
       <div className="p-4 space-y-3 border-b border-primary/20">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-base font-bold flex-1">{message.subject}</h3>
-          <ShareMessageDialog 
+          {canShare && <ShareMessageDialog
             emailId={emailId}
-            messageId={message.id} 
+            messageId={message.id}
             messageSubject={message.subject}
             trigger={
               <button className="p-1.5 hover:bg-primary/10 rounded-md transition-colors">
                 <Share2 className="h-4 w-4 text-gray-500" />
               </button>
             }
-          />
+          />}
         </div>
         <div className="text-xs text-gray-500 space-y-1">
           {message.from_address && (
@@ -243,8 +247,8 @@ export function MessageView({ emailId, messageId, messageType = 'received' }: Me
           >
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="html" id="html" />
-              <Label 
-                htmlFor="html" 
+              <Label
+                htmlFor="html"
                 className="text-xs cursor-pointer"
               >
                 {t("htmlFormat")}
@@ -252,8 +256,8 @@ export function MessageView({ emailId, messageId, messageType = 'received' }: Me
             </div>
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="text" id="text" />
-              <Label 
-                htmlFor="text" 
+              <Label
+                htmlFor="text"
                 className="text-xs cursor-pointer"
               >
                 {t("textFormat")}
@@ -278,4 +282,4 @@ export function MessageView({ emailId, messageId, messageType = 'received' }: Me
       </div>
     </div>
   )
-} 
+}

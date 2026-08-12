@@ -15,6 +15,7 @@ import {
   getPublicRuntimeConfig,
 } from "@/lib/config/runtime"
 import { DEFAULT_PUBLIC_RUNTIME_CONFIG } from "@/lib/config/public"
+import { DEFAULT_UI_FONT_FAMILY } from "@/lib/appearance-values"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -119,8 +120,13 @@ export default async function LocaleLayout({
   const messages = await getMessages(locale)
   const configStatus = getConfigStatus()
   let runtimeConfig = DEFAULT_PUBLIC_RUNTIME_CONFIG
+  let uiFontFamily = DEFAULT_UI_FONT_FAMILY
   try {
     runtimeConfig = getPublicRuntimeConfig()
+    if (configStatus.setupCompleted) {
+      const { getUiFontFamily } = await import("@/lib/appearance")
+      uiFontFamily = await getUiFontFamily()
+    }
   } catch {
     // 初始化向导仍应可渲染，不能被坏配置挡在 WebUI 外。
   }
@@ -136,6 +142,7 @@ export default async function LocaleLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body 
+        style={{ fontFamily: uiFontFamily }}
         className={cn(
           zpix.variable,
           "font-zpix min-h-screen antialiased",

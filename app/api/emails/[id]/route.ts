@@ -3,7 +3,6 @@ import { createDb } from "@/lib/db"
 import { emails, messages } from "@/lib/schema"
 import { eq, and, lt, or, sql, ne, isNull } from "drizzle-orm"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
-import { checkBasicSendPermission } from "@/lib/send-permissions"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
 
@@ -14,7 +13,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.DELETE_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 
@@ -59,7 +58,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.VIEW_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 
@@ -72,16 +71,6 @@ export async function GET(
   try {
     const db = createDb()
     const { id } = await params
-
-    if (messageType === 'sent') {
-      const permissionResult = await checkBasicSendPermission(userId)
-      if (!permissionResult.canSend) {
-        return NextResponse.json(
-          { error: permissionResult.error || "您没有查看发送邮件的权限" },
-          { status: 403 }
-        )
-      }
-    }
 
     const email = await db.query.emails.findFirst({
       where: and(

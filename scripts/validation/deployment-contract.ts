@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
-import { existsSync, readFileSync } from "node:fs"
-import { parse } from "yaml"
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { parse, stringify } from "yaml"
+import { createDefaultConfig } from "../../app/lib/config/schema"
 
 const packageDocument = JSON.parse(readFileSync("package.json", "utf8")) as {
   version?: string
@@ -304,6 +308,43 @@ assert.match(dockerConfigReader, /command === "postgres-fields"/)
 assert.match(dockerConfigReader, /command === "postgres-conninfo"/)
 assert.match(dockerConfigReader, /databaseUrl\.searchParams\.size > 0/)
 
+const configReaderFixtureRoot = mkdtempSync(join(tmpdir(), "moemail-config-reader-"))
+try {
+  const defaults = createDefaultConfig()
+  const completeConfig = {
+    ...defaults,
+    setup: { completed: true, completedAt: "2026-08-12T00:00:00.000Z" },
+    auth: {
+      ...defaults.auth,
+      secret: "reader-auth-secret-abcdefghijklmnopqrstuvwxyz-1234",
+      passwordPepper: "reader-password-pepper-abcdefghijklmnopqrstuvwxyz",
+    },
+    email: {
+      ...defaults.email,
+      ingestSecret: "reader-ingest-secret-abcdefghijklmnopqrstuvwxyz-12",
+    },
+  }
+  const validPath = join(configReaderFixtureRoot, "valid.yaml")
+  writeFileSync(validPath, stringify(completeConfig, { lineWidth: 0 }), "utf8")
+  assert.equal(execFileSync(process.execPath, [
+    "deploy/docker/config-reader.mjs", "--file", validPath, "validate-complete",
+  ], { encoding: "utf8" }), "ok")
+
+  const invalidPath = join(configReaderFixtureRoot, "invalid-email.yaml")
+  writeFileSync(invalidPath, stringify({
+    ...completeConfig,
+    email: {
+      ...completeConfig.email,
+      unknown: true,
+    },
+  }, { lineWidth: 0 }), "utf8")
+  assert.throws(() => execFileSync(process.execPath, [
+    "deploy/docker/config-reader.mjs", "--file", invalidPath, "validate-complete",
+  ], { stdio: "pipe" }))
+} finally {
+  rmSync(configReaderFixtureRoot, { recursive: true, force: true })
+}
+
 for (const serviceFile of ["deploy/local/moemail.service", "deploy/local/moemail-scheduler.service"]) {
   assert.match(readFileSync(serviceFile, "utf8"), /^Restart=always$/m)
 }
@@ -313,6 +354,7 @@ const webSystemdUnit = readFileSync("deploy/local/moemail.service", "utf8")
 const instrumentation = readFileSync("instrumentation-node.ts", "utf8")
 assert.equal(packageDocument.scripts?.prestart, undefined)
 assert.doesNotMatch(dockerEntrypoint, /pnpm db:startup/)
+assert.doesNotMatch(dockerEntrypoint, /smtp-server|smtp:server/)
 assert.match(
   dockerEntrypoint,
   /restore\)\s*[\s\S]*?exec pnpm db:restore "\$@"/,
@@ -346,6 +388,10 @@ assert.match(workflowSource, /cat \/var\/lib\/postgresql\/18\/docker\/PG_VERSION
 assert.match(workflowSource, /server_version_num'[)]::integer \/ 10000 = 18/)
 assert.match(workflowSource, /Verify release tag matches package version/)
 assert.match(workflowSource, /pnpm validate:email-worker/)
+assert.match(workflowSource, /pnpm validate:mail-policies/)
+assert.match(workflowSource, /pnpm validate:imap-inbound/)
+assert.match(workflowSource, /pnpm validate:runtime-fields/)
+assert.match(workflowSource, /pnpm validate:no-local-env/)
 assert.match(workflowSource, /pnpm validate:deployment/)
 assert.match(workflowSource, /pnpm exec tsc --noEmit --incremental false/)
 assert.match(workflowSource, /build:\s+needs:\s+- prepare\s+- preflight/m)
@@ -400,6 +446,7 @@ console.log(JSON.stringify({
   postgresVerificationAndDumpShareSnapshot: true,
   strictPostgresTlsUsesSystemCa: true,
   postgresTargetInspectionIsRedacted: true,
+  emailConfigSnapshotValidated: true,
   postgresRestoreRollsBackDatabaseAndConfig: true,
   systemdSuccessfulRestart: true,
   singleAuthoritativeWebStartupValidation: true,

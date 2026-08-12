@@ -2,7 +2,7 @@ import { Header } from "@/components/layout/header"
 import { ThreeColumnLayout } from "@/components/emails/three-column-layout"
 import { NoPermissionDialog } from "@/components/no-permission-dialog"
 import { redirect } from "next/navigation"
-import { hasPermission, PERMISSIONS, type Role } from "@/lib/permissions"
+import { PERMISSIONS } from "@/lib/permissions"
 import type { Locale } from "@/i18n/config"
 import { requireCompletedSetup } from "@/lib/setup-navigation"
 
@@ -23,10 +23,7 @@ export default async function MoePage({
     redirect(`/${locale}`)
   }
 
-  const canManageEmail = hasPermission(
-    (session.user.roles?.map(role => role.name) ?? []) as Role[],
-    PERMISSIONS.MANAGE_EMAIL
-  )
+  const canManageEmail = session.user.permissions?.includes(PERMISSIONS.VIEW_EMAIL) ?? false
 
   return (
     <div className="bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 h-screen">

@@ -34,14 +34,14 @@ export async function POST(request: Request) {
 
     const db = createDb();
 
-    const currentUserRole = await db.query.userRoles.findFirst({
+    const currentUserRoles = await db.query.userRoles.findMany({
       where: eq(userRoles.userId, userId),
       with: {
         role: true,
       },
     });
 
-    if (currentUserRole?.role.name === ROLES.EMPEROR) {
+    if (currentUserRoles.some(item => item.role.name === ROLES.EMPEROR)) {
       return Response.json(
         { error: "不能降级皇帝" },
         { status: 400 }

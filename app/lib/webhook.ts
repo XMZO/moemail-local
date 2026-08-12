@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises"
 import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 import { BlockList, isIP } from "node:net"
-import { WEBHOOK_CONFIG } from "@/config"
+import { WEBHOOK_CONFIG } from "../config"
 
 export interface EmailMessage {
   emailId: string

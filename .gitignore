@@ -34,9 +34,6 @@ yarn-error.log*
 .env*
 /deploy/docker/*.env
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -44,13 +41,9 @@ next-env.d.ts
 .wrangler
 wrangler.toml
 wrangler.email.toml
-wrangler.cleanup.toml
 
 public/workbox-*.js
 public/sw.js
 
-wrangler.json
-wrangler.cleanup.json
 wrangler.email.json
 wrangler.email.durable.json
-wrangler.email.d1.legacy.json

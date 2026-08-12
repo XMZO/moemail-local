@@ -17,15 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { EMAIL_CONFIG } from "@/config"
 
 export function WebsiteConfigPanel() {
   const t = useTranslations("profile.website")
   const tCard = useTranslations("profile.card")
   const [defaultRole, setDefaultRole] = useState<string>("")
-  const [emailDomains, setEmailDomains] = useState<string>("")
   const [adminContact, setAdminContact] = useState<string>("")
-  const [maxEmails, setMaxEmails] = useState<string>(EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString())
   const [turnstileEnabled, setTurnstileEnabled] = useState(false)
   const [turnstileSiteKey, setTurnstileSiteKey] = useState("")
   const [turnstileSecretKey, setTurnstileSecretKey] = useState("")
@@ -43,9 +40,7 @@ export function WebsiteConfigPanel() {
     if (res.ok) {
       const data = await res.json() as { 
         defaultRole: Exclude<Role, typeof ROLES.EMPEROR>,
-        emailDomains: string,
         adminContact: string,
-        maxEmails: string,
         turnstile?: {
           enabled: boolean,
           siteKey: string,
@@ -53,9 +48,7 @@ export function WebsiteConfigPanel() {
         }
       }
       setDefaultRole(data.defaultRole)
-      setEmailDomains(data.emailDomains)
       setAdminContact(data.adminContact)
-      setMaxEmails(data.maxEmails || EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString())
       setTurnstileEnabled(Boolean(data.turnstile?.enabled))
       setTurnstileSiteKey(data.turnstile?.siteKey ?? "")
       setTurnstileSecretKey(data.turnstile?.secretKey ?? "")
@@ -70,9 +63,7 @@ export function WebsiteConfigPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           defaultRole, 
-          emailDomains,
           adminContact,
-          maxEmails: maxEmails || EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString(),
           turnstile: {
             enabled: turnstileEnabled,
             siteKey: turnstileSiteKey,
@@ -121,37 +112,12 @@ export function WebsiteConfigPanel() {
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-sm">{t("emailDomains")}:</span>
-          <div className="flex-1">
-            <Input 
-              value={emailDomains}
-              onChange={(e) => setEmailDomains(e.target.value)}
-              placeholder={t("emailDomainsPlaceholder")}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
           <span className="text-sm">{t("adminContact")}:</span>
           <div className="flex-1">
             <Input 
               value={adminContact}
               onChange={(e) => setAdminContact(e.target.value)}
               placeholder={t("adminContactPlaceholder")}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <span className="text-sm">{t("maxEmails")}:</span>
-          <div className="flex-1">
-            <Input 
-              type="number"
-              min="1"
-              max="100"
-              value={maxEmails}
-              onChange={(e) => setMaxEmails(e.target.value)}
-              placeholder={`${EMAIL_CONFIG.MAX_ACTIVE_EMAILS}`}
             />
           </div>
         </div>

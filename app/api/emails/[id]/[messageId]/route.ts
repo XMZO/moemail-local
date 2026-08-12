@@ -11,7 +11,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string; messageId: string }> }
 ) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.DELETE_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 
@@ -63,7 +63,7 @@ export async function DELETE(
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; messageId: string }> }) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.VIEW_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 
@@ -110,7 +110,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         content: message.content,
         html: message.html,
         received_at: message.receivedAt.getTime(),
-        sent_at: message.receivedAt.getTime(),
+        sent_at: message.sentAt?.getTime() ?? null,
         type: message.type as 'received' | 'sent'
       }
     })

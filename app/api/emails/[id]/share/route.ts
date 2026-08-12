@@ -14,7 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.SHARE_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 
@@ -55,7 +55,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.SHARE_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 

@@ -1,10 +1,10 @@
 # MoeMail 主要本地部署
 
-本地模式在服务器运行 Next.js Node、SQLite 或 PostgreSQL、定时维护任务，并将 Cloudflare 限定为邮件接收边界。应用不使用 `.env`、Compose `environment` 或 systemd `EnvironmentFile`；唯一运行配置是工作目录下的 `data/config.yaml`。
+本地模式在服务器运行 Next.js Node、SQLite 或 PostgreSQL 与定时维护任务。收件可选择 Cloudflare Email Worker，或由 Web 进程从外部邮局 IMAP 只读拉取。应用不使用 `.env`、Compose `environment` 或 systemd `EnvironmentFile`；唯一进程运行配置是工作目录下的 `data/config.yaml`。
 
-Cloudflare Email Routing 与 Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。
+选择 Cloudflare Email Routing 时，Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。选择外部 IMAP 时无需 Cloudflare，但邮局必须提供 catch-all/全域转发，并保留可识别原始收件地址的 Header。
 
-Docker 发布两个互斥的 standalone 文件：`compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:latest`；`compose.postgres.yml` 运行 Web、内置 PostgreSQL 18 与 PostgreSQL 备份/恢复工具，统一拉取三个 package 的 `latest`。两个文件都完整定义自己的服务，不能用多个 `-f` 参数叠加，也不能同时指向同一个 `./data`。镜像只在 Docker-compatible Git tag（例如 `v0.16.4`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
+Docker 发布两个互斥的 standalone 文件：`compose.yml` 只运行 SQLite Web/维护服务，只拉取 `ghcr.io/xmzo/moemail-local:latest`；`compose.postgres.yml` 运行 Web、内置 PostgreSQL 18 与 PostgreSQL 备份/恢复工具，统一拉取三个 package 的 `latest`。两个文件都完整定义自己的服务，不能用多个 `-f` 参数叠加，也不能同时指向同一个 `./data`。镜像只在 Docker-compatible Git tag（例如 `v0.16.5`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；每个原生镜像先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag 不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会刷新 `latest`，Compose 有意跟踪它以简化服务器更新。必须等待整个发布 Action 成功后再执行 `pull`，避免在三个 manifest 尚未全部合并时混用版本；回滚时把所选方案的全部镜像一起固定到同一个旧 tag 或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -45,9 +45,9 @@ pnpm start --hostname 127.0.0.1 --port 3000
 - 数据库类型：SQLite 文件路径，或 PostgreSQL URL 与 TLS 选项。
 - 唯一皇帝账号的用户名和密码。
 - 可选的 GitHub/Google OAuth Client ID 与 Client Secret。
-- “高级 YAML”中的连接池、备份、cleanup、scheduler、monitor、认证限流、告警与 rclone 异地同步。高级 YAML 先合并，上方结构化字段同名时优先；`setup`/`version` 由服务端控制，生成的 secret 不会在匿名页面回显。
+- “高级 YAML”中的连接池、备份、cleanup、scheduler、monitor、认证限流、告警与 rclone 异地同步。高级 YAML 先合并，上方结构化字段同名时优先；`setup`/`version` 由服务端控制，生成的 secret 不会在匿名页面回显。每域 IMAP/SMTP 凭据在登录后的“域名收发”中配置，不写在匿名向导 YAML 中。
 
-“测试连接”只探测候选数据库，不写配置。最终提交会先再次探测、迁移并检查目标库站主；通过后执行可恢复的两阶段提交：原子保存 `setup.completed=false` 与固定的随机 secret/pepper，创建唯一皇帝，再原子切换为 `setup.completed=true`（保存阶段也会重验候选数据库）。若进程在中间退出，使用同一用户名和密码重试会复用已落盘的 pepper；目标库已有不同站主时返回 409，不会把现有账号锁死。跨进程 setup lock 保证同一数据卷只有一个初始化操作。成功后 `data/setup-token` 自动删除；页面只在这时显示需要复制给 Email Worker 的投递 secret。
+“测试连接”只探测候选数据库，不写配置。最终提交会先再次探测、迁移并检查目标库站主；通过后执行可恢复的两阶段提交：原子保存 `setup.completed=false` 与固定的随机 secret/pepper，创建唯一皇帝，再原子切换为 `setup.completed=true`（保存阶段也会重验候选数据库）。若进程在中间退出，使用同一用户名和密码重试会复用已落盘的 pepper；目标库已有不同站主时返回 409，不会把现有账号锁死。跨进程 setup lock 保证同一数据卷只有一个初始化操作。成功后 `data/setup-token` 自动删除；页面只在这时显示 Worker 模式需要的投递 secret。
 
 恢复页面在验证一次性令牌前不会回显已暂存的 PostgreSQL URL、OAuth secret、告警令牌或 rclone 配置；留空的隐藏字段由服务端保留，需要变更时可重新明确填写。
 
@@ -55,14 +55,14 @@ pnpm start --hostname 127.0.0.1 --port 3000
 
 ### 2.2 初始化后的两种修改方式
 
-- 皇帝登录后进入“个人中心 → 运行配置”，编辑完整 YAML 并保存。
+- 皇帝登录后进入“个人中心 → 运行配置”，使用完整视觉表单或原始 YAML 编辑并保存；两种草稿切换会双向同步。
 - 运维人员直接编辑工作目录下的 `data/config.yaml`。
 
 文件监视器约每秒检测一次修改。候选内容依次经过 YAML 解析、schema 校验、数据库连通性和 migration 校验；全部成功才切换。YAML 写坏、字段越界、PostgreSQL 不可达或 migration 失败时，磁盘上的候选文件仍可供排错，但运行进程继续使用上一份可用配置，并在配置状态/日志中报告问题。
 
 每次成功应用都会更新 `data/config.yaml.lkg`。冷启动遇到损坏或尚未验证的新候选文件时，会优先恢复该 last-known-good 副本。WebUI 保存使用原始文件 SHA-256 fingerprint 与共享保存锁做跨进程 CAS；两个管理员或多个 Web 进程同时保存时，旧版本收到 409，不会覆盖新版本。revision 只用于进程内状态展示。
 
-同一数据库类型下修改 SQLite 路径、PostgreSQL URL/连接池或 TLS 参数，会先建立并验证新连接，再替换旧连接。只有 `database.driver` 在 `sqlite` 与 `postgres` 间切换需要进程重启；production 默认自动退出，由 Docker `restart: unless-stopped` 或 systemd `Restart=always` 拉起。其他配置热加载。
+同一数据库类型下修改 SQLite 路径、PostgreSQL URL/连接池或 TLS 参数，会先建立并验证新连接，再替换旧连接。只有 `database.driver` 在 `sqlite` 与 `postgres` 间切换需要 Web 进程重启；production 默认自动退出，由 Docker `restart: unless-stopped` 或 systemd `Restart=always` 拉起。其他 Web 配置热加载；按域 IMAP/SMTP/Resend 策略与用户权限直接热生效。
 
 ### 2.3 配置 schema
 
@@ -105,7 +105,7 @@ pnpm start --hostname 127.0.0.1 --port 3000
 
 为保证 Compose 中 Web、维护与异地同步容器看到同一 bind 目录，`database.sqlite.path` 必须是 `data/` 内的相对文件，`database.sqlite.backupDir` 必须位于 `data/`；裸机若要使用其他磁盘，请把它挂载或软链接到该目录。`compose.postgres.yml` 的备份目录固定在 `data/postgres-backups` 子树。
 
-业务站点设置仍保存在所选数据库的 `site_config` 表中，可由皇帝在个人中心设置，例如邮箱域名、默认角色、Resend、Turnstile 与 Webhook。运行配置和业务配置都能通过 WebUI 管理，但二者的持久化位置不同。
+业务设置保存在所选数据库的 `site_config` 表中。WebUI 可按域分别选择 Worker/IMAP/关闭收件与 Resend/SMTP/关闭发件；每个域保存自己的凭据，IMAP 游标也随数据库备份。还可按角色及单用户设置查看、收发、创建、删除、分享、管理权限和数量/大小/有效期额度，并设置默认角色、Turnstile、Webhook 与全站字体。皇帝权限由代码固定为全开且不限额，角色表和用户覆盖 API 都不能修改。运行配置和业务配置都能通过 WebUI 管理，但二者的持久化位置不同。
 
 ## 3. Docker Compose：SQLite standalone
 
@@ -343,7 +343,11 @@ Compose 不再内置代理服务；宿主机上的 Caddy/Nginx 应直接反代 `
 
 用户名密码注册/登录即使关闭 Turnstile，也会受 `auth.rateLimit` 限制。多实例仍需在可信入口增加共享限流；应用内计数只覆盖单进程。
 
-## 6. Cloudflare Email Worker
+## 6. 入站邮件：Worker 或外部 IMAP
+
+每个邮箱域在“个人中心 → 域名收发”中独立选择一种收件方式。一个域不能同时走两个入口；切换时应先完成外部 Email Routing 或邮局 catch-all 配置，再观察旧入口重试结束。收件权限、每日收件额度和单封大小上限在“权限配额”中按角色或用户设置。
+
+Cloudflare Worker 适合已经使用 Cloudflare Email Routing、希望隐藏源站或需要 R2 + Queue 缓冲的部署；外部 IMAP 适合已有企业邮局/catch-all 邮箱的部署，宿主无需开放邮件端口。
 
 ### 6.1 直连模式
 
@@ -385,13 +389,32 @@ pnpm deploy:email:durable
 
 Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地 YAML 和 Wrangler Secret 的 `EMAIL_INGEST_SECRET` 必须完全相同。Wrangler 自己的登录态/API token 仅属于 Cloudflare 工具边界，本地 Web/API 不读取。
 
+### 6.3 外部邮局 IMAP
+
+1. 在域名 DNS/MX 与邮局控制台启用 catch-all/全域收件，或配置覆盖所有 MoeMail 地址的别名规则，让邮件进入一个专用外部邮箱。
+2. 确认邮局会清洗同名入站 Header，并把可信的 `X-Original-To`、`Envelope-To`、`X-Envelope-To` 或 `Delivered-To` 放在最前。应用不接受发件人可控的普通 MIME `To`；若邮局不保证投递追踪 Header 的来源和顺序，就不能安全确定实际临时地址，应改用 Worker。
+3. 在 WebUI 把目标域改为“外部邮箱 IMAP”，填写主机、端口、`TLS`/`STARTTLS`、用户名、密码或应用专用密码、文件夹和收件 Header；公共邮局应保持严格证书校验。
+4. 点击“测试 IMAP 连接”并保存。默认首次建立当前 UID 水位，只接收后续新邮件；确需导入现有邮件时选择“同时导入未读邮件”。
+
+Web 进程每 5 秒检查策略，按各域设置的 15–86400 秒间隔调度，最多并行轮询 4 个账号。每个账号单轮上限可设置为 1–1000 封。读取使用只读 `EXAMINE` 和 `BODY.PEEK`，不会设置 `\\Seen`、移动或删除上游邮件；单封原始邮件硬限制 25 MiB，连接、问候和空闲读取都有超时及响应内存上限。
+
+进度以账号指纹、IMAP `UIDVALIDITY` 和最后完成的 UID 保存在数据库。进程在“下载后、更新游标前”退出时会再次看到同一 UID，但原始内容摘要会阻止重复入库/Webhook。修改账号、主机或文件夹会建立新游标；删除或停用域会清理对应游标。查看 `docker compose logs -f moemail`，PostgreSQL 部署加 `-f compose.postgres.yml`。
+
+IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也不会在外部邮局自动创建 MoeMail 的临时地址。若服务商不支持全域收件或不保留原始收件人，请使用 Worker 模式。
+
+### 6.4 按域外部发件
+
+每个域在同一“域名收发”面板独立选择 Resend、外部 SMTP 或关闭发件。Resend 填该域专用 API Key；SMTP 填外部邮局主机、端口、TLS/STARTTLS、用户名/密码或应用专用密码和可选 From name，并选择自动协商、强制 PLAIN 或强制 LOGIN。现有配置默认补为“自动协商”；Microsoft/Outlook 等仍允许密码式 SMTP AUTH 但协商失败时可选 LOGIN。OAuth-only 的 Microsoft 365 租户不能靠 LOGIN 兼容，应改用支持 OAuth 的 SMTP 中继/发件服务。点击“测试 SMTP 连接”只执行 transport verify，不发送测试邮件。真正发件仍以 MoeMail 当前地址作为 From，因此必须先在服务商验证域名并完成其要求的 SPF/DKIM/DMARC。
+
+这些 IMAP/SMTP/Resend 凭据和 IMAP 游标保存在数据库 `site_config`，会随数据库备份和异地副本一起导出。备份文件必须保持 `0600`、加密传输并限制 rclone remote 权限；不要把凭据复制到 Compose、`.env` 或公开日志。供应商退信、限流和滥用策略属于外部边界，上线前应对每个启用的域各发送一封真实测试邮件。
+
 ## 7. systemd 与周期任务
 
 服务工作目录固定为 `/opt/moemail`，因此权威配置路径是 `/opt/moemail/data/config.yaml`；`data/` 不能被替换成未挂载的 systemd StateDirectory。
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.16.4 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.16.5 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \
@@ -619,10 +642,15 @@ pnpm validate:runtime-config
 pnpm validate:runtime-config:cold
 pnpm validate:setup
 pnpm validate:setup:http
+pnpm validate:email-worker
+pnpm validate:mail-policies
+pnpm validate:imap-inbound
+pnpm validate:runtime-fields
 # 目标机装有 PostgreSQL 客户端/服务端工具时：
 pnpm validate:setup:http:postgres
 pnpm validate:scheduler
 pnpm validate:rclone-config
+pnpm validate:restore
 pnpm validate:deployment
 pnpm build
 ```
@@ -636,6 +664,8 @@ pnpm build
 - 直接修改 YAML 与 WebUI 保存都能应用；故意写坏 YAML、越界字段和不可达数据库时，旧配置继续服务且错误可见。
 - 切换数据库类型后守护进程拉起新进程，health 返回目标 driver；同类型连接参数变化无需重启。
 - 登录、邮箱、收信、详情、分享、角色、API Key、Webhook、配置和发件正常。
+- 每个域的入站 Worker/IMAP 与出站 Resend/SMTP/关闭选择分别生效；错误入口不会绕过域策略。
+- 角色与用户覆盖的功能权限、邮箱数/有效期/每日收发/大小额度生效；皇帝自身权限不可编辑。
 - 错误 ingestion secret 返回 401，超大请求返回 413，重复邮件只入库一次。
 - `pnpm db:verify` 成功；数据库备份及其相邻 `.config.yaml.lkg` pair 能在全新独立路径恢复。
 - 监控磁盘、数据库/WAL 大小、HTTP 5xx、ingestion 非 2xx、cleanup 退出码和 API 延迟。

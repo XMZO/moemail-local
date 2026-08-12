@@ -2,48 +2,12 @@ import { NextResponse } from "next/server"
 import { createDb } from "@/lib/db"
 import { emails, messages } from "@/lib/schema"
 import { eq } from "drizzle-orm"
-import { checkSendPermission } from "@/lib/send-permissions"
-import { CONFIG_KEYS, getConfigValue } from "@/lib/config-store"
+import { checkSendPermission, withUserSendLock } from "@/lib/send-permissions"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
+import { outboundMessageSchema, resolveOutboundPolicy, sendOutboundMessage } from "@/lib/outbound-mail"
 
 export const runtime = "nodejs"
-
-interface SendEmailRequest {
-  to: string
-  subject: string
-  content: string
-}
-
-async function sendWithResend(
-  to: string,
-  subject: string,
-  content: string,
-  fromEmail: string,
-  config: { apiKey: string }
-) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      from: fromEmail,
-      to: [to],
-      subject: subject,
-      html: content,
-    }),
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json() as { message?: string }
-    console.error('Resend API error:', errorData)
-    throw new Error(errorData.message || "Resend发送失败，请稍后重试")
-  }
-
-  return { success: true }
-}
 
 export async function POST(
   request: Request,
@@ -51,30 +15,20 @@ export async function POST(
 ) {
   try {
     const authorization = await authorizeRequest(request, {
-      permission: PERMISSIONS.MANAGE_EMAIL,
+      permission: PERMISSIONS.SEND_EMAIL,
     })
     if (!authorization.ok) return authorization.response
 
-    const { userId } = authorization.principal
+    const { userId, access } = authorization.principal
 
     const { id } = await params
     const db = createDb()
 
-    const permissionResult = await checkSendPermission(userId)
-    if (!permissionResult.canSend) {
+    const payload = await request.json().catch(() => null)
+    const parsedMessage = outboundMessageSchema.safeParse(payload)
+    if (!parsedMessage.success) {
       return NextResponse.json(
-        { error: permissionResult.error },
-        { status: 403 }
-      )
-    }
-    
-    const remainingEmails = permissionResult.remainingEmails
-
-    const { to, subject, content } = await request.json() as SendEmailRequest
-
-    if (!to || !subject || !content) {
-      return NextResponse.json(
-        { error: "收件人、主题和内容都是必填项" },
+        { error: parsedMessage.error.issues[0]?.message ?? "发件内容无效" },
         { status: 400 }
       )
     }
@@ -97,37 +51,58 @@ export async function POST(
       )
     }
 
-    const apiKey = await getConfigValue(CONFIG_KEYS.RESEND_API_KEY)
-
-    if (!apiKey) {
+    const domainPolicy = await resolveOutboundPolicy(email.address)
+    if (!domainPolicy || domainPolicy.outbound.mode === "disabled") {
       return NextResponse.json(
-        { error: "Resend 发件服务未配置，请联系管理员" },
-        { status: 500 }
+        { error: "该邮箱域名未启用发件" },
+        { status: 409 }
       )
     }
 
-    await sendWithResend(to, subject, content, email.address, { apiKey })
+    return await withUserSendLock(userId, async () => {
+      const permissionResult = await checkSendPermission(userId, false, access)
+      if (!permissionResult.canSend) {
+        return NextResponse.json(
+          { error: permissionResult.error },
+          { status: 403 }
+        )
+      }
 
-    await db.insert(messages).values({
-      emailId: email.id,
-      fromAddress: email.address,
-      toAddress: to,
-      subject,
-      content: '',
-      type: "sent",
-      html: content
-    })
+      const { message } = await sendOutboundMessage(
+        email.address,
+        parsedMessage.data,
+        domainPolicy,
+      )
+      await db.insert(messages).values({
+        emailId: email.id,
+        fromAddress: email.address,
+        toAddress: message.to,
+        subject: message.subject,
+        content: "",
+        type: "sent",
+        html: message.content,
+      })
 
-    return NextResponse.json({ 
-      success: true,
-      message: "邮件发送成功",
-      remainingEmails
+      const remainingEmails = permissionResult.remainingEmails === undefined
+        ? undefined
+        : Math.max(0, permissionResult.remainingEmails - 1)
+      return NextResponse.json({
+        success: true,
+        message: "邮件发送成功",
+        remainingEmails,
+        transport: domainPolicy.outbound.mode,
+      })
     })
   } catch (error) {
-    console.error('Failed to send email:', error)
+    console.error("outbound.send.failed", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      code: typeof error === "object" && error !== null && "code" in error
+        ? String(error.code).slice(0, 100)
+        : "unknown",
+    })
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "发送邮件失败" },
-      { status: 500 }
+      { error: "发送邮件失败，请检查该域名的发件配置" },
+      { status: 502 }
     )
   }
 }

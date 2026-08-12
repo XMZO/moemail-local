@@ -1,123 +1,78 @@
-import { createDb } from "@/lib/db"
-import { userRoles, roles, messages, emails } from "@/lib/schema"
-import { eq, and, gte } from "drizzle-orm"
-import { EMAIL_CONFIG } from "@/config"
-import { CONFIG_KEYS, getConfigValue } from "@/lib/config-store"
+import { and, eq, gte, sql } from "drizzle-orm"
+import type { EffectiveAccessPolicy } from "./access-policies"
+import { createDb } from "./db"
+import { PERMISSIONS } from "./permissions"
+import { emails, messages } from "./schema"
+import { getUserAccessPolicy } from "./user-access"
 
 export interface SendPermissionResult {
   canSend: boolean
   error?: string
   remainingEmails?: number
+  dailyLimit?: number
+}
+
+const sendTails = new Map<string, Promise<void>>()
+
+export async function withUserSendLock<T>(userId: string, task: () => Promise<T>): Promise<T> {
+  const predecessor = sendTails.get(userId) ?? Promise.resolve()
+  let release = () => {}
+  const turn = new Promise<void>(resolve => {
+    release = resolve
+  })
+  const tail = predecessor.catch(() => {}).then(() => turn)
+  sendTails.set(userId, tail)
+
+  await predecessor.catch(() => {})
+  try {
+    return await task()
+  } finally {
+    release()
+    if (sendTails.get(userId) === tail) sendTails.delete(userId)
+  }
 }
 
 export async function checkSendPermission(
   userId: string,
-  skipDailyLimitCheck = false
+  skipDailyLimitCheck = false,
+  resolvedAccess?: EffectiveAccessPolicy,
 ): Promise<SendPermissionResult> {
   try {
-    const enabled = await getConfigValue(CONFIG_KEYS.EMAIL_SERVICE_ENABLED)
-
-    if (enabled !== "true") {
-      return {
-        canSend: false,
-        error: "邮件发送服务未启用"
-      }
+    const access = resolvedAccess ?? await getUserAccessPolicy(userId)
+    if (!access.permissions[PERMISSIONS.SEND_EMAIL]) {
+      return { canSend: false, error: "您的账号没有发件权限" }
     }
 
-    const userDailyLimit = await getUserDailyLimit(userId)
-    
-    if (userDailyLimit === -1) {
-      return {
-        canSend: false,
-        error: "您的角色没有发件权限"
-      }
+    const dailyLimit = access.quotas.dailySendLimit
+    if (skipDailyLimitCheck || dailyLimit === 0) {
+      return { canSend: true, dailyLimit }
     }
 
-    if (skipDailyLimitCheck || userDailyLimit === 0) {
-      return {
-        canSend: true
-      }
-    }
-    
-    const db = createDb()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    const sentToday = await db
-      .select()
+    const now = new Date()
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    const result = await createDb()
+      .select({ count: sql<number>`count(*)` })
       .from(messages)
       .innerJoin(emails, eq(messages.emailId, emails.id))
-      .where(
-        and(
-          eq(emails.userId, userId),
-          eq(messages.type, "sent"),
-          gte(messages.receivedAt, today)
-        )
-      )
-
-    const remainingEmails = Math.max(0, userDailyLimit - sentToday.length)
-    
-    if (sentToday.length >= userDailyLimit) {
+      .where(and(
+        eq(emails.userId, userId),
+        eq(messages.type, "sent"),
+        gte(messages.receivedAt, today),
+      ))
+    const sentToday = Number(result[0]?.count ?? 0)
+    const remainingEmails = Math.max(0, dailyLimit - sentToday)
+    if (remainingEmails === 0) {
       return {
         canSend: false,
-        error: `您今天已达到发件限制 (${userDailyLimit} 封)，请明天再试`,
-        remainingEmails: 0
+        error: `您今天已达到发件限制 (${dailyLimit} 封)，请明天再试`,
+        remainingEmails: 0,
+        dailyLimit,
       }
     }
 
-    return {
-      canSend: true,
-      remainingEmails
-    }
+    return { canSend: true, remainingEmails, dailyLimit }
   } catch (error) {
-    console.error('Failed to check send permission:', error)
-    return {
-      canSend: false,
-      error: "权限检查失败"
-    }
+    console.error("Failed to check send permission:", error)
+    return { canSend: false, error: "权限检查失败" }
   }
-}
-
-async function getUserDailyLimit(userId: string): Promise<number> {
-  try {
-    const db = createDb()
-    
-    const userRoleData = await db
-      .select({ roleName: roles.name })
-      .from(userRoles)
-      .innerJoin(roles, eq(userRoles.roleId, roles.id))
-      .where(eq(userRoles.userId, userId))
-
-    const userRoleNames = userRoleData.map(r => r.roleName)
-
-    const roleLimitsStr = await getConfigValue(CONFIG_KEYS.EMAIL_ROLE_LIMITS)
-    
-    const customLimits = roleLimitsStr ? JSON.parse(roleLimitsStr) : {}
-    
-    const finalLimits = {
-      emperor: EMAIL_CONFIG.DEFAULT_DAILY_SEND_LIMITS.emperor,
-      duke: customLimits.duke !== undefined ? customLimits.duke : EMAIL_CONFIG.DEFAULT_DAILY_SEND_LIMITS.duke,
-      knight: customLimits.knight !== undefined ? customLimits.knight : EMAIL_CONFIG.DEFAULT_DAILY_SEND_LIMITS.knight,
-      civilian: EMAIL_CONFIG.DEFAULT_DAILY_SEND_LIMITS.civilian,
-    }
-
-    if (userRoleNames.includes("emperor")) {
-      return finalLimits.emperor
-    } else if (userRoleNames.includes("duke")) {
-      return finalLimits.duke
-    } else if (userRoleNames.includes("knight")) {
-      return finalLimits.knight
-    } else if (userRoleNames.includes("civilian")) {
-      return finalLimits.civilian
-    }
-
-    return -1
-  } catch (error) {
-    console.error('Failed to get user daily limit:', error)
-    return -1
-  }
-}
-
-export async function checkBasicSendPermission(userId: string): Promise<SendPermissionResult> {
-  return checkSendPermission(userId, true)
 }

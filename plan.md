@@ -21,6 +21,11 @@ Cloudflare Email Routing
   -> /api/internal/email
   -> 本地数据库
 
+External mail provider（按域可选）
+  -> catch-all mailbox -> read-only IMAP poller
+  -> shared email ingestion service
+  -> 本地数据库
+
 systemd 常驻 scheduler
   -> 按已验证 YAML 动态执行 cleanup/backup/monitor/offsite
   -> 本地数据库与备份目标
@@ -35,7 +40,9 @@ Docker Compose scheduler/monitor/offsite profiles
 - 使用本地 SQLite 或 PostgreSQL 替代 D1，尽量保留业务查询。
 - 使用数据库配置表替代 Cloudflare KV。
 - 本地应用不使用 `.env` 或部署环境变量；首次启动由 WebUI 选择数据库并生成 `data/config.yaml`，后续支持 WebUI/YAML 双向修改和失败回退。
-- Email Worker 仅保留邮件接收和 HTTPS 转发能力。
+- 每个域可独立选择 Email Worker、外部邮局 IMAP 或关闭收件，并独立选择 Resend、外部 SMTP 或关闭发件。
+- Email Worker 仅保留可选的邮件接收和 HTTPS 转发能力；已有 catch-all 邮箱时也可用只读 IMAP 拉取，不在本机监听公网 SMTP。
+- 皇帝可在 WebUI 管理完整视觉运行配置、按域收发凭据、角色/用户权限和额度以及全局字体；原始 YAML 仍作为高级编辑方式。
 - 使用读取已验证 YAML 的服务器常驻 scheduler 替代 Cleanup Worker。
 - 将平台差异集中在少量适配层，降低以后合并官方更新的成本。
 
@@ -44,7 +51,7 @@ Docker Compose scheduler/monitor/offsite profiles
 - 附件存储和附件 UI。
 - PostgreSQL 集群编排、自动故障切换等数据库 HA 平台能力。
 - WebSocket/SSE 实时推送。
-- 大规模业务重构或 UI 改版。
+- 邮件阅读器主体交互的大规模重写。
 
 ## 1.1 当前实施状态
 
@@ -55,9 +62,12 @@ Docker Compose scheduler/monitor/offsite profiles
 | PostgreSQL schema/migration/导入 | 已完成 | `drizzle-postgres/`、`scripts/postgres/` |
 | DB 配置表替代 KV | 已完成 | `app/lib/config-store.ts` |
 | 首次 WebUI 初始化与 YAML 运行配置 | 已完成；SQLite/PG production HTTP 已验收 | `app/components/setup/`、`app/lib/config/`、`app/api/setup/`、`app/api/runtime-config/` |
-| Email Worker 直连转发 | 源码/配置完成；实网待验收 | `workers/email-receiver.ts` |
+| 完整视觉运行配置与 YAML 切换 | 已完成；当前 schema 叶字段有一一对应校验 | `app/components/profile/runtime-config-panel.tsx`、`runtime-config-fields.ts` |
+| 按域收发策略与凭据 | 已完成；Worker/外部 IMAP、Resend/外部 SMTP 可独立组合 | `app/lib/domain-policies.ts`、`app/lib/outbound-mail.ts` |
+| 角色/用户权限与额度 | 已完成；皇帝全开且不可覆盖 | `app/lib/access-policies.ts`、`app/lib/user-access.ts` |
+| Email Worker 直连转发 | 源码/配置完成；直连模式已实网投递验收 | `workers/email-receiver.ts` |
+| 外部 IMAP 收件 | 真实 TCP IMAP 登录、只读 FETCH、原始收件人映射和持久 UID 去重通过；真实邮局待部署验收 | `app/lib/imap-inbound.ts`、`scripts/validation/imap-inbound.ts` |
 | R2 + Queue 耐久转发 | 源码/配置完成；实网待验收 | `wrangler.email.durable.example.json` |
-| D1 Worker 回退资产 | 已保留 | `workers/email-receiver-d1.legacy.ts` |
 | systemd 动态 maintenance scheduler | 源码/本机 LKG 验证完成；Linux unit 待验收 | `scripts/ops/runtime-scheduler.ts`、`deploy/local/` |
 | Docker Compose 双文件部署 | `compose.yml` 为纯 SQLite，`compose.postgres.yml` 为独立内置 PostgreSQL；二者均使用同目录 bind mounts、无内置 Caddy、无 env/build，且不能叠加；官方 Compose v5.4.0 默认/全 profiles `config` 通过，实际 pull/up 待目标 Docker 主机验收 | `compose.yml`、`compose.postgres.yml`、`.github/workflows/publish-docker.yml` |
 | 定时备份、监控、异地同步 | 源码/配置完成；目标环境待验收 | `scripts/ops/`、Compose profiles、systemd units |
@@ -74,8 +84,8 @@ Docker Compose scheduler/monitor/offsite profiles
 - Web/API 已切换 Node Runtime，middleware 不再导入数据库或信任 `X-User-Id`。
 - SQLite 与 PostgreSQL 共用 `createDb()`、schema facade 和大多数业务查询。
 - `data/config.yaml` 是本地应用唯一运行配置源；WebUI 与直接文件修改共用 strict schema、数据库/唯一站主预检、原子写入、fingerprint CAS/跨进程保存锁和 `.lkg` 回退。冷启动不会直接信任同内容 LKG，仍会重验数据库中恰有一个站主。
-- KV 的 10 个字符串配置键已迁移到 `site_config`，API/UI 契约保持不变。
-- Email Worker 只负责接收、缓冲和转发；MIME 解析、幂等入库和 Webhook 在本地 API 执行。
+- 原 KV 的业务配置及新增的域策略、IMAP 游标、访问策略和字体配置共 14 个键已迁移到 `site_config`；旧键继续作为升级兼容输入，新编辑器写入结构化策略键。
+- Email Worker 负责接收、缓冲和转发；外部 IMAP 轮询器与 Worker HTTP 入口共用 MIME 解析、域策略、权限/额度、幂等入库和 Webhook 服务。
 - Cleanup 已按数据库后端分批清理；SQLite 使用跨容器文件锁，PostgreSQL 使用 advisory lock。
 - 当前 `drizzle/0000` 到 `0018` 不能从空库完整重放：`0013` 会读取此前未创建的 `to_address`、`type` 和 `sent_at` 字段。
 - 消息列表已不返回正文，默认轮询为 25 秒，轮询不再执行全量 `count(*)`。
@@ -120,7 +130,7 @@ PostgreSQL 使用独立 `pg-core` schema、migration、D1 导入和 cleanup；�
 
 运行配置与业务配置分层：
 
-- `data/config.yaml` 保存数据库、站点地址、鉴权/OAuth、投递 secret、cleanup/scheduler/monitor/offsite 等本地进程配置。
+- `data/config.yaml` 保存数据库、站点地址、鉴权/OAuth、投递 secret、cleanup/scheduler/monitor/offsite 等本地进程配置；每域邮局凭据和 IMAP 游标保存在数据库 `site_config`。
 - 首次启动 WebUI 通过两阶段提交完成数据库探测、migration、皇帝创建与随机 secret 生成；崩溃重试复用已落盘 pepper，初始化后皇帝可在运行配置面板修改完整 YAML。
 - 文件监视器对直接编辑执行 schema、数据库连接与 migration 校验；成功才提交并更新 `config.yaml.lkg`，失败继续使用旧配置。
 - 同一数据库类型的连接参数可准备后热切换；数据库 driver 改变由守护进程重启后生效。
@@ -134,11 +144,11 @@ PostgreSQL 使用独立 `pg-core` schema、migration、D1 导入和 cleanup；�
 - `value`: text。
 - `updated_at`: timestamp。
 
-新增集中式 `ConfigStore`，保留现有配置键和 API JSON 契约。
+新增集中式 `ConfigStore`。旧业务配置键保持兼容；结构化域策略、角色/用户权限额度和字体使用新增键与专用鉴权 API，所有入口都可由皇帝在 WebUI 编辑。
 
-### 3.4 邮件转发
+### 3.4 邮件收发
 
-推荐 Worker 转发原始 RFC822 邮件和 SMTP envelope：
+Worker 路线转发原始 RFC822 邮件和 SMTP envelope：
 
 - 使用 `message.to` 和 `message.from`，不使用可伪造的 MIME `To` 作为投递目标。
 - Worker 使用独立的 `EMAIL_INGEST_SECRET` 调用本地 API。
@@ -146,6 +156,10 @@ PostgreSQL 使用独立 `pg-core` schema、migration、D1 导入和 cleanup；�
 - 对重复投递返回成功，但不得重复插入或重复触发 Webhook。
 
 当前统一转发原始 RFC822，以保留稳定摘要、可靠 MIME 解析和未来扩展空间；本地仍只保存 subject/text/html，不保存附件。
+
+外部 IMAP 路线从邮局 catch-all 邮箱读取原始 RFC822，通过 `X-Original-To`/`Envelope-To`/`Delivered-To` 等 Header 还原本地地址。轮询只使用 EXAMINE/PEEK，不改变上游邮件状态；账号指纹、UIDVALIDITY 与最后完成 UID 构成持久游标，内容摘要再防止崩溃重试重复入库。两条入站路径调用同一入库服务，按域只能使用配置的入口。
+
+出站按发件地址所属域选择 Resend、外部 SMTP 或关闭。API key、SMTP 凭据、TLS、From name 与 AUTO/PLAIN/LOGIN 鉴权偏好均保存在该域自己的结构化策略中，不再使用一个全局提供商决定全部域；LOGIN 用于仍允许密码式 SMTP AUTH 的 Microsoft/Outlook 等邮局，不冒充 OAuth-only 租户支持。
 
 ### 3.5 清理任务
 
@@ -166,7 +180,7 @@ PostgreSQL 使用独立 `pg-core` schema、migration、D1 导入和 cleanup；�
 - 工作分支：`feat/local-deployment`。
 - `origin`：`https://github.com/XMZO/moemail-local.git`。
 - `upstream`：`https://github.com/beilunyang/moemail.git`，禁止 push。
-- 原 D1 Email Worker 另存为 `workers/email-receiver-d1.legacy.ts`。
+- 旧 Cloudflare Pages/D1 运行版本由固定基线 commit 保留，不在当前运行分支复制一套会继续漂移的 legacy Worker。
 
 需要复现原 Cloudflare 版本时，不覆盖当前工作树，使用独立 worktree：
 
@@ -184,7 +198,7 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 
 验收：
 
-- 上游基线 commit、远程仓库、legacy Worker 和独立 worktree 复现命令均已记录。
+- 上游基线 commit、远程仓库和独立 worktree 复现命令均已记录。
 - 本地实现的可重复验证记录位于 `docs/local-validation.zh-CN.md`；依赖真实 Cloudflare 账号的原链路行为在部署验收中执行，不伪造结果。
 - 工作分支可以随时对照或回退到上游基线。
 
@@ -218,7 +232,7 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 
 回退：
 
-- 保留原 Cloudflare deployment 文件，不在本阶段删除。
+- 需要复现原 Cloudflare deployment 时使用固定基线 commit 的独立 worktree，不把旧 Pages/D1 运行依赖混回当前 production 构建。
 
 ### 阶段 2：D1 替换为本地 SQLite
 
@@ -228,7 +242,6 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 - `app/lib/schema.sqlite.ts`
 - `drizzle.local.config.ts`
 - `scripts/sqlite/migrate.ts`
-- `scripts/generate-test-data.ts`
 - `types.d.ts`
 - `package.json`
 - 新的本地 migration 目录
@@ -305,12 +318,15 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 - `EMAIL_SERVICE_ENABLED`
 - `RESEND_API_KEY`
 - `EMAIL_ROLE_LIMITS`
+- `EMAIL_DOMAIN_POLICIES`
+- `ACCESS_POLICIES`
+- `UI_FONT_FAMILY`
 
 任务：
 
 - 提供字符串 `get/put` 或类型化配置接口。
 - 多键更新使用事务或批量 upsert。
-- 保持现有 API 返回格式和配置 UI 不变。
+- 保持旧 API/键作为升级兼容入口，同时提供按域策略、访问策略和外观的严格 schema API 与可视化编辑器。
 - 明确敏感配置的文件权限和备份策略。
 
 验收：
@@ -353,7 +369,7 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 
 回退：
 
-- 保留 `email-receiver-d1.legacy.ts` 与对应 Wrangler 模板，切换 Email Routing target 即可恢复旧链路。
+- 回退到固定旧 tag/基线 worktree 中与其数据库契约匹配的完整部署，不在新旧 Worker 代码之间拼接不兼容状态。
 
 ### 阶段 5：Cleanup Worker 替换为本地 scheduler
 
@@ -396,6 +412,7 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 - Docker Compose 不含 `environment`/`env_file`；systemd 不含 `EnvironmentFile`；维护脚本与 sidecar 读取同一份已验证 YAML/LKG。
 - SQLite 数据库与备份路径限制在共享的 `data/` 持久卷；每个异地数据库备份都配对上传同名前缀的已验证 `config.yaml.lkg`，支持全新卷恢复。
 - Worker 侧仍单独配置 ingestion URL，并通过 Wrangler Secret 保存与 YAML 一致的 `EMAIL_INGEST_SECRET`。
+- 选择 IMAP 的域由 Web 进程内轮询器读取外部邮局；不新增 Compose 服务、不开放 25 端口，也不引入 `.env`。
 
 生产要求：
 
@@ -473,6 +490,10 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 - API Key 创建、禁用和调用。
 - Webhook 保存、测试和实际通知。
 - Resend 发件和每日限额。
+- 外部 SMTP 发件以及每域独立凭据、入站/出站关闭组合。
+- 外部 IMAP 真实登录、只读 FETCH、25 MiB 上限、原始收件人映射、UID 游标/内容去重与 Worker/IMAP 域入口隔离。
+- 角色及单用户的查看、创建、删除、收取、发送、分享、管理权限与数量/大小/有效期额度；皇帝策略不可修改。
+- 视觉运行配置覆盖全部 schema 字段、单字段恢复默认、视觉/YAML 草稿同步和全局字体安全校验。
 - Turnstile 开启和关闭。
 - cleanup 显式分批删除各关联表，单次真实删除总行数不超过配置上限。
 
@@ -492,7 +513,7 @@ git worktree add ../moemail-cloudflare-baseline 6c19aefc71ca60bc194a6003c13bae1e
 
 ### 可靠性
 
-- Next.js 重启期间 Worker 转发行为明确。
+- Next.js 重启期间 Worker 转发和 IMAP 停机后按 UID 补拉行为明确。
 - SQLite WAL 恢复正常。
 - 磁盘空间不足有告警。
 - cleanup 重入被阻止。
@@ -567,7 +588,7 @@ rg 'SITE_CONFIG|env\.DB' app next.config.ts middleware.ts
 
 - Web/API 不依赖 Cloudflare Pages、D1 或 KV 即可运行。
 - 直连模式在 Cloudflare 仅保留 Email Routing 和 Email Worker；选择耐久模式时额外使用 R2、Queue 与 DLQ。
-- 所有新邮件经过认证的 HTTPS 接口进入本地数据库。
+- 每个域按策略经认证的 Worker HTTPS 接口或只读外部 IMAP 轮询进入本地数据库。
 - 重复投递不会产生重复邮件。
 - cleanup 完全由服务器计划任务执行。
 - SQLite 可备份、可恢复、可从空环境初始化。
@@ -575,10 +596,11 @@ rg 'SITE_CONFIG|env\.DB' app next.config.ts middleware.ts
 - SQLite 与 PostgreSQL Compose 均提供健康检查、定时 cleanup/backup、监控与异地同步 profile。
 - 全新启动可完全在 WebUI 选择数据库、创建皇帝并生成 `data/config.yaml`；本地应用无需 `.env` 或应用环境变量。
 - 皇帝可在 WebUI 修改完整运行配置，直接编辑 YAML 也能热加载；无效候选不应用，last-known-good 可在重启时恢复。
+- 皇帝可在 WebUI 配置每域独立入站/出站提供商与凭据，以及角色/用户权限额度和全局字体；皇帝自身权限固定全开且不可覆盖。
 - 消息列表不携带正文，轮询间隔与永久邮箱消息保留策略可配置。
 - 邮箱地址大小写唯一与唯一站主约束均由数据库/事务保证并被 verify/import 检查。
 - 过期邮箱不再收信，邮箱地址限安全 ASCII 并跨数据库统一规范化。
 - production secret、Credentials scrypt/限流与 PWA/API no-store 数据隔离均有启动/运行时保护。
 - 核心功能回归通过。
 - 有明确的上游合并流程和平台依赖扫描命令。
-- Cloudflare 原部署资产被保留，可在切换失败时回退。
+- 原 Cloudflare 版本可通过固定基线 commit 在独立 worktree 重现；当前运行分支不携带 Pages/D1/Cleanup Worker 兼容负担。

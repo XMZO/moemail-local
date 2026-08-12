@@ -6,8 +6,10 @@ import { Permission, Role, hasPermission } from "@/lib/permissions"
 export function useRolePermission() {
   const { data: session } = useSession()
   const roles = session?.user?.roles
+  const effectivePermissions = session?.user?.permissions
 
   const checkPermission = (permission: Permission) => {
+    if (effectivePermissions) return effectivePermissions.includes(permission)
     if (!roles) return false
     return hasPermission(roles.map(r => r.name) as Role[], permission)
   }
@@ -21,5 +23,6 @@ export function useRolePermission() {
     checkPermission,
     hasRole,
     roles,
+    permissions: effectivePermissions,
   }
 }

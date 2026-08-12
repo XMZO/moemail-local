@@ -9,11 +9,14 @@
 - `pnpm lint`：通过；仅保留 6 条改造前已有的 Hook/Image 警告。
 - `pnpm build`：Next.js 15.5.23 production build 通过，Node Route、middleware、PWA 与页面均成功生成。
 - `git diff --check`：通过。
-- Web 源码未发现 `runtime = "edge"`、`getRequestContext()`、`SITE_CONFIG`、`drizzle-orm/d1` 或 `env.DB` 残留；D1 依赖只存在于明确标记的 legacy Worker/官方回退资产。
+- Web 运行源码未发现 `runtime = "edge"`、`getRequestContext()`、`SITE_CONFIG`、`drizzle-orm/d1` 或 `env.DB` 残留；旧 Pages/D1/Cleanup Worker 部署资产已从当前运行分支删除，D1 只保留离线数据导入工具。
 - 两份 Compose 文件均通过官方 Compose JSON Schema 与 YAML 解析；`compose.yml` 是不含 PostgreSQL 服务或镜像的 SQLite 部署，`compose.postgres.yml` 是独立的内置 PostgreSQL 部署。二者均无 `environment`/`env_file`、无 `${...}` 宿主插值、无本地 `build`、无 Docker 内置 Caddy，且所有容器都只使用同目录相对 bind mounts。systemd units 无 `EnvironmentFile`。所有 `deploy/**/*.sh` 通过 `bash -n`。PostgreSQL backup scheduler 会在首次 dump 前等待完整数据库 schema，Docker restore 使用单事务；工具 sidecar 同时具备内置隔离网络与外部数据库出口。
 - `pnpm validate:no-local-env` 通过：递归检查两份 Compose、`app/**` 与 systemd services，确认没有本地应用环境配置入口，并确认 `.env.example` 已移除。
 - `pnpm validate:deployment` 通过：检查互斥的 SQLite/PostgreSQL standalone Compose、统一 `latest` GHCR 镜像契约、PostgreSQL 隔离网络与幂等 HBA 规则、PG 18 server/工具镜像、备份/恢复并发锁、systemd 自动重启，以及 tag/手动触发的原生 amd64+arm64 GHCR 发布 workflow（无 QEMU、按 digest 推送、真实启动 PostgreSQL 18 后再合并 manifest）。
 - `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。
+- `pnpm validate:mail-policies` 通过：每个域可独立选择 Worker/IMAP/关闭收件和 Resend/SMTP/关闭发件，Resend 请求与真实 TCP SMTP `verify`/AUTH/发件使用各域自己的凭据；旧 SMTP 配置默认迁移为自动协商，另一个真实 TCP SMTP 会话验证强制 `AUTH LOGIN` 的用户名/密码挑战流程；角色与单用户覆盖的权限、邮箱数量、有效期、每日收发和消息大小额度按预期合并，皇帝策略固定为全权限且不限额。
+- `pnpm validate:imap-inbound` 通过：在隔离 SQLite 数据库和随机 TCP 端口上完成真实 IMAP 登录、只读 mailbox、UID SEARCH/FETCH 对话；`X-Original-To` 正确映射到本地邮箱，伪造的 MIME `To` 不会旁路投递，原始 RFC822 入库，持久 UID 游标和 UIDVALIDITY 重置重扫都保持幂等，且客户端从未发送 STORE/MOVE/COPY/EXPUNGE。同一验证器也在临时 PostgreSQL 18 数据库、`poolMax=1` 下通过，短事务租约不会长期占住唯一连接。
+- `pnpm validate:runtime-fields` 通过：视觉运行配置编辑器的 metadata 与当前 strict schema 的全部叶字段一一对应，无缺项或幽灵字段；视觉/YAML 切换会同步草稿，字段可单独恢复默认值。
 - `pnpm validate:runtime-config` 通过：损坏 YAML、未知字段、不可打开或没有站主的 SQLite 目标均被拒绝且旧值继续生效；有效直接文件修改由约 1 秒 watcher 自动应用。进程内 revision 竞争、外部文件 fingerprint 失效，以及两个真实 Node 进程同时持同一 fingerprint 保存都恰好一个成功；跨进程保存锁在退出后无残留。
 - `pnpm validate:runtime-config:cold` 通过：首份配置、主文件与 LKG 相同、以及仅剩 LKG 三种路径都必须重新验证数据库中恰有一个站主后才开放完成态；不可读目标、空库与无站主 LKG 均被拒绝且不会创建目标文件。坏 PostgreSQL 主配置回退 SQLite LKG 时，实际绑定 driver 与维护 CLI 也只使用已验证的 SQLite 配置。坏配置仍允许 Web 恢复入口启动。
 - `pnpm validate:setup` 通过：首次 SQLite setup、已暂存 pepper 的同账号续跑、不同既有站主 409、两个真实 Node 进程争用同一 setup operation lock，以及坏 YAML/非对象 payload 拒绝均通过；另覆盖进程 A 完成后进程 B 持旧内存 token 的顺序竞争，B 在取锁后重新加载并以 409 拒绝。该测试构造等价的 staged 状态，不冒充进程崩溃注入测试。
@@ -67,7 +70,7 @@
 
 在真实 `next start` 上完成回归：
 
-- `pnpm validate:setup:http` 在隔离临时目录验证首次 `/zh-CN → /zh-CN/setup`、setup token、SQLite 探测/migration、唯一皇帝、token 删除、Credentials 登录、皇帝运行配置读取/保存、旧 fingerprint 409、直接文件 watcher 和坏字段不应用。
+- `pnpm validate:setup:http` 在隔离临时目录验证首次 `/zh-CN → /zh-CN/setup`、setup token、SQLite 探测/migration、唯一皇帝、token 删除、Credentials 登录、皇帝运行配置读取/保存、旧 fingerprint 409、直接文件 watcher 和坏字段不应用；完成后还验证域策略保存、真实 RFC822 Worker 入库、独立关闭出站、角色策略保存、皇帝自覆盖拒绝以及字体安全校验。
 - `pnpm validate:setup:http:redaction` 从仅有 staged LKG 的恢复状态启动，确认未鉴权 setup HTML 不含已存 rclone 凭据；随后删除主配置和 LKG、只保留 runtime 内存副本时仍不回显，空高级 YAML 提交后该值继续由服务端保留。
 - `pnpm validate:setup:http:postgres` 启动独立临时 PostgreSQL 18 集群，复跑同一 HTTP 链路并额外验证 driver 自动退出/重启恢复；临时 Next、数据库集群和派生文件均在测试结束后删除。
 - 未初始化时 auth 与公开分享 API 返回 `SETUP_REQUIRED`，health 返回 200 `setup-required`；坏冷启动配置同样保留 200 的 Web 恢复入口。损坏 secret 行使用 canary 实测，匿名 health 只返回通用错误码，响应和 runtime 错误日志均不含原始配置行。
@@ -88,7 +91,7 @@
 - 较早的真实 production HTTP 曾将注册/登录客户端上限临时设为 2，注册依次返回 `201/409/429`，Credentials callback 依次返回 `302/302/429`；两种 429 都带 `Retry-After` 和 `AUTH_RATE_LIMITED`。当前 `pnpm validate:auth-abuse` 已按配置对象覆盖进程全局上限、有界客户端 Map、代理头 opt-in、忽略 `X-User-Id` 与 scrypt 并发快速失败。
 - Webhook 保存前和发送时均执行 SSRF 校验；loopback、private、link-local、metadata、localhost 与 IPv4-mapped IPv6 被拒绝，发送时使用已验证 IP 且不跟随重定向。
 
-可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:email-worker`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
+可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:imap-inbound`、`pnpm validate:runtime-fields`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
 
 ## SQLite 轮询基线
 
@@ -106,11 +109,10 @@
 
 ## Cloudflare Worker
 
-以下三种 Worker 配置使用 Wrangler 4.120.1 dry-run 均通过：
+以下两种保留的 Email Worker 配置使用 Wrangler 4.120.1 dry-run 均通过：
 
 - 直连 HTTPS POST：`wrangler.email.example.json`，上传 6.37 KiB。
 - R2 + Queue 耐久模式：`wrangler.email.durable.example.json`，上传 6.37 KiB，bindings/cron 配置可解析。
-- 原 D1 回退 Worker：`wrangler.email.d1.legacy.example.json`，上传 286.09 KiB；入口显式绑定 SQLite schema，不会打包本地 PostgreSQL/SQLite 驱动。
 
 直连模式已在真实 Cloudflare Email Routing 上完成 MX、catch-all、Worker Secret、实时 tail 与公网 HTTPS 入库验证。验收时发现 Cloudflare 边缘运行时不实现 Fetch 的 `redirect: "error"`；现已改为 `manual`，由非 2xx 检查拒绝重定向，真实邮件复测通过。R2、Queue、DLQ 与 scheduled 恢复仍只有 dry-run，未冒充目标账号实网验收。
 
@@ -121,12 +123,13 @@
 
 - GitHub/Google OAuth 完整回调、代理 Host 与 HTTPS Secure Cookie。
 - Cloudflare Email Routing 的真实 MX 入信，以及 durable 模式离线/恢复演练。
-- Resend 真实发件、额度与退信行为。
+- 外部 IMAP 服务商的 catch-all、原始收件人 Header、TLS/应用专用密码、UIDVALIDITY 重置、限流及停机恢复行为；自包含测试只覆盖标准 IMAP 协议和入库语义。
+- 每域 Resend 与外部 SMTP 的真实发件、TLS、额度、退信和提供商限流行为。
 - Turnstile 真实 token 校验。
 - Caddy/Nginx 真实证书、代理头与日志权限。
 - 真实浏览器点击/可访问性与移动端视觉；当前已覆盖 production HTML 和向导背后的完整 HTTP/Session API，不把 API 验收冒充浏览器自动化。
 - Linux systemd `Restart=always` 与 `moemail-scheduler.service` 的实际安装、权限、进程重启；本机测试已验证相同 Next 退出/重启语义与 scheduler 的 LKG 读取。
-- 当前两份 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过：SQLite 默认解析出 `storage-init`、`moemail`，完整配置为 8 个服务且只有应用镜像；PostgreSQL 默认解析出 `storage-init`、`postgres`、`moemail`，完整配置为 10 个服务和三类 GHCR 镜像。本机仍没有 Docker daemon，因此尚未实跑 pull/up、bind mount 权限、backup/restore 与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
+- 当前两份 Compose 已用 Docker 官方发布并经 SHA-256 校验的 Compose v5.4.0 standalone 执行 `config --quiet`，默认配置和全部 profiles 都通过：SQLite 默认解析出 `storage-init`、`moemail`，完整配置为 8 个服务且只有应用镜像；PostgreSQL 默认解析出 `storage-init`、`postgres`、`moemail`，完整配置为 10 个服务和三类 GHCR 镜像。本机仍没有 Docker daemon，因此尚未实跑 pull/up、bind mount 权限、backup/restore、IMAP 容器出站连通与 migration 失败阻断；上面的 VPS 结果来自改造前一版 Compose，不能替代目标机验收。
 - rclone 到真实异机/对象存储后的 checksum、immutable 与独立恢复演练。
 
 这些属于生产环境验收，不是剩余源码实现；部署时按 `docs/local-deployment.zh-CN.md` 的上线清单逐项打勾。

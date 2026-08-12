@@ -12,15 +12,17 @@
   <span>简体中文</span>
 </p>
 
-本仓库是 [beilunyang/moemail](https://github.com/beilunyang/moemail) 的本地化分支。Web/API、运行配置、数据库、周期维护和备份都运行在自己的 Linux 主机上。Cloudflare 只作为可选的入站邮件转发层：Email Routing 把邮件交给 Email Worker，再由 Worker 转发到 MoeMail 的公网 HTTPS 接口。
+本仓库是 [beilunyang/moemail](https://github.com/beilunyang/moemail) 的本地化分支。Web/API、运行配置、数据库、邮件策略、周期维护和备份都运行在自己的 Linux 主机上。每个邮箱域名可以独立选择 Cloudflare Email Worker 或外部邮局 IMAP 收件，也可以独立选择 Resend、外部 SMTP 或关闭发件。
 
 ## 功能
 
 - 两个独立 Docker Compose 方案：轻量 SQLite 部署和内置 PostgreSQL 部署。
 - GHCR 同时发布 Linux `amd64` 与 `arm64` 镜像，由相同架构的 GitHub Runner 原生构建，不使用 QEMU 模拟。
 - 浏览器首次初始化，创建唯一的皇帝管理员账号。
-- YAML 运行配置支持校验、热加载与最后一次有效配置（LKG）恢复。
-- 临时邮箱、有效期与清理、角色权限、OpenAPI Key、Webhook、分享、可选 OAuth 与 Resend 发件。
+- YAML 运行配置提供完整视觉编辑器与原始 YAML 模式，支持逐项恢复默认、校验、热加载与最后一次有效配置（LKG）恢复。
+- 按域独立配置 Worker/IMAP 收件与 Resend/SMTP 发件；邮局账号、Resend Key 和 SMTP 凭据不会跨域共用。
+- 按角色和单用户配置查看、收发、创建、删除、分享、管理权限，以及邮箱数、有效期、每日收发量和邮件大小额度；皇帝权限固定全开且不可覆盖。
+- 临时邮箱、有效期与清理、API Key、Webhook、分享、可选 OAuth、Turnstile 和全站字体设置。
 - 周期清理、数据库备份、监控与 rclone 异地备份。
 - 提供 CLI 与 MCP 客户端，便于自动化及 AI Agent 使用。
 
@@ -51,7 +53,7 @@ mv compose.yaml compose.v0.16.1.yaml
 - Linux `x86_64` 或 `aarch64` 主机，安装 Docker Engine 与 Docker Compose v2。
 - 宿主机安装 Caddy、Nginx 等反向代理，负责公网 HTTPS。
 - 所需 GHCR Package 已公开，或宿主机已执行 `docker login ghcr.io`。
-- 只有需要通过 Cloudflare Email Routing 接收互联网邮件时，才需要由 Cloudflare 托管邮件域名。
+- 选择 Worker 收件时需要 Cloudflare Email Routing；选择 IMAP 收件时需要支持 catch-all/全域转发并保留原始收件人 Header 的外部邮局账号。
 
 ### 方案 A：SQLite
 
@@ -112,7 +114,7 @@ docker compose -f compose.postgres.yml \
   exec -T moemail sh -c 'cat /app/data/setup-token'
 ```
 
-在向导中填写公网地址、数据库、首个皇帝账号、运行密钥和可选集成。所有应用设置写入 `data/config.yaml`；应用不会从环境变量读取部署配置。
+在向导中填写公网地址、数据库、首个皇帝账号、运行密钥和可选集成。登录后先进入 **个人中心 → 域名收发**，把默认示例域名替换成自己的域名并选择每个域的收发方式；权限额度、完整运行配置和全站字体也都在个人中心。所有应用设置写入 `data/config.yaml` 或所选数据库的 `site_config`；应用不会从环境变量读取部署配置。
 
 ## 宿主机 Caddy
 
@@ -147,11 +149,13 @@ mail.example.com {
 }
 ```
 
-将首次向导中的公网地址设为同一个 HTTPS Origin，启用可信代理 Header，然后 reload Caddy。保持 3000 端口只监听回环地址，防火墙仅向公网开放宿主机的 80/443。带访问日志轮转的版本化示例位于 [`deploy/local/Caddyfile`](deploy/local/Caddyfile)。
+将首次向导中的公网地址设为同一个 HTTPS Origin，启用可信代理 Header，然后 reload Caddy。保持 3000 端口只监听回环地址；Web 只需开放宿主机的 80/443。IMAP/SMTP 都是应用到外部邮局的出站连接，不需要 Caddy 代理或开放宿主 25 端口。带访问日志轮转的版本化示例位于 [`deploy/local/Caddyfile`](deploy/local/Caddyfile)。
 
 ## 入站收信
 
-接收邮件仍需要 Cloudflare Email Routing 和 Email Worker：
+每个域名在 **个人中心 → 域名收发** 中独立选择一种入站方式。不要让同一域同时由 Worker 和外部 IMAP 导入。
+
+### 方式 A：Cloudflare Email Worker
 
 ```text
 互联网 SMTP -> Cloudflare Email Routing -> Email Worker
@@ -161,7 +165,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.16.4 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.5 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -193,6 +197,25 @@ pnpm exec wrangler tail --config wrangler.email.json
 ```
 
 直连模式要求 `EMAIL_INGEST_URL` 是完整的公网 HTTPS `/api/internal/email` 地址，不能使用 `localhost` 或 Compose service 名；本地离线时不保证耐久重试。需要 R2 + Queue 缓冲时，改用[本地部署指南中的耐久模式](docs/local-deployment.zh-CN.md#62-r2--queue-耐久模式)。
+
+### 方式 B：外部邮局 IMAP
+
+先在域名的 DNS/MX 和邮局控制台启用 catch-all（全域收件）或等价的别名转发，让该域所有地址进入一个外部邮箱。邮局必须在 `X-Original-To`、`Envelope-To`、`Delivered-To` 等投递追踪 Header 中保留并清洗原始收件地址；应用刻意不接受发件人可控的 MIME `To`。普通只接收固定地址或抹掉 envelope 信息的邮箱无法还原 MoeMail 临时地址。
+
+在 WebUI 将该域的收件方式设为“外部邮箱 IMAP”，填写 IMAP 主机、端口、TLS、用户名、密码或应用专用密码和文件夹，点击“测试 IMAP 连接”后保存。默认只导入保存后到达的新邮件，也可选择首次导入未读邮件。轮询器在 Web 进程内自动运行，无需 Compose profile。
+
+轮询使用只读 `EXAMINE` 与 PEEK，不会标记已读、移动或删除邮局邮件；进度以 `UIDVALIDITY + UID` 持久保存，原始 RFC822 内容另作幂等去重。查看日志：
+
+```bash
+docker compose logs -f moemail
+# PostgreSQL 部署加：-f compose.postgres.yml
+```
+
+## 出站发件
+
+每个域名在 **个人中心 → 域名收发** 中独立选择 **Resend**、**外部 SMTP** 或**关闭发件**。Resend 使用该域自己的 API Key；外部 SMTP 填写邮局主机、端口、TLS/STARTTLS、用户名与密码或应用专用密码、可选发件人名称，并可选择“自动协商 / 强制 PLAIN / 强制 LOGIN”。大多数邮局保持“自动协商”；Microsoft/Outlook 或其他邮局仍允许密码式 SMTP AUTH、但自动协商失败时再选择 `LOGIN`。如果 Microsoft 365 租户只允许 OAuth，切换 `LOGIN` 并不能绕过该限制，需要改用支持 OAuth 的中继/发件服务。点击“测试 SMTP 连接”只验证连接与鉴权，不会发送邮件。实际 From 仍是所选 MoeMail 地址，因此外部服务商必须允许该域/地址发信。
+
+IMAP、SMTP 与 Resend 凭据保存在所选数据库中，也会进入数据库备份；应把备份按密钥材料保护。发件额度、DKIM/SPF/DMARC、退信与滥用控制仍由外部服务商负责。
 
 ## 持久化与整目录迁移
 
@@ -264,7 +287,7 @@ docker compose -f compose.postgres.yml --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.16.4 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.16.5 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -273,6 +296,9 @@ pnpm exec tsc --noEmit --incremental false
 pnpm validate:no-local-env
 pnpm validate:deployment
 pnpm validate:email-worker
+pnpm validate:mail-policies
+pnpm validate:imap-inbound
+pnpm validate:runtime-fields
 ```
 
 开发服务器使用 `pnpm dev`。本地运行也必须完成首次初始化，之后应用路由才可正常使用。

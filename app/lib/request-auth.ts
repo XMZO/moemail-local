@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server"
-import { hasPermission, ROLES, type Permission, type Role } from "./permissions"
+import { ROLES, type Permission, type Role } from "./permissions"
 import { isSetupCompleted } from "./config/runtime"
+import {
+  getEffectiveAccessPolicy,
+  type EffectiveAccessPolicy,
+} from "./access-policies"
 
 export interface RequestPrincipal {
   userId: string
   roles: Role[]
   kind: "session" | "apiKey"
+  access: EffectiveAccessPolicy
 }
 
 export type AuthorizationResult =
@@ -53,7 +58,7 @@ export async function authorizeRequest(
   }
 
   const apiKey = request.headers.get("X-API-Key")
-  let principal: RequestPrincipal
+  let unresolvedPrincipal: Omit<RequestPrincipal, "access">
 
   if (apiKey !== null) {
     if (!supportsApiKey(new URL(request.url).pathname)) {
@@ -72,7 +77,7 @@ export async function authorizeRequest(
       }
     }
 
-    principal = {
+    unresolvedPrincipal = {
       ...apiKeyPrincipal,
       kind: "apiKey",
     }
@@ -86,14 +91,19 @@ export async function authorizeRequest(
       }
     }
 
-    principal = {
+    unresolvedPrincipal = {
       userId: session.user.id,
       roles: normalizeRoles(session.user.roles?.map(role => role.name) ?? []),
       kind: "session",
     }
   }
 
-  if (options.permission && !hasPermission(principal.roles, options.permission)) {
+  const principal: RequestPrincipal = {
+    ...unresolvedPrincipal,
+    access: await getEffectiveAccessPolicy(unresolvedPrincipal.userId, unresolvedPrincipal.roles),
+  }
+
+  if (options.permission && !principal.access.permissions[options.permission]) {
     return {
       ok: false,
       response: NextResponse.json({ error: "权限不足" }, { status: 403 }),

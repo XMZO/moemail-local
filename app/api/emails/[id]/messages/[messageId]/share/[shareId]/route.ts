@@ -13,7 +13,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; messageId: string; shareId: string }> }
 ) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.SHARE_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 

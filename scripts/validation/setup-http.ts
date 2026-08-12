@@ -188,6 +188,13 @@ try {
   assert.equal(sharedBeforeSetup.status, 503)
   assert.equal((await sharedBeforeSetup.json() as { code?: string }).code, "SETUP_REQUIRED")
 
+  const mailTestBeforeSetup = await fetch(`${baseUrl}/api/config/domains`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "imap", policy: {} }),
+  })
+  assert.equal(mailTestBeforeSetup.status, 503)
+
   const setupPayload = {
     config: {
       server: { baseUrl, emailPollIntervalMs: 27_000 },
@@ -305,10 +312,146 @@ try {
   const sessionResponse = await request("/api/auth/session")
   assert.equal(sessionResponse.status, 200)
   const session = await sessionResponse.json() as {
-    user?: { username?: string; roles?: Array<{ name?: string }> }
+    user?: {
+      id?: string
+      username?: string
+      roles?: Array<{ name?: string }>
+      permissions?: string[]
+      quotas?: Record<string, number>
+    }
   }
   assert.equal(session.user?.username, adminUsername)
   assert.ok(session.user?.roles?.some(role => role.name === "emperor"))
+  assert.ok(session.user?.permissions?.includes("manage_config"))
+  assert.equal(session.user?.quotas?.dailySendLimit, 0)
+
+  const unauthenticatedMailTest = await fetch(`${baseUrl}/api/config/domains`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "imap", policy: {} }),
+  })
+  assert.equal(unauthenticatedMailTest.status, 401)
+
+  const validationMarker = "mail-connection-secret-must-not-echo"
+  const invalidMailTest = await request("/api/config/domains", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      kind: "imap",
+      policy: {
+        mode: "imap",
+        host: "bad host",
+        port: 993,
+        security: "tls",
+        username: "test-user",
+        password: validationMarker,
+        rejectUnauthorized: true,
+        mailbox: "INBOX",
+        recipientHeader: "auto",
+        initialSync: "new",
+        pollIntervalSeconds: 60,
+        maxMessagesPerPoll: 100,
+      },
+    }),
+  })
+  assert.equal(invalidMailTest.status, 400)
+  assert.doesNotMatch(await invalidMailTest.text(), new RegExp(validationMarker))
+
+  const domainPoliciesResponse = await request("/api/config/domains")
+  assert.equal(domainPoliciesResponse.status, 200)
+  const validationDomain = "http-validation.example"
+  const saveDomainPolicies = await request("/api/config/domains", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      policies: [{
+        domain: validationDomain,
+        inbound: { mode: "worker" },
+        outbound: { mode: "disabled" },
+      }],
+    }),
+  })
+  assert.equal(saveDomainPolicies.status, 200)
+
+  const createMailbox = await request("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "setup-http",
+      domain: validationDomain,
+      expiryTime: 3_600_000,
+    }),
+  })
+  assert.equal(createMailbox.status, 200)
+  const mailbox = await createMailbox.json() as { id: string; email: string }
+  assert.equal(mailbox.email, `setup-http@${validationDomain}`)
+
+  const rawMessage = Buffer.from([
+    "From: sender@example.net",
+    `To: ${mailbox.email}`,
+    "Subject: setup HTTP ingestion",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "mail policy integration marker",
+  ].join("\r\n"))
+  const ingest = await fetch(`${baseUrl}/api/internal/email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${completedBody.emailIngestSecret}`,
+      "Content-Type": "message/rfc822",
+      "X-MoeMail-Envelope-From": "sender@example.net",
+      "X-MoeMail-Envelope-To": mailbox.email,
+      "X-MoeMail-Raw-Size": String(rawMessage.byteLength),
+    },
+    body: rawMessage,
+  })
+  assert.equal(ingest.status, 201)
+  assert.equal((await ingest.json() as { status?: string }).status, "created")
+
+  const receivedMessages = await request(`/api/emails/${mailbox.id}?includeTotal=1`)
+  assert.equal(receivedMessages.status, 200)
+  assert.equal((await receivedMessages.json() as { total?: number }).total, 1)
+
+  const sendPermission = await request(`/api/emails/send-permission?emailId=${mailbox.id}`)
+  assert.equal(sendPermission.status, 200)
+  assert.equal((await sendPermission.json() as { canSend?: boolean }).canSend, false)
+
+  const accessPoliciesResponse = await request("/api/access-policies")
+  assert.equal(accessPoliciesResponse.status, 200)
+  const accessPoliciesBody = await accessPoliciesResponse.json() as {
+    policies: { roles: unknown }
+  }
+  const saveRolePolicies = await request("/api/access-policies", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
+  })
+  assert.equal(saveRolePolicies.status, 200)
+
+  assert.ok(session.user?.id)
+  const mutateEmperorAccess = await request(
+    `/api/access-policies/users/${encodeURIComponent(session.user!.id!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: { manage_config: false }, quotas: {} }),
+    },
+  )
+  assert.equal(mutateEmperorAccess.status, 400)
+
+  const appearance = await request("/api/config/appearance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fontFamily: "system-ui, sans-serif" }),
+  })
+  assert.equal(appearance.status, 200)
+  assert.equal((await appearance.json() as { fontFamily?: string }).fontFamily, "system-ui, sans-serif")
+  const unsafeAppearance = await request("/api/config/appearance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fontFamily: "url(https://attacker.invalid/font)" }),
+  })
+  assert.equal(unsafeAppearance.status, 400)
 
   const runtimeResponse = await request("/api/runtime-config")
   assert.equal(runtimeResponse.status, 200)
@@ -387,6 +530,11 @@ try {
     stagedLkgSecretsRedactedAndPreserved: stagedRedactionProbe,
     stagedMemoryOnlySecretsRedacted: stagedRedactionProbe,
     publicHealthConfigErrorsRedacted: true,
+    mailConnectionTestAuthAndRedaction: true,
+    domainPolicyAndWorkerIngestion: true,
+    independentOutboundDisable: true,
+    emperorAccessImmutable: true,
+    appearanceValidation: true,
   }, null, 2))
 } catch (error) {
   const sanitized = `${stdout}\n${stderr}`

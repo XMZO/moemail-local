@@ -118,6 +118,10 @@ jobs:
       - name: Validate release contracts
         run: |
           pnpm validate:email-worker
+          pnpm validate:mail-policies
+          pnpm validate:imap-inbound
+          pnpm validate:runtime-fields
+          pnpm validate:no-local-env
           pnpm validate:deployment
           pnpm exec tsc --noEmit --incremental false
 

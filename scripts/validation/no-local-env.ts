@@ -42,7 +42,7 @@ for (const file of [
 ]) {
   const source = readFileSync(file, "utf8")
   let withoutExecutionMode = source.replace(
-    /process\.env\.(?:NODE_ENV|NEXT_RUNTIME)/g,
+    /process\.env\.(?:NODE_ENV|NEXT_RUNTIME|NEXT_PHASE)/g,
     "",
   )
   if (file.replaceAll("\\", "/") === "app/lib/postgres-connection.ts") {

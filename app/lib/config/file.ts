@@ -97,7 +97,7 @@ const SECTION_COMMENTS: Record<string, string> = {
   server: " 站点地址与前端行为。反向代理终止 TLS 时请开启 trustProxyHeaders。",
   database: " 数据库类型与连接参数。切换 driver 需要重启进程（默认自动重启）。",
   auth: " 会话密钥、OAuth 与登录防滥用限制。",
-  email: " Cloudflare Email Worker 投递到 /api/internal/email 时使用的鉴权密钥。",
+  email: " Email Worker 入站投递鉴权；外部 IMAP/SMTP 凭据按域保存在站点配置中。",
   cleanup: " 过期邮箱清理任务的批量参数。",
   scheduler: " Docker / systemd 常驻 scheduler 的执行间隔。",
   monitor: " 磁盘、WAL、HTTP 5xx 与投递失败的监控阈值。",

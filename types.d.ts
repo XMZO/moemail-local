@@ -2,11 +2,6 @@
 
 
 declare global {
-  interface CloudflareEnv {
-    DB: D1Database;
-    SITE_CONFIG: KVNamespace;
-  }
-
   interface Window {
     turnstile?: {
       render: (element: HTMLElement | string, options: Record<string, unknown>) => string
@@ -15,7 +10,6 @@ declare global {
     }
   }
 
-  type Env = CloudflareEnv
 }
 
 declare module "next-auth" {
@@ -23,6 +17,8 @@ declare module "next-auth" {
     roles?: { name: string }[]
     username?: string | null
     providers?: string[]
+    permissions?: string[]
+    quotas?: Record<string, number>
   }
 
   interface Session {
@@ -30,4 +26,4 @@ declare module "next-auth" {
   }
 }
 
-export type { Env }
+export {}

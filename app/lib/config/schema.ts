@@ -417,7 +417,7 @@ export function createDefaultConfig(): AppConfig {
   return result.config
 }
 
-/** 只有数据库类型的变化需要重启进程，其余字段全部热加载。 */
+/** Web 进程只有数据库类型变化需要重启；其他运行配置均热加载。 */
 export function requiresProcessRestart(previous: AppConfig, next: AppConfig) {
   return previous.database.driver !== next.database.driver
 }

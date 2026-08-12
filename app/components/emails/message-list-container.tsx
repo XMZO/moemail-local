@@ -5,7 +5,6 @@ import { useTranslations } from "next-intl"
 import { Send, Inbox } from "lucide-react"
 import { Tabs, SlidingTabsList, SlidingTabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { MessageList } from "./message-list"
-import { useSendPermission } from "@/hooks/use-send-permission"
 
 interface MessageListContainerProps {
   email: {
@@ -20,7 +19,6 @@ interface MessageListContainerProps {
 export function MessageListContainer({ email, onMessageSelect, selectedMessageId, refreshTrigger }: MessageListContainerProps) {
   const t = useTranslations("emails.messages")
   const [activeTab, setActiveTab] = useState<'received' | 'sent'>('received')
-  const { canSend: canSendEmails } = useSendPermission()
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId as 'received' | 'sent')
@@ -29,8 +27,7 @@ export function MessageListContainer({ email, onMessageSelect, selectedMessageId
 
   return (
     <div className="h-full flex flex-col">
-      {canSendEmails ? (
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex flex-col">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex flex-col">
           <div className="p-2 border-b border-primary/20">
             <SlidingTabsList>
               <SlidingTabsTrigger value="received">
@@ -62,17 +59,7 @@ export function MessageListContainer({ email, onMessageSelect, selectedMessageId
               refreshTrigger={refreshTrigger}
             />
           </TabsContent>
-        </Tabs>
-      ) : (
-        <div className="flex-1 overflow-hidden">
-          <MessageList
-            email={email}
-            messageType="received"
-            onMessageSelect={onMessageSelect}
-            selectedMessageId={selectedMessageId}
-          />
-        </div>
-      )}
+      </Tabs>
     </div>
   )
-} 
+}

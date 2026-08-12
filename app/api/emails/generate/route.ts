@@ -4,10 +4,9 @@ import { createDb } from "@/lib/db"
 import { emails } from "@/lib/schema"
 import { eq, and, gt, sql } from "drizzle-orm"
 import { EXPIRY_OPTIONS } from "@/types/email"
-import { EMAIL_CONFIG } from "@/config"
-import { PERMISSIONS, ROLES } from "@/lib/permissions"
-import { CONFIG_KEYS, getConfigValues } from "@/lib/config-store"
+import { PERMISSIONS } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
+import { getDomainPolicies } from "@/lib/domain-policies"
 import {
   normalizeMailboxDomain,
   normalizeMailboxLocalPart,
@@ -29,21 +28,16 @@ function isEmailAddressConflict(error: unknown) {
 
 export async function POST(request: Request) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.CREATE_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 
-  const { userId, roles: userRoles } = authorization.principal
+  const { userId, access } = authorization.principal
 
   try {
     const db = createDb()
-    const config = await getConfigValues([
-      CONFIG_KEYS.MAX_EMAILS,
-      CONFIG_KEYS.EMAIL_DOMAINS,
-    ])
-
-    if (!userRoles.includes(ROLES.EMPEROR)) {
-      const maxEmails = config.MAX_EMAILS || EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString()
+    const maxEmails = access.quotas.maxActiveMailboxes
+    if (maxEmails > 0) {
       const activeEmailsCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(emails)
@@ -54,7 +48,7 @@ export async function POST(request: Request) {
           )
         )
       
-      if (Number(activeEmailsCount[0].count) >= Number(maxEmails)) {
+      if (Number(activeEmailsCount[0].count) >= maxEmails) {
         return NextResponse.json(
           { error: `已达到最大邮箱数量限制 (${maxEmails})` },
           { status: 403 }
@@ -92,11 +86,19 @@ export async function POST(request: Request) {
       )
     }
 
+    const maximumLifetimeDays = access.quotas.maxMailboxLifetimeDays
+    if (
+      maximumLifetimeDays > 0
+      && (expiryTime === 0 || expiryTime > maximumLifetimeDays * 86_400_000)
+    ) {
+      return NextResponse.json(
+        { error: `邮箱有效期不能超过 ${maximumLifetimeDays} 天` },
+        { status: 403 },
+      )
+    }
+
     const requestedDomain = normalizeMailboxDomain(domain)
-    const domainString = config.EMAIL_DOMAINS
-    const domains = (domainString ? domainString.split(',') : ["moemail.app"])
-      .map(normalizeMailboxDomain)
-      .filter((item): item is string => Boolean(item))
+    const domains = (await getDomainPolicies()).map(policy => policy.domain)
 
     if (!requestedDomain || !domains.includes(requestedDomain)) {
       return NextResponse.json(

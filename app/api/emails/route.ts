@@ -12,7 +12,7 @@ const PAGE_SIZE = 20
 
 export async function GET(request: Request) {
   const authorization = await authorizeRequest(request, {
-    permission: PERMISSIONS.MANAGE_EMAIL,
+    permission: PERMISSIONS.VIEW_EMAIL,
   })
   if (!authorization.ok) return authorization.response
 

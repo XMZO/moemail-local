@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 
 interface SendPermissionResponse {
   canSend: boolean
@@ -6,18 +6,25 @@ interface SendPermissionResponse {
   remainingEmails?: number
 }
 
-export function useSendPermission() {
+export function useSendPermission(emailId?: string) {
   const [canSend, setCanSend] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [remainingEmails, setRemainingEmails] = useState<number | undefined>()
 
-  const checkPermission = async () => {
+  const checkPermission = useCallback(async () => {
+    if (!emailId) {
+      setCanSend(false)
+      setRemainingEmails(undefined)
+      setError(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     
     try {
-      const response = await fetch('/api/emails/send-permission')
+      const response = await fetch(`/api/emails/send-permission?emailId=${encodeURIComponent(emailId)}`)
       
       if (!response.ok) {
         throw new Error('权限检查失败')
@@ -36,11 +43,11 @@ export function useSendPermission() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [emailId])
 
   useEffect(() => {
-    checkPermission()
-  }, [])
+    void checkPermission()
+  }, [checkPermission])
 
   return {
     canSend,
@@ -49,4 +56,4 @@ export function useSendPermission() {
     remainingEmails,
     checkPermission
   }
-} 
+}
