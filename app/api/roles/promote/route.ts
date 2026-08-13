@@ -1,9 +1,10 @@
 import { createDb } from "@/lib/db";
-import { roles, userRoles } from "@/lib/schema";
+import { roles } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { PERMISSIONS, ROLES } from "@/lib/permissions";
 import { assignRoleToUser } from "@/lib/auth";
 import { authorizeRequest } from "@/lib/request-auth";
+import { apiError } from "@/lib/api-response";
 
 export const runtime = "nodejs";
 
@@ -19,65 +20,42 @@ export async function POST(request: Request) {
       roleName: typeof ROLES.DUKE | typeof ROLES.KNIGHT | typeof ROLES.CIVILIAN 
     };
     if (!userId || !roleName) {
-      return Response.json(
-        { error: "缺少必要参数" },
-        { status: 400 }
-      );
+      return apiError("REQUIRED_PARAMETERS_MISSING", 400);
     }
 
     if (![ROLES.DUKE, ROLES.KNIGHT, ROLES.CIVILIAN].includes(roleName)) {
-      return Response.json(
-        { error: "角色不合法" },
-        { status: 400 }
-      );
+      return apiError("INVALID_ROLE", 400);
     }
 
     const db = createDb();
-
-    const currentUserRoles = await db.query.userRoles.findMany({
-      where: eq(userRoles.userId, userId),
-      with: {
-        role: true,
-      },
-    });
-
-    if (currentUserRoles.some(item => item.role.name === ROLES.EMPEROR)) {
-      return Response.json(
-        { error: "不能降级皇帝" },
-        { status: 400 }
-      );
-    }
 
     let targetRole = await db.query.roles.findFirst({
       where: eq(roles.name, roleName),
     });
 
     if (!targetRole) {
-      const description = {
-        [ROLES.DUKE]: "超级用户",
-        [ROLES.KNIGHT]: "高级用户",
-        [ROLES.CIVILIAN]: "普通用户",
-      }[roleName];
-
       const [newRole] = await db.insert(roles)
         .values({
           name: roleName,
-          description,
+          description: null,
         })
         .returning();
       targetRole = newRole;
     }
 
-    await assignRoleToUser(db, userId, targetRole.id);
+    await assignRoleToUser(db, userId, targetRole.id, { preserveEmperor: true });
 
     return Response.json({ 
       success: true,
     });
   } catch (error) {
-    console.error("Failed to change user role:", error);
-    return Response.json(
-      { error: "操作失败" },
-      { status: 500 }
-    );
+    if (error instanceof Error && error.message === "USER_NOT_FOUND") {
+      return apiError("USER_NOT_FOUND", 404);
+    }
+    if (error instanceof Error && error.message === "EMPEROR_ROLE_IMMUTABLE") {
+      return apiError("EMPEROR_ROLE_IMMUTABLE", 400);
+    }
+    console.error("role.assignment_failed", error);
+    return apiError("ROLE_UPDATE_FAILED", 500);
   }
 }

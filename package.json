@@ -1,6 +1,6 @@
 {
   "name": "moemail",
-  "version": "0.16.6",
+  "version": "0.17.0",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -53,12 +53,15 @@
     "validate:maintenance-bundle": "pnpm build:maintenance && tsx scripts/validation/maintenance-bundle.ts",
     "validate:email-worker": "tsx scripts/validation/email-worker.ts",
     "validate:mail-policies": "tsx scripts/validation/mail-policies.ts",
+    "validate:send-quota": "tsx scripts/validation/send-quota.ts",
+    "validate:policy-migrations": "tsx scripts/validation/policy-migrations.ts",
     "validate:imap-inbound": "tsx scripts/validation/imap-inbound.ts",
     "load:polling": "tsx scripts/validation/load-polling.ts",
     "webhook-test-server": "bun run scripts/webhook-test-server.ts",
     "deploy:email": "wrangler deploy --config wrangler.email.json",
     "deploy:email:durable": "wrangler deploy --config wrangler.email.durable.json",
-    "validate:runtime-fields": "tsx scripts/validation/runtime-config-fields.ts"
+    "validate:runtime-fields": "tsx scripts/validation/runtime-config-fields.ts",
+    "validate:i18n": "tsx scripts/validation/i18n.ts && tsx scripts/validation/locale-navigation.ts"
   },
   "type": "module",
   "dependencies": {

@@ -27,13 +27,13 @@ const optionalText = (maximum: number) => z
     const trimmed = typeof value === "string" ? value.trim() : ""
     return trimmed || null
   })
-  .refine(value => value === null || value.length <= maximum, `最多 ${maximum} 个字符`)
+  .refine(value => value === null || value.length <= maximum, "TEXT_TOO_LONG")
 
 const mailHost = z.string()
   .trim()
-  .min(1, "邮件服务器主机不能为空")
-  .max(253, "邮件服务器主机过长")
-  .refine(value => !/[\x00-\x20\x7f/@]/.test(value), "邮件服务器主机格式无效")
+  .min(1, "MAIL_HOST_REQUIRED")
+  .max(253, "MAIL_HOST_TOO_LONG")
+  .refine(value => !/[\x00-\x20\x7f/@]/.test(value), "MAIL_HOST_INVALID")
 
 export const smtpOutboundSchema = z.object({
   mode: z.literal("smtp"),
@@ -46,7 +46,7 @@ export const smtpOutboundSchema = z.object({
   rejectUnauthorized: z.boolean(),
   fromName: optionalText(128).refine(
     value => value === null || !/[\r\n]/.test(value),
-    "发件人名称不能包含换行",
+    "FROM_NAME_INVALID",
   ),
 }).strict()
 
@@ -57,11 +57,11 @@ export const imapInboundSchema = z.object({
   host: mailHost,
   port: z.number().int().min(1).max(65_535),
   security: z.enum(MAIL_SECURITY_MODES),
-  username: z.string().trim().min(1, "IMAP 用户名不能为空").max(512),
-  password: z.string().min(1, "IMAP 密码不能为空").max(4_096),
+  username: z.string().trim().min(1, "IMAP_USERNAME_REQUIRED").max(512),
+  password: z.string().min(1, "IMAP_PASSWORD_REQUIRED").max(4_096),
   rejectUnauthorized: z.boolean(),
-  mailbox: z.string().trim().min(1, "IMAP 文件夹不能为空").max(512)
-    .refine(value => !/[\r\n\0]/.test(value), "IMAP 文件夹格式无效"),
+  mailbox: z.string().trim().min(1, "IMAP_MAILBOX_REQUIRED").max(512)
+    .refine(value => !/[\r\n\0]/.test(value), "IMAP_MAILBOX_INVALID"),
   recipientHeader: z.enum(IMAP_RECIPIENT_HEADERS),
   initialSync: z.enum(IMAP_INITIAL_SYNC_MODES),
   pollIntervalSeconds: z.number().int().min(15).max(86_400),
@@ -75,10 +75,10 @@ const disabledInboundSchema = z.object({ mode: z.literal("disabled") }).strict()
 
 const resendOutboundSchema = z.object({
   mode: z.literal("resend"),
-  apiKey: z.string().trim().min(1, "Resend API Key 不能为空").max(4_096),
+  apiKey: z.string().trim().min(1, "RESEND_API_KEY_REQUIRED").max(4_096),
   fromName: optionalText(128).refine(
     value => value === null || !/[\r\n]/.test(value),
-    "发件人名称不能包含换行",
+    "FROM_NAME_INVALID",
   ),
 }).strict()
 
@@ -90,7 +90,7 @@ const domainPolicySchema = z.object({
   domain: z.string().transform((value, ctx) => {
     const normalized = normalizeMailboxDomain(value)
     if (!normalized) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "必须是有效的 ASCII 邮箱域名" })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "INVALID_MAIL_DOMAIN" })
       return z.NEVER
     }
     return normalized
@@ -108,8 +108,8 @@ const domainPolicySchema = z.object({
 }).strict()
 
 export const domainPoliciesSchema = z.array(domainPolicySchema)
-  .min(1, "至少需要配置一个邮箱域名")
-  .max(100, "邮箱域名最多配置 100 个")
+  .min(1, "MAIL_DOMAIN_REQUIRED")
+  .max(100, "MAIL_DOMAIN_LIMIT_EXCEEDED")
   .superRefine((policies, ctx) => {
     const seen = new Set<string>()
     policies.forEach((policy, index) => {
@@ -117,7 +117,7 @@ export const domainPoliciesSchema = z.array(domainPolicySchema)
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [index, "domain"],
-          message: "邮箱域名不能重复",
+          message: "DUPLICATE_MAIL_DOMAIN",
         })
       }
       seen.add(policy.domain)
@@ -126,7 +126,7 @@ export const domainPoliciesSchema = z.array(domainPolicySchema)
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [index],
-          message: "同一域名的收件和发件不能同时关闭；不再使用的域名请直接删除",
+          message: "MAIL_DOMAIN_TRANSPORT_REQUIRED",
         })
       }
 
@@ -137,7 +137,7 @@ export const domainPoliciesSchema = z.array(domainPolicySchema)
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [index, "outbound", policy.outbound.username ? "password" : "username"],
-          message: "SMTP 用户名与密码必须同时填写或同时留空",
+          message: "SMTP_CREDENTIAL_PAIR_REQUIRED",
         })
       }
     })
@@ -151,12 +151,12 @@ function parseStoredPolicies(raw: string) {
   try {
     input = JSON.parse(raw)
   } catch {
-    throw new Error("域名策略存储格式已损坏")
+    throw new Error("DOMAIN_POLICIES_CORRUPTED")
   }
 
   const result = domainPoliciesSchema.safeParse(input)
   if (!result.success) {
-    throw new Error(`域名策略校验失败: ${result.error.issues[0]?.message ?? "未知错误"}`)
+    throw new Error(`DOMAIN_POLICIES_INVALID:${result.error.issues[0]?.message ?? "UNKNOWN"}`)
   }
   return result.data
 }

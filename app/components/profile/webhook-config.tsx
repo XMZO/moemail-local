@@ -15,12 +15,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 
 export function WebhookConfig() {
   const t = useTranslations("profile.webhook")
   const tCommon = useTranslations("common.actions")
   const tMessages = useTranslations("emails.messages")
   const tApiKey = useTranslations("profile.apiKey")
+  const tApi = useTranslations("api")
   const [enabled, setEnabled] = useState(false)
   const [url, setUrl] = useState("")
   const [loading, setLoading] = useState(false)
@@ -65,16 +68,16 @@ export function WebhookConfig() {
         body: JSON.stringify({ url, enabled })
       })
 
-      if (!res.ok) throw new Error(t("saveFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "WEBHOOK_CONFIG_INVALID") as never))
 
       toast({
         title: t("saveSuccess"),
         description: t("saveSuccess")
       })
-    } catch (_error) {
+    } catch (error) {
       toast({
         title: t("saveFailed"),
-        description: t("saveFailed"),
+        description: localizedUiErrorMessage(error, t("saveFailed")),
         variant: "destructive"
       })
     } finally {
@@ -90,19 +93,26 @@ export function WebhookConfig() {
       const res = await fetch("/api/webhook/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({
+          url,
+          sample: {
+            subject: t("testPayload.subject"),
+            content: t("testPayload.content"),
+            html: t("testPayload.html"),
+          },
+        })
       })
 
-      if (!res.ok) throw new Error(t("testFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "WEBHOOK_TEST_FAILED") as never))
 
       toast({
         title: t("testSuccess"),
         description: t("testSuccess")
       })
-    } catch (_error) {
+    } catch (error) {
       toast({
         title: t("testFailed"),
-        description: t("testFailed"),
+        description: localizedUiErrorMessage(error, t("testFailed")),
         variant: "destructive"
       })
     } finally {
@@ -210,4 +220,4 @@ export function WebhookConfig() {
       )}
     </form>
   )
-} 
+}

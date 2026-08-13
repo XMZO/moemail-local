@@ -4,6 +4,7 @@ import { eq, or, sql } from "drizzle-orm"
 import { PERMISSIONS, ROLES } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
 import { getAccessPolicies } from "@/lib/access-policies"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -76,8 +77,8 @@ export async function GET(request: Request) {
       pageSize,
     })
   } catch (error) {
-    console.error("Failed to list users:", error)
-    return Response.json({ error: "获取用户列表失败" }, { status: 500 })
+    console.error("user.list_failed", error)
+    return apiError("USERS_READ_FAILED", 500)
   }
 }
 
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
     const { searchText } = json as { searchText: string }
 
     if (!searchText) {
-      return Response.json({ error: "请提供用户名或邮箱地址" }, { status: 400 })
+      return apiError("USER_SEARCH_REQUIRED", 400)
     }
 
     const db = createDb()
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
     });
 
     if (!user) {
-      return Response.json({ error: "未找到用户" }, { status: 404 })
+      return apiError("USER_NOT_FOUND", 404)
     }
 
     return Response.json({
@@ -122,10 +123,7 @@ export async function POST(request: Request) {
       }
     })
   } catch (error) {
-    console.error("Failed to find user:", error)
-    return Response.json(
-      { error: "查询用户失败" },
-      { status: 500 }
-    )
+    console.error("user.search_failed", error)
+    return apiError("USER_SEARCH_FAILED", 500)
   }
 }

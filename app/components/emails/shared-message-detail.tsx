@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Loader2 } from "lucide-react"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { useTheme } from "next-themes"
+import { useFormatter, useTranslations } from "next-intl"
+import { HtmlMessageFrame } from "./html-message-frame"
 
 interface MessageDetail {
   id: string
@@ -30,6 +31,7 @@ interface SharedMessageDetailProps {
     time: string
     htmlFormat: string
     textFormat: string
+    noSubject: string
   }
 }
 
@@ -40,9 +42,9 @@ export function SharedMessageDetail({
   loading = false,
   t,
 }: SharedMessageDetailProps) {
+  const format = useFormatter()
+  const tCommon = useTranslations("common")
   const [viewMode, setViewMode] = useState<ViewMode>("html")
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const { theme } = useTheme()
 
   // 如果没有HTML内容，默认显示文本
   useEffect(() => {
@@ -54,104 +56,6 @@ export function SharedMessageDetail({
       }
     }
   }, [message])
-
-  const updateIframeContent = () => {
-    if (viewMode === "html" && message?.html && iframeRef.current) {
-      const iframe = iframeRef.current
-      const doc = iframe.contentDocument || iframe.contentWindow?.document
-
-      if (doc) {
-        doc.open()
-        doc.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <base target="_blank">
-              <style>
-                html, body {
-                  margin: 0;
-                  padding: 0;
-                  min-height: 100%;
-                  font-family: system-ui, -apple-system, sans-serif;
-                  color: ${theme === "dark" ? "#fff" : "#000"};
-                  background: ${theme === "dark" ? "#1a1a1a" : "#fff"};
-                }
-                body {
-                  padding: 20px;
-                }
-                img {
-                  max-width: 100%;
-                  height: auto;
-                }
-                a {
-                  color: #2563eb;
-                }
-                ::-webkit-scrollbar {
-                  width: 6px;
-                  height: 6px;
-                }
-                ::-webkit-scrollbar-track {
-                  background: transparent;
-                }
-                ::-webkit-scrollbar-thumb {
-                  background: ${
-                    theme === "dark"
-                      ? "rgba(130, 109, 217, 0.3)"
-                      : "rgba(130, 109, 217, 0.2)"
-                  };
-                  border-radius: 9999px;
-                  transition: background-color 0.2s;
-                }
-                ::-webkit-scrollbar-thumb:hover {
-                  background: ${
-                    theme === "dark"
-                      ? "rgba(130, 109, 217, 0.5)"
-                      : "rgba(130, 109, 217, 0.4)"
-                  };
-                }
-                * {
-                  scrollbar-width: thin;
-                  scrollbar-color: ${
-                    theme === "dark"
-                      ? "rgba(130, 109, 217, 0.3) transparent"
-                      : "rgba(130, 109, 217, 0.2) transparent"
-                  };
-                }
-              </style>
-            </head>
-            <body>${message.html}</body>
-          </html>
-        `)
-        doc.close()
-
-        const updateHeight = () => {
-          const container = iframe.parentElement
-          if (container) {
-            iframe.style.height = `${container.clientHeight}px`
-          }
-        }
-
-        updateHeight()
-        window.addEventListener("resize", updateHeight)
-
-        const resizeObserver = new ResizeObserver(updateHeight)
-        resizeObserver.observe(doc.body)
-
-        doc.querySelectorAll("img").forEach((img: HTMLImageElement) => {
-          img.onload = updateHeight
-        })
-
-        return () => {
-          window.removeEventListener("resize", updateHeight)
-          resizeObserver.disconnect()
-        }
-      }
-    }
-  }
-
-  useEffect(() => {
-    updateIframeContent()
-  }, [message?.html, viewMode, theme])
 
   if (loading) {
     return (
@@ -174,24 +78,24 @@ export function SharedMessageDetail({
     <div className="h-full flex flex-col">
       <div className="p-4 space-y-3 border-b border-primary/20">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="text-base font-bold flex-1">{message.subject}</h3>
+          <h3 className="text-base font-bold flex-1">{message.subject || t.noSubject}</h3>
         </div>
         <div className="text-xs text-gray-500 space-y-1">
           {message.from_address && (
             <p>
-              {t.from}: {message.from_address}
+              {tCommon("format.labelValue", { label: t.from, value: message.from_address })}
             </p>
           )}
           {message.to_address && (
             <p>
-              {t.to}: {message.to_address}
+              {tCommon("format.labelValue", { label: t.to, value: message.to_address })}
             </p>
           )}
           <p>
-            {t.time}:{" "}
-            {new Date(
-              message.sent_at || message.received_at || 0
-            ).toLocaleString()}
+            {tCommon("format.labelValue", {
+              label: t.time,
+              value: format.dateTime(new Date(message.sent_at || message.received_at || 0)),
+            })}
           </p>
         </div>
       </div>
@@ -221,11 +125,7 @@ export function SharedMessageDetail({
 
       <div className="flex-1 overflow-auto relative">
         {viewMode === "html" && message.html ? (
-          <iframe
-            ref={iframeRef}
-            className="absolute inset-0 w-full h-full border-0 bg-transparent"
-            sandbox="allow-same-origin allow-popups"
-          />
+          <HtmlMessageFrame html={message.html} title={t.htmlFormat} />
         ) : message.content ? (
           <div className="p-4 text-sm whitespace-pre-wrap">
             {message.content}

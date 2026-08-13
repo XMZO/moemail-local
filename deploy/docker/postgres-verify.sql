@@ -8,8 +8,8 @@ BEGIN
   SELECT string_agg(required.name, ', ' ORDER BY required.name)
   INTO missing_items
   FROM (VALUES
-    ('account'), ('api_keys'), ('email'), ('email_share'), ('message'),
-    ('message_share'), ('role'), ('site_config'), ('user'), ('user_role'),
+    ('account'), ('api_keys'), ('email'), ('email_share'), ('mailbox_name_block'), ('message'),
+    ('message_share'), ('role'), ('send_quota_event'), ('site_config'), ('user'), ('user_role'),
     ('webhook')
   ) AS required(name)
   WHERE NOT EXISTS (
@@ -79,8 +79,17 @@ BEGIN
     ('message_share', 'id'), ('message_share', 'message_id'),
     ('message_share', 'token'), ('message_share', 'created_at'),
     ('message_share', 'expires_at'),
+    ('mailbox_name_block', 'id'), ('mailbox_name_block', 'user_id'),
+    ('mailbox_name_block', 'scope_key'), ('mailbox_name_block', 'local_part'),
+    ('mailbox_name_block', 'domain'), ('mailbox_name_block', 'created_at'),
     ('role', 'id'), ('role', 'name'), ('role', 'description'),
     ('role', 'created_at'), ('role', 'updated_at'),
+    ('send_quota_event', 'id'), ('send_quota_event', 'user_id'),
+    ('send_quota_event', 'quota_subject'), ('send_quota_event', 'policy_role'),
+    ('send_quota_event', 'direction'), ('send_quota_event', 'mailbox_address'),
+    ('send_quota_event', 'sender_domain'), ('send_quota_event', 'status'),
+    ('send_quota_event', 'created_at'), ('send_quota_event', 'reservation_expires_at'),
+    ('send_quota_event', 'completed_at'),
     ('site_config', 'key'), ('site_config', 'value'), ('site_config', 'updated_at'),
     ('user', 'id'), ('user', 'name'), ('user', 'email'),
     ('user', 'emailVerified'), ('user', 'image'), ('user', 'username'),
@@ -108,7 +117,9 @@ BEGIN
     ('email_pkey', 'email', 'p', ARRAY['id']::text[]),
     ('message_share_pkey', 'message_share', 'p', ARRAY['id']::text[]),
     ('message_pkey', 'message', 'p', ARRAY['id']::text[]),
+    ('mailbox_name_block_pkey', 'mailbox_name_block', 'p', ARRAY['id']::text[]),
     ('role_pkey', 'role', 'p', ARRAY['id']::text[]),
+    ('send_quota_event_pkey', 'send_quota_event', 'p', ARRAY['id']::text[]),
     ('site_config_pkey', 'site_config', 'p', ARRAY['key']::text[]),
     ('user_role_user_id_role_id_pk', 'user_role', 'p', ARRAY['user_id', 'role_id']::text[]),
     ('user_pkey', 'user', 'p', ARRAY['id']::text[]),
@@ -155,6 +166,15 @@ BEGIN
     ('message_email_id_received_at_type_idx', 'message', false, ARRAY['emailid', 'received_at', 'type']::text[]),
     ('message_share_message_id_idx', 'message_share', false, ARRAY['message_id']::text[]),
     ('message_share_token_idx', 'message_share', false, ARRAY['token']::text[]),
+    ('mailbox_name_block_scope_unique', 'mailbox_name_block', true, ARRAY['scope_key', 'local_part', 'domain']::text[]),
+    ('mailbox_name_block_lookup_idx', 'mailbox_name_block', false, ARRAY['local_part', 'domain', 'scope_key']::text[]),
+    ('send_quota_event_subject_created_idx', 'send_quota_event', false, ARRAY['quota_subject', 'created_at']::text[]),
+    ('send_quota_event_subject_domain_created_idx', 'send_quota_event', false, ARRAY['quota_subject', 'sender_domain', 'created_at']::text[]),
+    ('send_quota_event_subject_direction_created_idx', 'send_quota_event', false, ARRAY['quota_subject', 'direction', 'created_at']::text[]),
+    ('send_quota_event_subject_direction_domain_created_idx', 'send_quota_event', false, ARRAY['quota_subject', 'direction', 'sender_domain', 'created_at']::text[]),
+    ('send_quota_event_user_direction_mailbox_created_idx', 'send_quota_event', false, ARRAY['user_id', 'direction', 'mailbox_address', 'created_at']::text[]),
+    ('send_quota_event_user_created_idx', 'send_quota_event', false, ARRAY['user_id', 'created_at']::text[]),
+    ('send_quota_event_role_created_idx', 'send_quota_event', false, ARRAY['policy_role', 'created_at']::text[]),
     ('name_user_id_unique', 'api_keys', true, ARRAY['name', 'user_id']::text[]),
     ('user_role_user_id_idx', 'user_role', false, ARRAY['user_id']::text[]),
     ('webhook_user_id_idx', 'webhook', false, ARRAY['user_id']::text[])
@@ -196,6 +216,8 @@ BEGIN
     ('email_userId_user_id_fk', 'email', ARRAY['userId']::text[], 'user', ARRAY['id']::text[], 'c'),
     ('message_share_message_id_message_id_fk', 'message_share', ARRAY['message_id']::text[], 'message', ARRAY['id']::text[], 'c'),
     ('message_emailId_email_id_fk', 'message', ARRAY['emailId']::text[], 'email', ARRAY['id']::text[], 'c'),
+    ('mailbox_name_block_user_id_user_id_fk', 'mailbox_name_block', ARRAY['user_id']::text[], 'user', ARRAY['id']::text[], 'c'),
+    ('send_quota_event_user_id_user_id_fk', 'send_quota_event', ARRAY['user_id']::text[], 'user', ARRAY['id']::text[], 'n'),
     ('user_role_role_id_role_id_fk', 'user_role', ARRAY['role_id']::text[], 'role', ARRAY['id']::text[], 'c'),
     ('user_role_user_id_user_id_fk', 'user_role', ARRAY['user_id']::text[], 'user', ARRAY['id']::text[], 'c'),
     ('webhook_user_id_user_id_fk', 'webhook', ARRAY['user_id']::text[], 'user', ARRAY['id']::text[], 'c')

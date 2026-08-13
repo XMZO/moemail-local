@@ -8,6 +8,20 @@
       "when": 1786425496039,
       "tag": "0000_brainy_pyro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786550400000,
+      "tag": "0001_send_quota_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786567195611,
+      "tag": "0002_gifted_sunfire",
+      "breakpoints": true
     }
   ]
 }

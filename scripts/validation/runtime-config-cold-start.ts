@@ -164,7 +164,7 @@ try {
   assert.equal(emptyOwner.reload.ok, false)
   assert.match(
     emptyOwner.after.fatal?.map(issue => issue.message).join(" ") ?? "",
-    /没有站主账号/,
+    /CANDIDATE_EMPEROR_MISSING/,
   )
   assert.deepEqual(emptyOwner.recoveryCandidate, {
     setupCompleted: true,

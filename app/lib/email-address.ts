@@ -19,6 +19,15 @@ export function normalizeMailboxLocalPart(value: unknown) {
   return normalized
 }
 
+/**
+ * Accepts the common paste mistake `local@domain` in a local-part field while
+ * keeping strict address validation everywhere else.
+ */
+export function normalizeMailboxCreationName(value: unknown) {
+  if (typeof value !== "string") return null
+  return normalizeMailboxLocalPart(value.split("@", 1)[0])
+}
+
 export function normalizeMailboxDomain(value: unknown) {
   if (typeof value !== "string") return null
 

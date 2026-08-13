@@ -117,10 +117,21 @@ jobs:
 
       - name: Validate release contracts
         run: |
+          pnpm validate:password
+          pnpm validate:auth-abuse
+          pnpm validate:runtime-config
+          pnpm validate:runtime-config:cold
+          pnpm validate:setup
+          pnpm validate:scheduler
+          pnpm validate:rclone-config
+          pnpm validate:restore
           pnpm validate:email-worker
           pnpm validate:mail-policies
+          pnpm validate:send-quota
+          pnpm validate:policy-migrations
           pnpm validate:imap-inbound
           pnpm validate:runtime-fields
+          pnpm validate:i18n
           pnpm validate:no-local-env
           pnpm validate:deployment
           pnpm validate:maintenance-bundle

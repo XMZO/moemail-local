@@ -11,5 +11,21 @@ function leafPaths(value: unknown, prefix = ""): string[] {
 
 const schemaPaths = leafPaths(createDefaultConfig()).sort()
 const visualPaths = Object.keys(runtimeConfigFields).sort()
-assert.deepEqual(visualPaths, schemaPaths, "视觉运行配置字段必须与 AppConfig 的全部叶字段完全一致")
+assert.deepEqual(visualPaths, schemaPaths, "Visual runtime fields must cover every AppConfig leaf")
+assert.deepEqual(
+  Object.entries(runtimeConfigFields)
+    .filter(([, metadata]) => metadata.required)
+    .map(([path]) => path)
+    .sort(),
+  ["auth.passwordPepper", "auth.secret", "email.ingestSecret"],
+  "Required post-setup secrets must reject empty values in visual mode",
+)
+assert.deepEqual(
+  Object.entries(runtimeConfigFields)
+    .filter(([, metadata]) => metadata.secretAction === "generate")
+    .map(([path]) => path)
+    .sort(),
+  ["auth.emperorBootstrapSecret", "auth.secret", "email.ingestSecret", "monitor.alertBearerToken"],
+  "Only independently rotatable secrets may expose the generate action",
+)
 console.log(JSON.stringify({ ok: true, fields: visualPaths.length }))

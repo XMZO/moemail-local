@@ -20,6 +20,8 @@ interface ConfigStore {
   fetch: () => Promise<void>
 }
 
+const CONFIG_FETCH_FAILED = "CONFIG_FETCH_FAILED"
+
 const useConfigStore = create<ConfigStore>((set) => ({
   config: null,
   loading: false,
@@ -28,21 +30,21 @@ const useConfigStore = create<ConfigStore>((set) => ({
     try {
       set({ loading: true, error: null })
       const res = await fetch("/api/config")
-      if (!res.ok) throw new Error("获取配置失败")
+      if (!res.ok) throw new Error(CONFIG_FETCH_FAILED)
       const data = await res.json() as Config
       set({
         config: {
           defaultRole: data.defaultRole || ROLES.CIVILIAN,
           emailDomains: data.emailDomains,
-          emailDomainsArray: data.emailDomains.split(','),
+          emailDomainsArray: data.emailDomains.split(',').filter(Boolean),
           adminContact: data.adminContact || "",
           maxEmails: Number(data.maxEmails) || EMAIL_CONFIG.MAX_ACTIVE_EMAILS
         },
         loading: false
       })
-    } catch (error) {
+    } catch {
       set({ 
-        error: error instanceof Error ? error.message : "获取配置失败",
+        error: CONFIG_FETCH_FAILED,
         loading: false 
       })
     }
@@ -50,13 +52,16 @@ const useConfigStore = create<ConfigStore>((set) => ({
 }))
 
 export function useConfig() {
-  const store = useConfigStore()
+  const config = useConfigStore(state => state.config)
+  const loading = useConfigStore(state => state.loading)
+  const error = useConfigStore(state => state.error)
+  const fetchConfig = useConfigStore(state => state.fetch)
 
   useEffect(() => {
-    if (!store.config && !store.loading) {
-      store.fetch()
+    if (!config && !loading) {
+      void fetchConfig()
     }
-  }, [store.config, store.loading])
+  }, [config, loading, fetchConfig])
 
-  return store
-} 
+  return { config, loading, error, fetch: fetchConfig }
+}

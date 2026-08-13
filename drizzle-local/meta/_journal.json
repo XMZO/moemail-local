@@ -8,6 +8,20 @@
       "when": 1786422910637,
       "tag": "0000_curious_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786550400000,
+      "tag": "0001_send_quota_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786567180202,
+      "tag": "0002_rapid_magdalene",
+      "breakpoints": true
     }
   ]
 }

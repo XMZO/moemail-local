@@ -1,6 +1,6 @@
 "use client"
 
-import { useTranslations } from "next-intl"
+import { useFormatter, useTranslations } from "next-intl"
 import { BrandHeader } from "@/components/ui/brand-header"
 import { FloatingLanguageSwitcher } from "@/components/layout/floating-language-switcher"
 import { SharedMessageDetail } from "@/components/emails/shared-message-detail"
@@ -24,8 +24,10 @@ interface SharedMessagePageClientProps {
 }
 
 export function SharedMessagePageClient({ message }: SharedMessagePageClientProps) {
+  const format = useFormatter()
   const t = useTranslations("emails")
   const tShared = useTranslations("emails.shared")
+  const tFormat = useTranslations("common.format")
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -35,7 +37,10 @@ export function SharedMessagePageClient({ message }: SharedMessagePageClientProp
           subtitle={message.emailExpiresAt && new Date(message.emailExpiresAt).getFullYear() === 9999
             ? tShared("permanent")
             : message.emailExpiresAt
-              ? `${tShared("expiresAt")}: ${new Date(message.emailExpiresAt).toLocaleString()}`
+              ? tFormat("labelValue", {
+                label: tShared("expiresAt"),
+                value: format.dateTime(new Date(message.emailExpiresAt)),
+              })
               : tShared("sharedMessage")}
           ctaText={tShared("createOwnEmail")}
         />
@@ -58,7 +63,8 @@ export function SharedMessagePageClient({ message }: SharedMessagePageClientProp
                 subject: t("messages.subject"),
                 time: t("messageView.time"),
                 htmlFormat: t("messageView.htmlFormat"),
-                textFormat: t("messageView.textFormat")
+              textFormat: t("messageView.textFormat"),
+              noSubject: t("messages.noSubject")
               }}
             />
           </div>

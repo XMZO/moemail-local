@@ -56,6 +56,59 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  @keyframes locale-content-leave {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0.35;
+      transform: translateY(2px);
+    }
+  }
+
+  @keyframes locale-content-enter {
+    from {
+      opacity: 0.35;
+      transform: translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  html[data-locale-transition="leaving"] main {
+    cursor: progress;
+    pointer-events: none;
+    will-change: opacity, transform;
+    animation: locale-content-leave 140ms ease-in both;
+  }
+
+  html[data-locale-transition="entering"] main {
+    will-change: opacity, transform;
+    animation: locale-content-enter 180ms ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html[data-locale-transition] main {
+      animation: none;
+    }
+
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation-duration: 0.01ms;
+    }
+  }
+
+  ::view-transition-old(root) {
+    animation: locale-content-leave 120ms ease-in both;
+  }
+
+  ::view-transition-new(root) {
+    animation: locale-content-enter 180ms ease-out both;
+  }
 }
 
 @layer utilities {

@@ -2,10 +2,10 @@
   "noPermission": {
     "title": "Insufficient Permission",
     "description": "You don't have permission to access this page. Please contact the website administrator.",
-    "adminContact": "Admin Contact",
+      "adminContact": "Admin contact: {contact}",
     "backToHome": "Back to Home",
-    "needPermission": "需要公爵或更高权限才能管理 API Key",
-    "contactAdmin": "请联系网站管理员升级您的角色"
+    "needPermission": "Duke or higher permission is required to manage API keys",
+    "contactAdmin": "Contact the website administrator to upgrade your role"
   },
   "layout": {
     "myEmails": "My Emails",
@@ -44,19 +44,30 @@
     "create": "Create",
     "creating": "Creating...",
     "success": "Email created successfully",
-    "failed": "Failed to create email"
+    "failed": "Failed to create email",
+    "noAvailableDomains": "Your account has no available mail domains",
+    "invalidName": "Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens",
+    "domainDiscarded": "Only the part before @ is used; choose the domain separately",
+    "randomName": "Generate a random mailbox name"
   },
   "messages": {
     "received": "Received",
     "sent": "Sent",
     "noMessages": "No messages yet",
-    "messageCount": "messages",
+    "messageCount": "{count, plural, one {# message} other {# messages}}",
     "from": "From",
     "to": "To",
     "subject": "Subject",
+    "noSubject": "(No subject)",
     "date": "Date",
     "loading": "Loading...",
-    "loadingMore": "Loading more..."
+    "loadingMore": "Loading more...",
+    "quota": {
+      "receive": "Receive remaining",
+      "send": "Send remaining",
+      "window": "window {count}",
+      "lifetime": "lifetime {count}"
+    }
   },
   "send": {
     "title": "Send Email",
@@ -67,13 +78,23 @@
     "subjectPlaceholder": "Email subject",
     "content": "Content",
     "contentPlaceholder": "Email content (supports HTML)",
+    "requiredFields": "Complete the required fields: {fields}",
     "send": "Send",
     "sending": "Sending...",
     "success": "Email sent successfully",
     "failed": "Failed to send email",
     "dailyLimitReached": "Daily sending limit reached",
     "dailyLimit": "Daily Limit: {count}/{max}",
-    "dailyLimitUnit": "emails/day"
+    "dailyLimitUnit": "emails/day",
+    "permissionDenied": "You do not have permission to send from this mailbox",
+    "permissionCheckFailed": "Failed to check sending permission",
+    "formats": {
+      "text": "Plain text",
+      "html": "HTML"
+    },
+    "htmlPlaceholder": "HTML email body",
+    "htmlHelp": "You may enter an HTML fragment or a complete document. Fragments are wrapped in a valid <html> document before sending.",
+    "textHelp": "Plain text is escaped safely and sent with both text and compatible HTML alternatives."
   },
   "messageView": {
     "loading": "Loading message details...",
@@ -114,7 +135,17 @@
     "deleteFailed": "Failed to delete",
     "createSuccess": "Share link created successfully",
     "createFailed": "Failed to create share link",
-    "shareButton": "Share"
+    "shareButton": "Share",
+    "custom": "Custom",
+    "customValue": "Custom duration",
+    "customUnit": "Duration unit",
+    "units": {
+      "minute": "Minutes",
+      "hour": "Hours",
+      "day": "Days",
+      "week": "Weeks",
+      "month": "Months"
+    }
   },
   "shareMessage": {
     "title": "Share Message",
@@ -144,7 +175,17 @@
     "deleteFailed": "Failed to delete",
     "createSuccess": "Share link created successfully",
     "createFailed": "Failed to create share link",
-    "shareButton": "Share Message"
+    "shareButton": "Share Message",
+    "custom": "Custom",
+    "customValue": "Custom duration",
+    "customUnit": "Duration unit",
+    "units": {
+      "minute": "Minutes",
+      "hour": "Hours",
+      "day": "Days",
+      "week": "Weeks",
+      "month": "Months"
+    }
   },
   "shared": {
     "loading": "Loading...",

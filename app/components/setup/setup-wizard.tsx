@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
+import type setupMessages from "@/i18n/messages/en/setup.json"
 import {
   AlertTriangle,
   Check,
@@ -24,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { setupDictionary } from "./messages"
 
 interface SetupDefaults {
   server: { baseUrl: string; trustProxyHeaders: boolean; emailPollIntervalMs: number }
@@ -36,11 +37,11 @@ interface SetupDefaults {
 }
 
 interface SetupWizardProps {
-  locale: string
   configPath: string
   setupTokenPath: string
   configInvalid: boolean
   advancedYaml: string
+  advancedValuesPreserved: boolean
   defaults: SetupDefaults
 }
 
@@ -53,7 +54,16 @@ interface SetupSuccess {
 
 interface ConfigIssue {
   path: string
-  message: string
+  code?: string
+}
+
+type SetupDictionary = typeof setupMessages
+
+function useSetupDictionary(): SetupDictionary {
+  const translate = useTranslations("setup")
+  return new Proxy({} as SetupDictionary, {
+    get: (_target, key) => translate(key as keyof SetupDictionary),
+  })
 }
 
 function Section({
@@ -95,14 +105,17 @@ function Field({
 }
 
 export function SetupWizard({
-  locale,
   configPath,
   setupTokenPath,
   configInvalid,
   advancedYaml: initialAdvancedYaml,
+  advancedValuesPreserved,
   defaults,
 }: SetupWizardProps) {
-  const t = setupDictionary(locale)
+  const t = useSetupDictionary()
+  const tApi = useTranslations("api")
+  const tCommon = useTranslations("common")
+  const locale = useLocale()
 
   const [setupToken, setSetupToken] = useState("")
 
@@ -126,7 +139,11 @@ export function SetupWizard({
   const [githubClientSecret, setGithubClientSecret] = useState("")
   const [googleClientId, setGoogleClientId] = useState("")
   const [googleClientSecret, setGoogleClientSecret] = useState("")
-  const [advancedYaml, setAdvancedYaml] = useState(initialAdvancedYaml)
+  const preservedAdvancedYaml = `# ${t.preservedAdvancedYamlComment}\n`
+  const [advancedYaml, setAdvancedYaml] = useState(
+    advancedValuesPreserved ? preservedAdvancedYaml : initialAdvancedYaml,
+  )
+  const [advancedYamlEdited, setAdvancedYamlEdited] = useState(false)
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<"ok" | null>(null)
@@ -152,6 +169,12 @@ export function SetupWizard({
       || hostname === "::1"
     setInsecurePublicHttp(window.location.protocol === "http:" && !local)
   }, [defaults.server.baseUrl])
+
+  useEffect(() => {
+    if (advancedValuesPreserved && !advancedYamlEdited) {
+      setAdvancedYaml(preservedAdvancedYaml)
+    }
+  }, [advancedValuesPreserved, advancedYamlEdited, locale, preservedAdvancedYaml])
 
   // 任一会影响候选数据库连接的字段变化后，旧测试结果都不再可信。
   useEffect(() => setTestResult(null), [
@@ -220,9 +243,11 @@ export function SetupWizard({
   const showFailure = async (response: Response) => {
     const body = await response.json().catch(() => ({})) as {
       error?: string
+      code?: string
       issues?: ConfigIssue[]
     }
-    setError(body.error ?? t.failed)
+    const code = body.code ?? body.error
+    setError(code && tApi.has(code as never) ? tApi(code as never) : t.failed)
     setIssues(body.issues ?? [])
   }
 
@@ -307,7 +332,7 @@ export function SetupWizard({
 
   if (success) {
     return (
-      <main className="mx-auto w-full max-w-2xl px-4 py-10 space-y-5">
+      <main className="mx-auto w-full max-w-2xl space-y-5 px-4 pb-10 pt-24">
         <div className="space-y-2">
           <h1 className="flex items-center gap-2 text-xl font-bold">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -315,7 +340,11 @@ export function SetupWizard({
           </h1>
           <p className="text-sm text-muted-foreground">{t.doneHint}</p>
           <p className="text-xs text-muted-foreground">
-            {t.configPath}: <code className="font-mono">{success.configPath}</code>
+            {tCommon.rich("format.labelCodeValue", {
+              label: t.configPath,
+              value: success.configPath,
+              code: chunks => <code className="font-mono">{chunks}</code>,
+            })}
           </p>
         </div>
 
@@ -335,7 +364,6 @@ export function SetupWizard({
           <div className="space-y-1 rounded-lg border border-dashed border-primary/40 p-4">
             <p className="text-sm font-medium">{t.restartTitle}</p>
             <p className="text-xs text-muted-foreground">{t.restartHint}</p>
-            <p className="text-xs text-muted-foreground">{success.restartRequired}</p>
           </div>
         )}
 
@@ -356,12 +384,16 @@ export function SetupWizard({
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-10 space-y-5">
+    <main className="mx-auto w-full max-w-2xl space-y-5 px-4 pb-10 pt-24">
       <div className="space-y-1">
         <h1 className="text-xl font-bold">{t.title}</h1>
         <p className="text-sm text-muted-foreground">{t.subtitle}</p>
         <p className="text-xs text-muted-foreground">
-          {t.configPath}: <code className="font-mono">{configPath}</code>
+          {tCommon.rich("format.labelCodeValue", {
+            label: t.configPath,
+            value: configPath,
+            code: chunks => <code className="font-mono">{chunks}</code>,
+          })}
         </p>
       </div>
 
@@ -395,7 +427,11 @@ export function SetupWizard({
           />
         </Field>
         <p className="text-xs text-muted-foreground">
-          {t.setupTokenFile}: <code className="break-all font-mono">{setupTokenPath}</code>
+          {tCommon.rich("format.labelCodeValue", {
+            label: t.setupTokenFile,
+            value: setupTokenPath,
+            code: chunks => <code className="break-all font-mono">{chunks}</code>,
+          })}
         </p>
       </Section>
 
@@ -552,7 +588,10 @@ export function SetupWizard({
           <p className="text-xs text-muted-foreground">{t.advancedHint}</p>
           <Textarea
             value={advancedYaml}
-            onChange={event => setAdvancedYaml(event.target.value)}
+            onChange={event => {
+              setAdvancedYamlEdited(true)
+              setAdvancedYaml(event.target.value)
+            }}
             spellCheck={false}
             aria-label={t.advancedSection}
             className="min-h-[28rem] resize-y whitespace-pre font-mono text-xs leading-5"
@@ -563,9 +602,9 @@ export function SetupWizard({
       {error && (
         <div className="space-y-1 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">{error}</p>
-          {issues.map(issue => (
-            <p key={`${issue.path}-${issue.message}`} className="text-xs text-destructive/80">
-              <code className="font-mono">{issue.path}</code>: {issue.message}
+          {issues.map((issue, index) => (
+            <p key={`${issue.path}-${index}`} className="text-xs text-destructive/80">
+              <code className="font-mono">{issue.path}</code>
             </p>
           ))}
         </div>

@@ -25,7 +25,7 @@ export function getBoundDriver(): DatabaseDriver {
 export function requirePostgresUrl() {
   const databaseUrl = getConfig().database.postgres.url
   if (!databaseUrl) {
-    throw new Error("数据库类型为 postgres 时必须配置 database.postgres.url")
+    throw new Error("POSTGRES_URL_REQUIRED")
   }
   return databaseUrl
 }

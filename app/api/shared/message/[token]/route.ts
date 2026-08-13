@@ -1,12 +1,12 @@
 import { createDb } from "@/lib/db"
-import { messageShares, messages } from "@/lib/schema"
+import { messageShares, messages, emails } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { setupRequiredResponse } from "@/lib/request-auth"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
-// 通过分享token获取消息详情
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -18,36 +18,33 @@ export async function GET(
   const db = createDb()
 
   try {
-    // 验证分享token
     const share = await db.query.messageShares.findFirst({
       where: eq(messageShares.token, token)
     })
 
     if (!share) {
-      return NextResponse.json(
-        { error: "Share link not found or disabled" },
-        { status: 404 }
-      )
+      return apiError("SHARE_NOT_FOUND", 404)
     }
 
-    // 检查分享是否过期
     if (share.expiresAt && share.expiresAt < new Date()) {
-      return NextResponse.json(
-        { error: "Share link has expired" },
-        { status: 410 }
-      )
+      return apiError("SHARE_EXPIRED", 410)
     }
 
-    // 获取消息详情
     const message = await db.query.messages.findFirst({
       where: eq(messages.id, share.messageId)
     })
 
     if (!message) {
-      return NextResponse.json(
-        { error: "Message not found" },
-        { status: 404 }
-      )
+      return apiError("MESSAGE_NOT_FOUND", 404)
+    }
+
+    const email = await db.query.emails.findFirst({
+      where: eq(emails.id, message.emailId),
+      columns: { expiresAt: true },
+    })
+    if (!email) return apiError("MAILBOX_NOT_FOUND", 404)
+    if (email.expiresAt.getTime() <= Date.now()) {
+      return apiError("MAILBOX_EXPIRED", 410)
     }
 
     return NextResponse.json({
@@ -63,11 +60,8 @@ export async function GET(
       }
     })
   } catch (error) {
-    console.error("Failed to fetch shared message:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch message" },
-      { status: 500 }
-    )
+    console.error("shared_message.read_failed", error)
+    return apiError("MESSAGE_READ_FAILED", 500)
   }
 }
 

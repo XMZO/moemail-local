@@ -17,12 +17,6 @@ import { ROLES } from "./permissions"
 
 const SQLITE_MIGRATIONS = "drizzle-local"
 const POSTGRES_MIGRATIONS = "drizzle-postgres"
-const EMPEROR_DESCRIPTION = "皇帝（网站所有者）"
-
-function describe(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
-
 export async function probeDatabase(config: AppConfig): Promise<ConfigIssue[]> {
   const { driver } = config.database
   try {
@@ -43,10 +37,10 @@ export async function probeDatabase(config: AppConfig): Promise<ConfigIssue[]> {
       await pool.end()
     }
     return []
-  } catch (error) {
+  } catch {
     return [{
       path: driver === "sqlite" ? "database.sqlite.path" : "database.postgres.url",
-      message: `无法连接数据库：${describe(error)}`,
+      message: "DATABASE_PROBE_FAILED",
     }]
   }
 }
@@ -64,7 +58,7 @@ export async function runMigrations(config: AppConfig) {
 
       const violations = sqlite.pragma("foreign_key_check") as unknown[]
       if (violations.length > 0) {
-        throw new Error(`SQLite 外键校验失败: ${JSON.stringify(violations)}`)
+        throw new Error("SQLITE_FOREIGN_KEY_CHECK_FAILED")
       }
     } finally {
       sqlite.close()
@@ -189,7 +183,7 @@ function createEmperorSqlite(config: AppConfig, admin: InitialAdmin): AdminCreat
         sqlite.prepare(`
           INSERT INTO role (id, name, description, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?)
-        `).run(roleId, ROLES.EMPEROR, EMPEROR_DESCRIPTION, now, now)
+        `).run(roleId, ROLES.EMPEROR, null, now, now)
       }
 
       sqlite.prepare(`
@@ -256,7 +250,7 @@ async function createEmperorPostgres(
       await client.query(`
         INSERT INTO "role" (id, name, description, created_at, updated_at)
         VALUES ($1, $2, $3, NOW(), NOW())
-      `, [roleId, ROLES.EMPEROR, EMPEROR_DESCRIPTION])
+      `, [roleId, ROLES.EMPEROR, null])
     }
 
     await client.query(

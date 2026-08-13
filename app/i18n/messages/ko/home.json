@@ -15,7 +15,7 @@
       "description": "기한이 되면 자동으로 만료"
     },
     "openapi": {
-      "title": "Open API",
+      "title": "오픈 API",
       "description": "전체 OpenAPI 인터페이스 제공"
     }
   },

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useTranslations } from "next-intl"
+import { useFormatter, useTranslations } from "next-intl"
 import { Share2, Copy, Trash2, Link2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -14,13 +14,6 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
 import { useCopy } from "@/hooks/use-copy"
 import {
@@ -33,7 +26,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { EXPIRY_OPTIONS } from "@/types/email"
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
+import { ShareExpiryPicker, shareExpiryMilliseconds } from "./share-expiry-picker"
 
 interface ShareMessageDialogProps {
   emailId: string
@@ -51,7 +46,10 @@ interface ShareLink {
 }
 
 export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger }: ShareMessageDialogProps) {
+  const formatDate = useFormatter()
   const t = useTranslations("emails.shareMessage")
+  const tFormat = useTranslations("common.format")
+  const tApi = useTranslations("api")
   const { toast } = useToast()
   const { copyToClipboard } = useCopy()
   
@@ -59,22 +57,25 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
   const [shares, setShares] = useState<ShareLink[]>([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [expiryTime, setExpiryTime] = useState(EXPIRY_OPTIONS[1].value.toString())
+  const [expiryPreset, setExpiryPreset] = useState((24 * 60 * 60 * 1_000).toString())
+  const [customExpiryValue, setCustomExpiryValue] = useState("1")
+  const [customExpiryUnit, setCustomExpiryUnit] = useState<"minute" | "hour" | "day" | "week" | "month">("day")
   const [deleteTarget, setDeleteTarget] = useState<ShareLink | null>(null)
+  const requestedExpiry = shareExpiryMilliseconds(expiryPreset, customExpiryValue, customExpiryUnit)
 
   const fetchShares = async () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/emails/${emailId}/messages/${messageId}/share`)
-      if (!response.ok) throw new Error("Failed to fetch shares")
+      if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "SHARES_READ_FAILED") as never))
       
       const data = await response.json() as { shares: ShareLink[] }
       setShares(data.shares || [])
     } catch (error) {
-      console.error("Failed to fetch shares:", error)
+      console.error("message_share.fetch_failed", error)
       toast({
         title: t("createFailed"),
-        description: String(error),
+        description: localizedUiErrorMessage(error, t("createFailed")),
         variant: "destructive"
       })
     } finally {
@@ -85,13 +86,14 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
   const createShare = async () => {
     try {
       setCreating(true)
+      const expiresIn = requestedExpiry
       const response = await fetch(`/api/emails/${emailId}/messages/${messageId}/share`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expiresIn: Number(expiryTime) })
+        body: JSON.stringify({ expiresIn })
       })
 
-      if (!response.ok) throw new Error("Failed to create share")
+      if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "SHARE_CREATE_FAILED") as never))
       
       const share = await response.json() as ShareLink
       setShares(prev => [share, ...prev])
@@ -100,10 +102,10 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
         title: t("createSuccess"),
       })
     } catch (error) {
-      console.error("Failed to create share:", error)
+      console.error("message_share.create_failed", error)
       toast({
         title: t("createFailed"),
-        description: String(error),
+        description: localizedUiErrorMessage(error, t("createFailed")),
         variant: "destructive"
       })
     } finally {
@@ -117,7 +119,7 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
         method: "DELETE"
       })
 
-      if (!response.ok) throw new Error("Failed to delete share")
+      if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "SHARE_DELETE_FAILED") as never))
       
       setShares(prev => prev.filter(s => s.id !== share.id))
       
@@ -125,10 +127,10 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
         title: t("deleteSuccess"),
       })
     } catch (error) {
-      console.error("Failed to delete share:", error)
+      console.error("message_share.delete_failed", error)
       toast({
         title: t("deleteFailed"),
-        description: String(error),
+        description: localizedUiErrorMessage(error, t("deleteFailed")),
         variant: "destructive"
       })
     } finally {
@@ -198,20 +200,17 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
             {/* Create new share link */}
             <div className="space-y-2">
               <Label>{t("expiryTime")}</Label>
-              <div className="flex gap-2">
-                <Select value={expiryTime} onValueChange={setExpiryTime}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXPIRY_OPTIONS.map(option => (
-                      <SelectItem key={option.value} value={option.value.toString()}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={createShare} disabled={creating} className="min-w-[100px]">
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <ShareExpiryPicker
+                  preset={expiryPreset}
+                  customValue={customExpiryValue}
+                  customUnit={customExpiryUnit}
+                  onPresetChange={setExpiryPreset}
+                  onCustomValueChange={setCustomExpiryValue}
+                  onCustomUnitChange={setCustomExpiryUnit}
+                  t={t}
+                />
+                <Button onClick={createShare} disabled={creating || !Number.isFinite(requestedExpiry)} className="sm:min-w-28">
                   {creating ? t("creating") : t("createLink")}
                 </Button>
               </div>
@@ -294,24 +293,20 @@ export function ShareMessageDialog({ emailId, messageId, messageSubject, trigger
                           <span className={cn(
                             isExpired ? "text-destructive/70" : "text-gray-500"
                           )}>
-                            {t("createdAt")}: {new Date(
-                              typeof share.createdAt === 'number' 
-                                ? share.createdAt 
-                                : share.createdAt
-                            ).toLocaleString()}
+                            {tFormat("labelValue", {
+                              label: t("createdAt"),
+                              value: formatDate.dateTime(new Date(share.createdAt)),
+                            })}
                           </span>
                           <span className={cn(
                             isExpired ? "text-destructive/70" : "text-gray-500"
                           )}>
-                            {t("expiresAt")}: {
-                              share.expiresAt
-                                ? new Date(
-                                    typeof share.expiresAt === 'number' 
-                                      ? share.expiresAt 
-                                      : share.expiresAt
-                                  ).toLocaleString()
-                                : t("permanent")
-                            }
+                            {tFormat("labelValue", {
+                              label: t("expiresAt"),
+                              value: share.expiresAt
+                                ? formatDate.dateTime(new Date(share.expiresAt))
+                                : t("permanent"),
+                            })}
                           </span>
                           {isExpired && (
                             <span className="text-destructive font-medium flex items-center gap-1">

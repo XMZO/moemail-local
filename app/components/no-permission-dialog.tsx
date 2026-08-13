@@ -20,7 +20,9 @@ export function NoPermissionDialog() {
             <p className="text-sm md:text-base text-muted-foreground">{t("description")}</p>
             {
               config?.adminContact && (
-                <p className="text-sm md:text-base text-muted-foreground">{t("adminContact")}：{config.adminContact}</p>
+                <p className="text-sm md:text-base text-muted-foreground">
+                  {t("adminContact", { contact: config.adminContact })}
+                </p>
               )
             }
             <Button 
@@ -34,4 +36,4 @@ export function NoPermissionDialog() {
       </div>
     </div>
   )
-} 
+}

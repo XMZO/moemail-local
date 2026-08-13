@@ -1,6 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Crown, Gem, Sword, User2, Loader2, Search, ChevronLeft, ChevronRight, Users, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -24,13 +25,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-
-const roleIcons = {
-  [ROLES.EMPEROR]: Crown,
-  [ROLES.DUKE]: Gem,
-  [ROLES.KNIGHT]: Sword,
-  [ROLES.CIVILIAN]: User2,
-} as const
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 
 type RoleWithoutEmperor = Exclude<Role, typeof ROLES.EMPEROR>
 
@@ -48,6 +44,7 @@ const PAGE_SIZE = 10
 export function PromotePanel() {
   const t = useTranslations("profile.promote")
   const tCard = useTranslations("profile.card")
+  const tApi = useTranslations("api")
   const [users, setUsers] = useState<UserItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -78,7 +75,7 @@ export function PromotePanel() {
         params.set("search", search.trim())
       }
       const res = await fetch(`/api/roles/users?${params}`)
-      if (!res.ok) throw new Error("Failed to fetch")
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "USERS_READ_FAILED") as never))
       const data = await res.json() as {
         users: UserItem[]
         total: number
@@ -87,15 +84,16 @@ export function PromotePanel() {
       }
       setUsers(data.users)
       setTotal(data.total)
-    } catch {
+    } catch (error) {
       toast({
         title: t("updateFailed"),
+        description: localizedUiErrorMessage(error, t("updateFailed")),
         variant: "destructive",
       })
     } finally {
       setLoading(false)
     }
-  }, [page, search, t, toast])
+  }, [page, search, t, tApi, toast])
 
   useEffect(() => {
     fetchUsers()
@@ -113,10 +111,7 @@ export function PromotePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, roleName: newRole }),
       })
-      if (!res.ok) {
-        const error = await res.json() as { error: string }
-        throw new Error(error.error)
-      }
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "ROLE_UPDATE_FAILED") as never))
       setUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
       )
@@ -124,7 +119,7 @@ export function PromotePanel() {
     } catch (error) {
       toast({
         title: t("updateFailed"),
-        description: error instanceof Error ? error.message : undefined,
+        description: localizedUiErrorMessage(error, t("updateFailed")),
         variant: "destructive",
       })
     } finally {
@@ -138,10 +133,7 @@ export function PromotePanel() {
       const res = await fetch(`/api/users/${user.id}`, {
         method: "DELETE",
       })
-      if (!res.ok) {
-        const error = await res.json() as { error: string }
-        throw new Error(error.error)
-      }
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "USER_DELETE_FAILED") as never))
       toast({ title: t("deleteSuccess") })
       setUserToDelete(null)
       // 若删除的是当前页最后一条，且不在首页，则退回上一页（useEffect 会重新拉取）
@@ -153,7 +145,7 @@ export function PromotePanel() {
     } catch (error) {
       toast({
         title: t("deleteFailed"),
-        description: error instanceof Error ? error.message : undefined,
+        description: localizedUiErrorMessage(error, t("deleteFailed")),
         variant: "destructive",
       })
     } finally {
@@ -162,7 +154,7 @@ export function PromotePanel() {
   }
 
   return (
-    <div className="bg-background rounded-lg border-2 border-primary/20 p-6">
+    <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-6">
       <div className="flex items-center gap-2 mb-6">
         <Users className="w-5 h-5 text-primary" />
         <h2 className="text-lg font-semibold">{t("title")}</h2>
@@ -195,18 +187,20 @@ export function PromotePanel() {
           <div className="space-y-2">
             {users.map((user) => {
               const isEmperor = user.role === ROLES.EMPEROR
-              const RoleIcon = roleIcons[user.role as Role] || User2
               const isUpdating = updatingUserId === user.id
 
               return (
                 <div
                   key={user.id}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors"
+                  className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-accent/50 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
                 >
                   {user.image ? (
-                    <img
+                    <Image
                       src={user.image}
                       alt=""
+                      width={32}
+                      height={32}
+                      unoptimized
                       className="w-8 h-8 rounded-full"
                     />
                   ) : (
@@ -225,12 +219,12 @@ export function PromotePanel() {
                   </div>
 
                   {isEmperor ? (
-                    <div className="flex items-center gap-1.5 text-sm text-amber-600 font-medium px-3">
+                    <div className="col-span-2 flex items-center gap-1.5 pl-11 text-sm font-medium text-amber-600 sm:col-span-1 sm:pl-0">
                       <Crown className="w-4 h-4" />
                       {roleNames[ROLES.EMPEROR]}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="col-span-2 flex min-w-0 items-center gap-2 pl-11 sm:col-span-1 sm:pl-0">
                       <div className="relative">
                         {isUpdating && (
                           <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded z-10">
@@ -242,11 +236,8 @@ export function PromotePanel() {
                           onValueChange={(v) => handleRoleChange(user.id, v as RoleWithoutEmperor)}
                           disabled={isUpdating}
                         >
-                          <SelectTrigger className="w-32 h-8 text-sm">
-                            <div className="flex items-center gap-1.5">
-                              <RoleIcon className="w-3.5 h-3.5" />
-                              <SelectValue />
-                            </div>
+                          <SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-auto sm:min-w-28">
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value={ROLES.DUKE}>

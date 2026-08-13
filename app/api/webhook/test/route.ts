@@ -4,12 +4,18 @@ import { z } from "zod"
 import { EmailMessage } from "@/lib/webhook"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
 const testSchema = z.object({
-  url: z.string().url()
-})
+  url: z.string().url(),
+  sample: z.object({
+    subject: z.string().trim().min(1).max(200),
+    content: z.string().trim().min(1).max(2_000),
+    html: z.string().trim().min(1).max(10_000),
+  }).strict(),
+}).strict()
 
 export async function POST(request: Request) {
   const authorization = await authorizeRequest(request, {
@@ -19,7 +25,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { url } = testSchema.parse(body)
+    const { url, sample } = testSchema.parse(body)
 
     await callWebhook(url, {
       event: WEBHOOK_CONFIG.EVENTS.NEW_MESSAGE,
@@ -27,9 +33,9 @@ export async function POST(request: Request) {
         emailId: "123456789",
         messageId: '987654321',
         fromAddress: "sender@example.com",
-        subject: "Test Email",
-        content: "This is a test email.",
-        html: "<p>This is a <strong>test</strong> email.</p>",
+        subject: sample.subject,
+        content: sample.content,
+        html: sample.html,
         receivedAt: "2023-03-01T12:00:00Z",
         toAddress: "recipient@example.com"
       } as EmailMessage
@@ -37,10 +43,7 @@ export async function POST(request: Request) {
 
     return Response.json({ success: true })
   } catch (error) {
-    console.error("Failed to test webhook:", error)
-    return Response.json(
-      { error: "Failed to test webhook" },
-      { status: 400 }
-    )
+    console.error("webhook.test_failed", error)
+    return apiError("WEBHOOK_TEST_FAILED", 400)
   }
 }

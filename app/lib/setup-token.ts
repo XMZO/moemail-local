@@ -71,7 +71,7 @@ export function ensureSetupToken() {
   }
 
   if (Buffer.byteLength(token, "utf8") < 32 || /\s/.test(token)) {
-    throw new Error(`初始化令牌文件 ${path} 无效，请删除后重启 MoeMail`)
+    throw new Error("SETUP_TOKEN_INVALID")
   }
 
   try {
@@ -87,7 +87,7 @@ export function ensureSetupToken() {
       event: "setup.token.ready",
       token,
       path,
-      warning: "该令牌可创建站主账号，仅在首次初始化页面使用；初始化成功后会自动删除",
+      warning: "SETUP_TOKEN_CAN_CREATE_EMPEROR",
     }))
   }
   return token

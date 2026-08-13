@@ -1,48 +1,22 @@
-import { eq } from "drizzle-orm"
 import {
-  getAccessPolicies,
+  mutateUserAccessOverride,
   parseUserAccessOverride,
-  saveAccessPolicies,
 } from "@/lib/access-policies"
-import { createDb } from "@/lib/db"
 import { ROLES } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
-import { users } from "@/lib/schema"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
 const headers = { "Cache-Control": "private, no-store" }
 
-async function authorizeTarget(request: Request, userId: string) {
+async function authorizeEmperor(request: Request) {
   const authorization = await authorizeRequest(request)
   if (!authorization.ok) return authorization
   if (!authorization.principal.roles.includes(ROLES.EMPEROR)) {
     return {
       ok: false as const,
-      response: Response.json({ error: "仅皇帝可以修改用户权限" }, { status: 403, headers }),
-    }
-  }
-  if (authorization.principal.userId === userId) {
-    return {
-      ok: false as const,
-      response: Response.json({ error: "皇帝不能修改自己的权限" }, { status: 400, headers }),
-    }
-  }
-
-  const targetUser = await createDb().query.users.findFirst({
-    where: eq(users.id, userId),
-    with: { userRoles: { with: { role: true } } },
-  })
-  if (!targetUser) {
-    return {
-      ok: false as const,
-      response: Response.json({ error: "用户不存在" }, { status: 404, headers }),
-    }
-  }
-  if (targetUser.userRoles.some(item => item.role.name === ROLES.EMPEROR)) {
-    return {
-      ok: false as const,
-      response: Response.json({ error: "皇帝权限是系统不变量，不能覆盖" }, { status: 400, headers }),
+      response: apiError("EMPEROR_REQUIRED", 403, { headers }),
     }
   }
   return authorization
@@ -53,25 +27,29 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const authorization = await authorizeTarget(request, id)
+  const authorization = await authorizeEmperor(request)
   if (!authorization.ok) return authorization.response
 
   let payload: unknown
   try {
     payload = await request.json()
   } catch {
-    return Response.json({ error: "请求格式无效" }, { status: 400, headers })
+    return apiError("INVALID_JSON", 400, { headers })
   }
 
   try {
     const override = parseUserAccessOverride(payload)
-    const policies = await getAccessPolicies()
-    policies.users[id] = override
-    await saveAccessPolicies(policies)
+    const result = await mutateUserAccessOverride(id, override)
+    if (result === "not_found") {
+      return apiError("USER_NOT_FOUND", 404, { headers })
+    }
+    if (result === "emperor_immutable") {
+      return apiError("EMPEROR_POLICY_IMMUTABLE", 400, { headers })
+    }
     return Response.json({ ok: true, override }, { headers })
   } catch (error) {
-    console.error("Failed to save user access override:", error)
-    return Response.json({ error: "用户权限覆盖校验或保存失败" }, { status: 400, headers })
+    console.error("access_policy.user_override_save_failed", error)
+    return apiError("USER_ACCESS_OVERRIDE_SAVE_FAILED", 400, { headers })
   }
 }
 
@@ -80,16 +58,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const authorization = await authorizeTarget(request, id)
+  const authorization = await authorizeEmperor(request)
   if (!authorization.ok) return authorization.response
 
   try {
-    const policies = await getAccessPolicies()
-    delete policies.users[id]
-    await saveAccessPolicies(policies)
+    const result = await mutateUserAccessOverride(id, null)
+    if (result === "not_found") {
+      return apiError("USER_NOT_FOUND", 404, { headers })
+    }
     return Response.json({ ok: true }, { headers })
   } catch (error) {
-    console.error("Failed to reset user access override:", error)
-    return Response.json({ error: "重置用户权限失败" }, { status: 500, headers })
+    console.error("access_policy.user_override_reset_failed", error)
+    return apiError("USER_ACCESS_OVERRIDE_RESET_FAILED", 500, { headers })
   }
 }

@@ -1,0 +1,145 @@
+{
+  "title": "运行配置",
+  "description": "视觉表单与 YAML 编辑器使用同一份配置、校验和基于指纹的比较并交换。",
+  "reload": "重新加载",
+  "secretWarningTitle": "此面板包含明文密钥",
+  "secretWarningDescription": "不要截图或复制给无关人员。数据库探测失败时，新配置不会生效。",
+  "file": "文件",
+  "revision": "运行修订号",
+  "status": "状态",
+  "statusLoaded": "已加载",
+  "statusPending": "尚未应用",
+  "statusMissing": "不存在",
+  "loading": "加载中…",
+  "lastError": "最近一次热加载失败，仍使用上一份有效配置：",
+  "conflict": "配置已被其他窗口或文件编辑器更新，请重新加载后合并修改。",
+  "validationIssues": "校验问题",
+  "requiredSecrets": "必填密钥不能为空：{fields}",
+  "visual": "视觉配置",
+  "yaml": "原始 YAML",
+  "yamlAria": "完整 YAML 运行配置",
+  "externalEditHint": "外部编辑仍会自动校验并热加载；数据库驱动变化由守护进程重启后生效。",
+  "save": "保存并应用",
+  "saving": "校验并保存中",
+  "required": "必填，不能为空",
+  "actions": {
+    "generate": "生成新的随机密钥",
+    "generateFor": "为{label}生成新的随机密钥",
+    "restoreDefault": "恢复代码默认值",
+    "show": "显示{label}",
+    "hide": "隐藏{label}"
+  },
+  "errors": {
+    "load": "加载运行配置失败",
+    "save": "配置未应用",
+    "notObject": "配置顶层必须是键值对象",
+    "yamlSwitch": "YAML 尚不能切换到视觉配置：{reason}",
+    "syntax": "语法错误"
+  },
+  "success": {
+    "applied": "配置已保存并应用",
+    "restart": "配置已保存；{reason}",
+    "driverRestart": "数据库驱动变化需要重启"
+  },
+  "groups": {
+    "root": "格式版本",
+    "setup": "初始化状态",
+    "server": "Web 服务",
+    "database": "数据库",
+    "auth": "登录与鉴权",
+    "email": "收件入口",
+    "cleanup": "数据清理",
+    "scheduler": "维护调度",
+    "monitor": "监控告警",
+    "offsite": "异地备份"
+  },
+  "fields": {
+    "version": { "label": "Schema 版本", "description": "当前只支持版本 1。" },
+    "setup": {
+      "completed": { "label": "初始化完成", "description": "由首次向导维护；关闭后会重新启用初始化门禁。" },
+      "completedAt": { "label": "初始化完成时间", "description": "ISO 时间；留空表示未知。" }
+    },
+    "server": {
+      "baseUrl": { "label": "站点基准 URL", "description": "用于元数据与绝对链接，例如 https://mail.example.com。" },
+      "trustProxyHeaders": { "label": "信任反向代理请求头", "description": "仅在受控的 Caddy 或反向代理后开启。" },
+      "autoRestartOnDriverChange": { "label": "切换驱动时自动退出", "description": "生产环境由 Docker 或 systemd 守护进程拉起新进程。" },
+      "emailPollIntervalMs": { "label": "邮箱轮询间隔（毫秒）", "description": "浏览器刷新邮件列表的间隔。" }
+    },
+    "database": {
+      "driver": { "label": "数据库驱动", "description": "跨驱动切换会验证目标数据库并要求进程重启。" },
+      "sqlite": {
+        "path": { "label": "SQLite 文件", "description": "必须位于 data/ 目录内。" },
+        "backupDir": { "label": "SQLite 备份目录", "description": "必须位于 data/ 目录内，且不能与数据库辅助文件冲突。" },
+        "backupRetentionDays": { "label": "SQLite 备份保留天数", "description": "维护任务只清理带有严格配置配对文件的归档。" }
+      },
+      "postgres": {
+        "url": { "label": "PostgreSQL 连接地址", "description": "禁止查询参数；凭据保存在本地权限为 0600 的配置中。" },
+        "poolMax": { "label": "连接池上限", "description": "Web 进程使用的最大数据库连接数。" },
+        "idleTimeoutMs": { "label": "空闲连接超时（毫秒）", "description": "连接池保留空闲连接的时间。" },
+        "connectTimeoutMs": { "label": "连接超时（毫秒）", "description": "配置探测与运行时连接的超时时间。" },
+        "ssl": { "label": "启用 PostgreSQL TLS", "description": "同时应用于 Web 应用与维护工具。" },
+        "sslRejectUnauthorized": { "label": "严格校验证书", "description": "生产环境的外部 PostgreSQL 建议开启。" },
+        "applicationName": { "label": "连接应用名称", "description": "显示在 PostgreSQL 活动连接视图中。" },
+        "backupDir": { "label": "PostgreSQL 备份目录", "description": "必须位于 data/postgres-backups 内。" },
+        "backupRetentionDays": { "label": "PostgreSQL 备份保留天数", "description": "Node 与工具容器维护路径共同使用。" }
+      }
+    },
+    "auth": {
+      "secret": { "label": "会话签名密钥", "description": "初始化后必填；重新生成会让现有登录会话失效。" },
+      "passwordPepper": { "label": "密码 Pepper", "description": "初始化后必填，且不能直接轮换，否则现有密码会失效。" },
+      "emperorBootstrapSecret": { "label": "皇帝引导密钥", "description": "兼容登基接口使用；留空表示禁用，启用时应使用随机值。" },
+      "github": {
+        "clientId": { "label": "GitHub 客户端 ID", "description": "需要与客户端密钥同时配置。" },
+        "clientSecret": { "label": "GitHub 客户端密钥", "description": "OAuth 客户端凭据。" }
+      },
+      "google": {
+        "clientId": { "label": "Google 客户端 ID", "description": "需要与客户端密钥同时配置。" },
+        "clientSecret": { "label": "Google 客户端密钥", "description": "OAuth 客户端凭据。" }
+      },
+      "rateLimit": {
+        "windowSeconds": { "label": "限流窗口（秒）", "description": "登录与注册尝试的计数窗口。" },
+        "loginPerClient": { "label": "单客户端登录上限", "description": "每个窗口允许的尝试次数。" },
+        "loginGlobal": { "label": "全局登录上限", "description": "每个窗口允许的总尝试次数。" },
+        "registerPerClient": { "label": "单客户端注册上限", "description": "每个窗口允许的尝试次数。" },
+        "registerGlobal": { "label": "全局注册上限", "description": "每个窗口允许的总尝试次数。" },
+        "maxClients": { "label": "限流客户端容量", "description": "内存限流器最多保留的客户端数量。" },
+        "scryptMaxConcurrency": { "label": "Scrypt 最大并发数", "description": "限制高成本密码运算的并发数。" }
+      }
+    },
+    "email": {
+      "ingestSecret": { "label": "Worker 投递密钥", "description": "初始化后必填；重新生成后必须同步更新 Cloudflare Worker Secret。" }
+    },
+    "cleanup": {
+      "batchSize": { "label": "清理批大小", "description": "每次删除循环处理的行数。" },
+      "maxRows": { "label": "单次清理上限", "description": "防止一次维护任务运行过久。" },
+      "lockStaleMinutes": { "label": "清理锁期限（分钟）", "description": "仅用于判断维护锁是否已被遗弃。" },
+      "permanentMessageRetentionDays": { "label": "永久邮箱邮件保留天数", "description": "0 表示永久邮箱中的邮件不按年龄清理。" }
+    },
+    "scheduler": {
+      "cleanupIntervalSeconds": { "label": "清理间隔（秒）", "description": "由 scheduler profile 动态读取。" },
+      "backupIntervalSeconds": { "label": "备份间隔（秒）", "description": "由 scheduler profile 动态读取。" },
+      "backupOnStart": { "label": "启动时立即备份", "description": "调度器启动时创建一个恢复点。" }
+    },
+    "monitor": {
+      "intervalSeconds": { "label": "监控间隔（秒）", "description": "monitoring profile 的检查周期。" },
+      "healthcheckUrl": { "label": "健康检查 URL", "description": "留空时使用当前服务的默认端点。" },
+      "diskPath": { "label": "磁盘监控路径", "description": "留空时按当前数据库驱动选择默认数据路径。" },
+      "accessLog": { "label": "访问日志路径", "description": "可选，用于统计 HTTP 5xx 与投递失败。" },
+      "minFreePercent": { "label": "最小剩余百分比", "description": "低于阈值时告警；0 表示关闭。" },
+      "minFreeGb": { "label": "最小剩余空间（GiB）", "description": "低于阈值时告警；0 表示关闭。" },
+      "maxWalMb": { "label": "最大 WAL（MiB）", "description": "超过阈值时告警；0 表示关闭。" },
+      "maxPostgresDatabaseGb": { "label": "最大 PostgreSQL 数据库大小（GiB）", "description": "超过阈值时告警；0 表示关闭。" },
+      "windowMinutes": { "label": "日志统计窗口（分钟）", "description": "HTTP 与投递失败的计数窗口。" },
+      "maxHttp5xx": { "label": "窗口内最大 HTTP 5xx 数", "description": "超过此数量时告警；0 表示关闭。" },
+      "maxIngestFailures": { "label": "窗口内最大投递失败数", "description": "超过此数量时告警；0 表示关闭。" },
+      "alertWebhookUrl": { "label": "告警 Webhook URL", "description": "可选的外部告警目标。" },
+      "alertBearerToken": { "label": "告警 Bearer Token", "description": "发送告警时附带的密钥。" }
+    },
+    "offsite": {
+      "remote": { "label": "Rclone 远端", "description": "例如 remote:moemail；留空时关闭异地同步。" },
+      "intervalSeconds": { "label": "异地同步间隔（秒）", "description": "由 offsite profile 动态读取。" },
+      "rcloneBin": { "label": "Rclone 可执行文件", "description": "容器内默认为 rclone。" },
+      "rcloneConfigContent": { "label": "Rclone 配置内容", "description": "完整的敏感配置，运行时会写入私有临时文件。" }
+    }
+  }
+}

@@ -14,6 +14,20 @@ interface BufferedEmail {
   key: string
 }
 
+class IngestRejection extends Error {
+  constructor(
+    readonly reason: string,
+    readonly status: number,
+    readonly retryable: boolean,
+  ) {
+    super(reason)
+    this.name = "IngestRejection"
+  }
+}
+
+const INGEST_REJECTION_STATUSES = new Set([400, 401, 403, 404, 409, 413, 415, 422, 429])
+const PROTOCOL_CODE_PATTERN = /^(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*)$/u
+
 function positiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number.parseInt(value || "", 10)
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
@@ -23,7 +37,7 @@ function getIngestUrl(value: string) {
   const url = new URL(value)
 
   if (url.protocol !== "https:") {
-    throw new Error("EMAIL_INGEST_URL must use HTTPS")
+    throw new Error("EMAIL_INGEST_URL_HTTPS_REQUIRED")
   }
 
   return url.toString()
@@ -32,25 +46,33 @@ function getIngestUrl(value: string) {
 const worker = {
   async email(message: ForwardableEmailMessage, env: EmailReceiverEnv): Promise<void> {
     if (!env.EMAIL_INGEST_URL || !env.EMAIL_INGEST_SECRET) {
-      throw new Error("Email ingestion is not configured")
+      throw new Error("EMAIL_INGEST_NOT_CONFIGURED")
     }
 
     if (message.rawSize > MAX_RAW_EMAIL_SIZE) {
-      message.setReject("Message too large")
+      message.setReject("MESSAGE_TOO_LARGE")
       return
     }
 
     if (env.EMAIL_DELIVERY_MODE !== "queue") {
-      await forwardEmail(env, message.raw, {
-        envelopeFrom: message.from,
-        envelopeTo: message.to,
-        rawSize: message.rawSize,
-      })
+      try {
+        await forwardEmail(env, message.raw, {
+          envelopeFrom: message.from,
+          envelopeTo: message.to,
+          rawSize: message.rawSize,
+        })
+      } catch (error) {
+        if (error instanceof IngestRejection) {
+          message.setReject(error.reason)
+          return
+        }
+        throw error
+      }
       return
     }
 
     if (!env.EMAIL_BUFFER || !env.EMAIL_DELIVERY_QUEUE) {
-      throw new Error("Queue delivery requires EMAIL_BUFFER and EMAIL_DELIVERY_QUEUE bindings")
+      throw new Error("EMAIL_QUEUE_BINDINGS_REQUIRED")
     }
 
     const key = `pending/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${crypto.randomUUID()}.eml`
@@ -64,7 +86,7 @@ const worker = {
     })
     await env.EMAIL_DELIVERY_QUEUE.send({ key })
 
-    console.log("Email buffered for delivery", {
+    console.log("email.buffered", {
       key,
       recipient: message.to,
       rawSize: message.rawSize,
@@ -73,7 +95,7 @@ const worker = {
 
   async queue(batch: MessageBatch<BufferedEmail>, env: EmailReceiverEnv): Promise<void> {
     if (!env.EMAIL_BUFFER) {
-      throw new Error("Queue delivery requires the EMAIL_BUFFER binding")
+      throw new Error("EMAIL_BUFFER_BINDING_REQUIRED")
     }
 
     for (const queuedMessage of batch.messages) {
@@ -86,7 +108,7 @@ const worker = {
 
         const metadata = object.customMetadata || {}
         if (!metadata.envelopeFrom || !metadata.envelopeTo) {
-          throw new Error(`Buffered email ${object.key} is missing envelope metadata`)
+          throw new Error("BUFFERED_EMAIL_METADATA_MISSING")
         }
 
         await forwardEmail(env, object.body, {
@@ -97,28 +119,14 @@ const worker = {
         await env.EMAIL_BUFFER.delete(object.key)
         queuedMessage.ack()
       } catch (error) {
-        console.error("Queued email delivery failed", {
+        console.error("email.queue_delivery_failed", {
           key: queuedMessage.body.key,
           attempt: queuedMessage.attempts,
           error: error instanceof Error ? error.message : String(error),
         })
         const maximumAttempts = positiveInteger(env.EMAIL_MAX_DELIVERY_ATTEMPTS, 12)
-        if (queuedMessage.attempts >= maximumAttempts) {
-          const object = await env.EMAIL_BUFFER.get(queuedMessage.body.key)
-          if (object) {
-            const failedKey = object.key.replace(/^pending\//, "failed/")
-            await env.EMAIL_BUFFER.put(failedKey, object.body, {
-              httpMetadata: { contentType: "message/rfc822" },
-              customMetadata: {
-                ...object.customMetadata,
-                failedAt: new Date().toISOString(),
-                failure: error instanceof Error
-                  ? error.message.slice(0, 512)
-                  : String(error).slice(0, 512),
-              },
-            })
-            await env.EMAIL_BUFFER.delete(object.key)
-          }
+        if ((error instanceof IngestRejection && !error.retryable) || queuedMessage.attempts >= maximumAttempts) {
+          await moveToFailed(env.EMAIL_BUFFER, queuedMessage.body.key, error)
           queuedMessage.ack()
           continue
         }
@@ -134,7 +142,7 @@ const worker = {
 
     const failed = await env.EMAIL_BUFFER.list({ prefix: "failed/", limit: 10 })
     if (failed.objects.length > 0) {
-      console.error("Email delivery dead-letter objects require attention", {
+      console.error("email.dead_letter_attention_required", {
         countAtLeast: failed.objects.length,
         keys: failed.objects.map(object => object.key),
       })
@@ -160,8 +168,37 @@ const worker = {
       cursor = pending.truncated ? pending.cursor : undefined
     } while (cursor && requeued < 2_000)
 
-    if (requeued > 0) console.log("Re-enqueued buffered emails", { count: requeued })
+    if (requeued > 0) console.log("email.buffer_requeued", { count: requeued })
   },
+}
+
+async function moveToFailed(buffer: R2Bucket, key: string, error: unknown) {
+  const object = await buffer.get(key)
+  if (!object) return
+  const failedKey = object.key.replace(/^pending\//, "failed/")
+  await buffer.put(failedKey, object.body, {
+    httpMetadata: { contentType: "message/rfc822" },
+    customMetadata: {
+      ...object.customMetadata,
+      failedAt: new Date().toISOString(),
+      failure: error instanceof Error
+        ? error.message.slice(0, 512)
+        : String(error).slice(0, 512),
+    },
+  })
+  await buffer.delete(object.key)
+}
+
+async function rejectionReason(response: Response) {
+  try {
+    const body = await response.clone().json() as { code?: unknown; reason?: unknown }
+    for (const value of [body.code, body.reason]) {
+      if (typeof value === "string" && PROTOCOL_CODE_PATTERN.test(value)) return value
+    }
+  } catch {
+    // A permanent HTTP status remains authoritative even without a JSON body.
+  }
+  return `EMAIL_INGEST_HTTP_${response.status}`
 }
 
 async function forwardEmail(
@@ -191,10 +228,16 @@ async function forwardEmail(
     })
 
     if (!response.ok) {
-      throw new Error(`Email ingestion failed with HTTP ${response.status}`)
+      if (INGEST_REJECTION_STATUSES.has(response.status)) {
+        const reason = await rejectionReason(response)
+        const retryable = response.status === 429
+          && !reason.endsWith("_MAILBOX_LIFETIME_QUOTA_EXCEEDED")
+        throw new IngestRejection(reason, response.status, retryable)
+      }
+      throw new Error(`EMAIL_INGEST_HTTP_${response.status}`)
     }
 
-    console.log("Email ingestion completed", {
+    console.log("email.ingestion_completed", {
       recipient: envelope.envelopeTo,
       rawSize: envelope.rawSize,
       status: response.status,

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useTranslations } from "next-intl"
+import { useCallback, useEffect, useState } from "react"
+import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Key, Plus, Loader2, Copy, Trash2, ChevronDown, ChevronUp } from "lucide-react"
@@ -22,6 +22,8 @@ import { useCopy } from "@/hooks/use-copy"
 import { useRolePermission } from "@/hooks/use-role-permission"
 import { PERMISSIONS } from "@/lib/permissions"
 import { useConfig } from "@/hooks/use-config"
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 
 type ApiKey = {
   id: string
@@ -33,10 +35,13 @@ type ApiKey = {
 }
 
 export function ApiKeyPanel() {
+  const format = useFormatter()
   const t = useTranslations("profile.apiKey")
   const tCommon = useTranslations("common.actions")
+  const tFormat = useTranslations("common.format")
   const tNoPermission = useTranslations("emails.noPermission")
   const tMessages = useTranslations("emails.messages")
+  const tApi = useTranslations("api")
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -49,29 +54,29 @@ export function ApiKeyPanel() {
   const { checkPermission } = useRolePermission()
   const canManageApiKey = checkPermission(PERMISSIONS.MANAGE_API_KEY)
 
-  const fetchApiKeys = async () => {
+  const fetchApiKeys = useCallback(async () => {
     try {
       const res = await fetch("/api/api-keys")
-      if (!res.ok) throw new Error(t("createFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "API_KEYS_READ_FAILED") as never))
       const data = await res.json() as { apiKeys: ApiKey[] }
       setApiKeys(data.apiKeys)
     } catch (error) {
       console.error(error)
       toast({
         title: t("createFailed"),
-        description: t("createFailed"),
+        description: localizedUiErrorMessage(error, t("createFailed")),
         variant: "destructive"
       })
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [t, tApi, toast])
 
   useEffect(() => {
     if (canManageApiKey) {
       fetchApiKeys()
     }
-  }, [canManageApiKey])
+  }, [canManageApiKey, fetchApiKeys])
 
   const { config } = useConfig()
 
@@ -86,15 +91,16 @@ export function ApiKeyPanel() {
         body: JSON.stringify({ name: newKeyName })
       })
 
-      if (!res.ok) throw new Error(t("createFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "API_KEY_CREATE_FAILED") as never))
 
       const data = await res.json() as { key: string }
       setNewKey(data.key)
       fetchApiKeys()
     } catch (error) {
+      console.error(error)
       toast({
         title: t("createFailed"),
-        description: error instanceof Error ? error.message : t("createFailed"),
+        description: localizedUiErrorMessage(error, t("createFailed")),
         variant: "destructive"
       })
       setCreateDialogOpen(false)
@@ -117,7 +123,7 @@ export function ApiKeyPanel() {
         body: JSON.stringify({ enabled })
       })
 
-      if (!res.ok) throw new Error(t("createFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "API_KEY_UPDATE_FAILED") as never))
 
       setApiKeys(keys =>
         keys.map(key =>
@@ -128,7 +134,7 @@ export function ApiKeyPanel() {
       console.error(error)
       toast({
         title: t("createFailed"),
-        description: t("createFailed"),
+        description: localizedUiErrorMessage(error, t("createFailed")),
         variant: "destructive"
       })
     }
@@ -140,7 +146,7 @@ export function ApiKeyPanel() {
         method: "DELETE"
       })
 
-      if (!res.ok) throw new Error(t("deleteFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "API_KEY_DELETE_FAILED") as never))
 
       setApiKeys(keys => keys.filter(key => key.id !== id))
       toast({
@@ -151,7 +157,7 @@ export function ApiKeyPanel() {
       console.error(error)
       toast({
         title: t("deleteFailed"),
-        description: t("deleteFailed"),
+        description: localizedUiErrorMessage(error, t("deleteFailed")),
         variant: "destructive"
       })
     }
@@ -254,7 +260,7 @@ export function ApiKeyPanel() {
             <p className="mt-2">{tNoPermission("contactAdmin")}</p>
             {
               config?.adminContact && (
-                <p className="mt-2">{tNoPermission("adminContact")}: {config.adminContact}</p>
+                <p className="mt-2">{tNoPermission("adminContact", { contact: config.adminContact })}</p>
               )
             }
           </div>
@@ -291,7 +297,10 @@ export function ApiKeyPanel() {
                     <div className="space-y-1">
                       <div className="font-medium">{key.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {t("createdAt")}: {new Date(key.createdAt).toLocaleString()}
+                        {tFormat("labelValue", {
+                          label: t("createdAt"),
+                          value: format.dateTime(new Date(key.createdAt)),
+                        })}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -587,4 +596,4 @@ export function ApiKeyPanel() {
       }
     </div>
   )
-} 
+}

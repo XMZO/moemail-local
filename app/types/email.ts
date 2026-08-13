@@ -1,11 +1,11 @@
 export interface ExpiryOption {
-  label: string
+  key: "oneHour" | "oneDay" | "threeDays" | "permanent"
   value: number
 }
 
 export const EXPIRY_OPTIONS: ExpiryOption[] = [
-  { label: '1小时', value: 1000 * 60 * 60 },
-  { label: '24小时', value: 1000 * 60 * 60 * 24 },
-  { label: '3天', value: 1000 * 60 * 60 * 24 * 3 },
-  { label: '永久', value: 0 }
+  { key: "oneHour", value: 1000 * 60 * 60 },
+  { key: "oneDay", value: 1000 * 60 * 60 * 24 },
+  { key: "threeDays", value: 1000 * 60 * 60 * 24 * 3 },
+  { key: "permanent", value: 0 },
 ]

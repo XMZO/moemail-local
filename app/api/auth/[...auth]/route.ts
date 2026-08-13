@@ -4,12 +4,12 @@ import {
   consumeAuthRateLimit,
 } from "@/lib/auth-abuse-guard"
 import { isSetupCompleted } from "@/lib/config/runtime"
+import { apiError } from "@/lib/api-response"
 
 function setupRequired() {
-  return Response.json(
-    { error: "MoeMail 尚未完成初始化", code: "SETUP_REQUIRED" },
-    { status: 503, headers: { "Cache-Control": "no-store" } },
-  )
+  return apiError("SETUP_REQUIRED", 503, {
+    headers: { "Cache-Control": "no-store" },
+  })
 }
 
 export async function GET(request: NextRequest) {
@@ -26,18 +26,16 @@ export async function POST(request: NextRequest) {
     const rateLimit = consumeAuthRateLimit("login", request.headers)
     if (!rateLimit.allowed) {
       const errorUrl = new URL("/api/auth/error", request.url)
-      errorUrl.searchParams.set("error", "登录请求过于频繁，请稍后重试")
+      errorUrl.searchParams.set("error", "AUTH_RATE_LIMITED")
       errorUrl.searchParams.set("code", "rate_limited")
 
-      return Response.json(
-        {
-          error: "登录请求过于频繁，请稍后重试",
-          code: "AUTH_RATE_LIMITED",
+      return apiError("AUTH_RATE_LIMITED", 429, {
+        headers: authRateLimitHeaders(rateLimit),
+        details: {
           retryAfter: rateLimit.retryAfterSeconds,
           url: errorUrl.toString(),
         },
-        { status: 429, headers: authRateLimitHeaders(rateLimit) },
-      )
+      })
     }
   }
 

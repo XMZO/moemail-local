@@ -4,6 +4,7 @@ import { Mail, Calendar, RefreshCw } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useThrottle } from "@/hooks/use-throttle"
 import { Button } from "@/components/ui/button"
+import { useFormatter, useTranslations } from "next-intl"
 
 interface Message {
   id: string
@@ -28,9 +29,9 @@ interface SharedMessageListProps {
   t: {
     received: string
     noMessages: string
-    messageCount: string
     loading: string
     loadingMore: string
+    noSubject: string
   }
 }
 
@@ -47,6 +48,8 @@ export function SharedMessageList({
   total = 0,
   t,
 }: SharedMessageListProps) {
+  const format = useFormatter()
+  const tEmails = useTranslations("emails")
   const handleScroll = useThrottle((e: React.UIEvent<HTMLDivElement>) => {
     if (loadingMore || !hasMore || !onLoadMore) return
 
@@ -72,7 +75,7 @@ export function SharedMessageList({
           <RefreshCw className="h-4 w-4" />
         </Button>
         <span className="text-xs text-gray-500">
-          {total > 0 ? `${total} ${t.messageCount}` : t.noMessages}
+          {total > 0 ? tEmails("messages.messageCount", { count: total }) : t.noMessages}
         </span>
       </div>
 
@@ -97,7 +100,7 @@ export function SharedMessageList({
                   <Mail className="w-4 h-4 text-primary/60 mt-1" />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-sm truncate">
-                      {message.subject}
+                      {message.subject || t.noSubject}
                     </p>
                     <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
                       <span className="truncate">
@@ -105,9 +108,7 @@ export function SharedMessageList({
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(
-                          message.received_at || message.sent_at || 0
-                        ).toLocaleString()}
+                        {format.dateTime(new Date(message.received_at || message.sent_at || 0))}
                       </span>
                     </div>
                   </div>

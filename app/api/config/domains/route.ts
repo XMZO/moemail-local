@@ -10,6 +10,7 @@ import {
 } from "@/lib/domain-policies"
 import { testImapConnection } from "@/lib/imap-inbound"
 import { testSmtpConnection } from "@/lib/outbound-mail"
+import { apiError, apiIssues } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -17,10 +18,7 @@ export const dynamic = "force-dynamic"
 const headers = { "Cache-Control": "private, no-store" }
 
 function validationIssues(error: z.ZodError) {
-  return error.issues.map(issue => ({
-    path: issue.path.join("."),
-    message: issue.message,
-  }))
+  return apiIssues(error.issues.map(issue => ({ path: issue.path.join(".") })))
 }
 
 const connectionTestSchema = z.discriminatedUnion("kind", [
@@ -43,8 +41,8 @@ export async function GET(request: Request) {
   try {
     return Response.json({ policies: await getDomainPolicies() }, { headers })
   } catch (error) {
-    console.error("Failed to load domain policies:", error)
-    return Response.json({ error: "读取域名策略失败" }, { status: 500, headers })
+    console.error("domain_policy.read_failed", error)
+    return apiError("DOMAIN_POLICIES_READ_FAILED", 500, { headers })
   }
 }
 
@@ -58,7 +56,7 @@ export async function PUT(request: Request) {
   try {
     payload = await request.json()
   } catch {
-    return Response.json({ error: "请求格式无效", issues: [] }, { status: 400, headers })
+    return apiError("INVALID_JSON", 400, { headers, details: { issues: [] } })
   }
 
   const input = typeof payload === "object" && payload !== null && !Array.isArray(payload)
@@ -66,18 +64,18 @@ export async function PUT(request: Request) {
     : undefined
   const parsed = domainPoliciesSchema.safeParse(input)
   if (!parsed.success) {
-    return Response.json({
-      error: "域名策略校验未通过",
-      issues: validationIssues(parsed.error),
-    }, { status: 400, headers })
+    return apiError("DOMAIN_POLICIES_INVALID", 400, {
+      headers,
+      details: { issues: validationIssues(parsed.error) },
+    })
   }
 
   try {
     const policies = await saveDomainPolicies(parsed.data)
     return Response.json({ ok: true, policies }, { headers })
   } catch (error) {
-    console.error("Failed to save domain policies:", error)
-    return Response.json({ error: "保存域名策略失败" }, { status: 500, headers })
+    console.error("domain_policy.save_failed", error)
+    return apiError("DOMAIN_POLICIES_SAVE_FAILED", 500, { headers })
   }
 }
 
@@ -91,14 +89,14 @@ export async function POST(request: Request) {
   try {
     payload = await request.json()
   } catch {
-    return Response.json({ error: "请求格式无效" }, { status: 400, headers })
+    return apiError("INVALID_JSON", 400, { headers })
   }
   const parsed = connectionTestSchema.safeParse(payload)
   if (!parsed.success) {
-    return Response.json({
-      error: "邮件服务器配置校验未通过",
-      issues: validationIssues(parsed.error),
-    }, { status: 400, headers })
+    return apiError("MAIL_SERVER_CONFIG_INVALID", 400, {
+      headers,
+      details: { issues: validationIssues(parsed.error) },
+    })
   }
 
   try {
@@ -108,16 +106,17 @@ export async function POST(request: Request) {
     return Response.json(result, { headers })
   } catch (error) {
     const policy = parsed.data.policy
-    console.error("Mail server connection test failed", {
+    console.error("domain_policy.connection_test_failed", {
       kind: parsed.data.kind,
       message: safeProviderError(error, [
         policy.username ?? "",
         policy.password ?? "",
       ]),
     })
-    return Response.json(
-      { error: `连接 ${parsed.data.kind.toUpperCase()} 失败，请检查服务器、端口、加密方式和凭据` },
-      { status: 502, headers },
+    return apiError(
+      parsed.data.kind === "imap" ? "IMAP_CONNECTION_FAILED" : "SMTP_CONNECTION_FAILED",
+      502,
+      { headers },
     )
   }
 }

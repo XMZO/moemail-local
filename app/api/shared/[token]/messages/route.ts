@@ -4,12 +4,12 @@ import { eq, and, lt, or, sql, ne, isNull } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
 import { setupRequiredResponse } from "@/lib/request-auth"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
 const PAGE_SIZE = 20
 
-// 通过分享token获取邮箱的消息列表
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -24,7 +24,6 @@ export async function GET(
   const includeTotal = searchParams.get('includeTotal') === '1'
 
   try {
-    // 验证分享token
     const share = await db.query.emailShares.findFirst({
       where: eq(emailShares.token, token),
       with: {
@@ -33,31 +32,19 @@ export async function GET(
     })
 
     if (!share) {
-      return NextResponse.json(
-        { error: "Share link not found or expired" },
-        { status: 404 }
-      )
+      return apiError("SHARE_NOT_FOUND", 404)
     }
 
-    // 检查分享是否过期
     if (share.expiresAt && share.expiresAt < new Date()) {
-      return NextResponse.json(
-        { error: "Share link has expired" },
-        { status: 410 }
-      )
+      return apiError("SHARE_EXPIRED", 410)
     }
 
-    // 检查邮箱是否过期
     if (share.email.expiresAt < new Date()) {
-      return NextResponse.json(
-        { error: "Email has expired" },
-        { status: 410 }
-      )
+      return apiError("MAILBOX_EXPIRED", 410)
     }
 
     const emailId = share.email.id
 
-    // 只显示接收的邮件，不显示发送的邮件
     const baseConditions = and(
       eq(messages.emailId, emailId),
       or(
@@ -127,11 +114,8 @@ export async function GET(
       ...(totalCount === undefined ? {} : { total: totalCount })
     })
   } catch (error) {
-    console.error("Failed to fetch shared messages:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch messages" },
-      { status: 500 }
-    )
+    console.error("shared_mailbox.messages_read_failed", error)
+    return apiError("MESSAGES_READ_FAILED", 500)
   }
 }
 

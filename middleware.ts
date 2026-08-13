@@ -22,7 +22,13 @@ export function middleware(request: Request) {
     return NextResponse.redirect(redirectURL)
   }
 
-  return NextResponse.next()
+  const requestHeaders = new Headers(request.headers)
+  if (url.searchParams.get("safe-appearance") === "1") {
+    requestHeaders.set("x-moemail-safe-appearance", "1")
+  } else {
+    requestHeaders.delete("x-moemail-safe-appearance")
+  }
+  return NextResponse.next({ request: { headers: requestHeaders } })
 }
 
 function resolvePreferredLocale(cookieLocale: string | undefined, acceptLanguageHeader: string | null): Locale | null {

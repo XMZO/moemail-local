@@ -1,8 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { nanoid } from "nanoid"
+import { useFormatter, useTranslations } from "next-intl"
 import { parse, stringify } from "yaml"
-import { AlertTriangle, CheckCircle2, FileCog, RefreshCw, RotateCcw, Save } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Dices, Eye, EyeOff, FileCog, RefreshCw, RotateCcw, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,14 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 import {
   runtimeConfigFields,
-  runtimeGroupLabels,
   runtimeGroupOrder,
   type RuntimeFieldMetadata,
 } from "./runtime-config-fields"
 
-interface ConfigIssue { path: string; message: string }
+interface ConfigIssue { path: string; code?: string }
 interface ConfigStatus {
   fileExists: boolean
   loadedFromFile: boolean
@@ -75,14 +77,25 @@ function RuntimeField({
   disabled: boolean
   onChange: (value: unknown) => void
 }) {
+  const t = useTranslations("runtime")
+  const [secretVisible, setSecretVisible] = useState(false)
   const kind = metadata.kind ?? (typeof defaultValue === "boolean" ? "boolean" : typeof defaultValue === "number" ? "number" : "text")
   const changed = JSON.stringify(value) !== JSON.stringify(defaultValue)
+  const requiredMissing = metadata.required && (value === null || value === undefined || String(value).trim() === "")
+  const canRestoreDefault = kind !== "secret"
+  const canGenerateSecret = kind === "secret" && metadata.secretAction === "generate"
+  const label = t(`fields.${path}.label` as never)
+  const description = t(`fields.${path}.description` as never)
 
   return (
     <div className="rounded-md border bg-background/60 p-3">
       <div className="mb-2 flex items-start justify-between gap-2">
-        <div><Label className="text-sm">{metadata.label}</Label><p className="mt-0.5 text-xs leading-4 text-muted-foreground">{metadata.description}</p></div>
-        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={disabled || !changed} onClick={() => onChange(defaultValue)} title="恢复代码默认值"><RotateCcw className="h-3.5 w-3.5" /></Button>
+        <div><Label className="text-sm">{label}{metadata.required && <span className="ml-0.5 text-destructive">*</span>}</Label><p className="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p></div>
+        {canGenerateSecret ? (
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={disabled} onClick={() => onChange(nanoid(43))} title={t("actions.generate")} aria-label={t("actions.generateFor", { label })}><Dices className="h-3.5 w-3.5" /></Button>
+        ) : canRestoreDefault ? (
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" disabled={disabled || !changed} onClick={() => onChange(defaultValue)} title={t("actions.restoreDefault")}><RotateCcw className="h-3.5 w-3.5" /></Button>
+        ) : null}
       </div>
       {kind === "boolean" ? (
         <div className="flex h-9 items-center justify-between rounded border px-3"><code className="text-xs">{path}</code><Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={disabled} /></div>
@@ -90,23 +103,50 @@ function RuntimeField({
         <Select value={String(value)} onValueChange={onChange} disabled={disabled}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{metadata.options?.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>
       ) : kind === "textarea" ? (
         <Textarea value={value == null ? "" : String(value)} onChange={event => onChange(event.target.value || null)} disabled={disabled} spellCheck={false} className="min-h-28 font-mono text-xs" />
+      ) : kind === "secret" ? (
+        <div className="relative">
+          <Input
+            type={secretVisible ? "text" : "password"}
+            value={value == null ? "" : String(value)}
+            onChange={event => onChange(event.target.value || (defaultValue === null ? null : ""))}
+            disabled={disabled}
+            spellCheck={false}
+            autoComplete="new-password"
+            aria-invalid={requiredMissing}
+            className="pr-10 font-mono"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
+            disabled={disabled}
+            onClick={() => setSecretVisible(visible => !visible)}
+            title={secretVisible ? t("actions.hide", { label }) : t("actions.show", { label })}
+            aria-label={secretVisible ? t("actions.hide", { label }) : t("actions.show", { label })}
+          >
+            {secretVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
       ) : (
         <Input
-          type={kind === "secret" ? "password" : kind === "number" ? "number" : "text"}
+          type={kind === "number" ? "number" : "text"}
           value={value == null ? "" : String(value)}
           onChange={event => onChange(kind === "number" ? Number(event.target.value) : event.target.value || (defaultValue === null ? null : ""))}
           disabled={disabled}
           spellCheck={false}
-          autoComplete={kind === "secret" ? "new-password" : undefined}
-          className={kind === "secret" ? "font-mono" : undefined}
         />
       )}
+      {requiredMissing && <p className="mt-1.5 text-xs text-destructive">{t("required")}</p>}
       <code className="mt-1.5 block truncate text-[10px] text-muted-foreground" title={path}>{path}</code>
     </div>
   )
 }
 
 export function RuntimeConfigPanel() {
+  const format = useFormatter()
+  const t = useTranslations("runtime")
+  const tApi = useTranslations("api")
   const [yaml, setYaml] = useState("")
   const [config, setConfig] = useState<ConfigObject | null>(null)
   const [defaults, setDefaults] = useState<ConfigObject | null>(null)
@@ -137,12 +177,17 @@ export function RuntimeConfigPanel() {
     try {
       const response = await fetch("/api/runtime-config", { cache: "no-store" })
       const body = await response.json() as RuntimeConfigResponse
-      if (!response.ok) throw new Error(body.error || "加载运行配置失败")
+      if (!response.ok) {
+        throw new LocalizedUiError(body.error && tApi.has(body.error as never)
+          ? tApi(body.error as never)
+          : t("errors.load"))
+      }
       applyResponse(body)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "加载运行配置失败")
+      console.error("runtime_config.load_failed", caught)
+      setError(localizedUiErrorMessage(caught, t("errors.load")))
     } finally { setLoading(false) }
-  }, [])
+  }, [t, tApi])
 
   useEffect(() => { void loadConfig() }, [loadConfig])
 
@@ -151,8 +196,24 @@ export function RuntimeConfigPanel() {
     fields: Object.entries(runtimeConfigFields).filter(([fieldPath]) => groupForPath(fieldPath) === group),
   })), [])
 
+  const missingRequiredFields = useMemo(() => config
+    ? Object.entries(runtimeConfigFields).filter(([fieldPath, metadata]) => {
+      if (!metadata.required) return false
+      const value = getPath(config, fieldPath)
+      return value === null || value === undefined || String(value).trim() === ""
+    })
+    : [], [config])
+  const formattedRequiredFields = format.list(
+    missingRequiredFields.map(([fieldPath]) => t(`fields.${fieldPath}.label` as never)),
+    { type: "unit" },
+  )
+
   const saveConfig = async () => {
     if (revision === null || !fingerprint || !config) return
+    if (mode === "visual" && missingRequiredFields.length > 0) {
+      setError(t("requiredSecrets", { fields: formattedRequiredFields }))
+      return
+    }
     setSaving(true); setError(""); setIssues([]); setConflict(false); setMessage("")
     try {
       const response = await fetch("/api/runtime-config", {
@@ -164,12 +225,15 @@ export function RuntimeConfigPanel() {
       if (!response.ok) {
         setConflict(response.status === 409)
         setIssues(body.issues ?? [])
-        throw new Error(body.error || "配置未应用")
+        throw new LocalizedUiError(body.error && tApi.has(body.error as never)
+          ? tApi(body.error as never)
+          : t("errors.save"))
       }
       applyResponse(body)
-      setMessage(body.restartRequired ? `配置已保存；${body.restartReason || "数据库类型变化需要重启"}` : "配置已保存并应用")
+      setMessage(body.restartRequired ? t("success.restart", { reason: t("success.driverRestart") }) : t("success.applied"))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "配置未应用")
+      console.error("runtime_config.save_failed", caught)
+      setError(localizedUiErrorMessage(caught, t("errors.save")))
     } finally { setSaving(false) }
   }
 
@@ -189,47 +253,49 @@ export function RuntimeConfigPanel() {
     try {
       const parsed = parse(yaml, { prettyErrors: false }) as unknown
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        throw new Error("配置顶层必须是键值对象")
+        throw new LocalizedUiError(t("errors.notObject"))
       }
       setConfig(parsed as ConfigObject)
       setMode("visual")
     } catch (caught) {
-      setError(`YAML 尚不能切换到视觉配置：${caught instanceof Error ? caught.message : "语法错误"}`)
+      console.error("runtime_config.yaml_parse_failed", caught)
+      setError(t("errors.yamlSwitch", { reason: t("errors.syntax") }))
     }
   }
 
   return (
     <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2"><FileCog className="h-5 w-5 text-primary" /><div><h2 className="font-semibold">运行配置</h2><p className="text-xs text-muted-foreground">视觉表单与 YAML 使用同一份配置、校验和指纹 CAS。</p></div></div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void loadConfig()} disabled={loading || saving}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />重新加载</Button>
+        <div className="flex items-center gap-2"><FileCog className="h-5 w-5 text-primary" /><div><h2 className="font-semibold">{t("title")}</h2><p className="text-xs text-muted-foreground">{t("description")}</p></div></div>
+        <Button type="button" variant="outline" size="sm" onClick={() => void loadConfig()} disabled={loading || saving}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />{t("reload")}</Button>
       </div>
 
-      <div className="mb-4 rounded-md border border-destructive/70 bg-destructive/10 p-3 text-sm"><div className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><div><p className="font-medium text-destructive">此面板包含明文密钥</p><p className="text-xs text-muted-foreground">不要截图或复制给无关人员。数据库探测失败时新配置不会生效。</p></div></div></div>
-      <div className="mb-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-[auto_1fr] sm:gap-x-3"><span>文件</span><code className="break-all text-foreground">{path || "加载中…"}</code><span>运行修订</span><code className="text-foreground">{revision ?? "-"}</code><span>状态</span><span className="text-foreground">{status?.loadedFromFile ? "已加载" : status?.fileExists ? "尚未应用" : "不存在"}</span></div>
-      {status?.restartRequired && <div className="mb-3 rounded border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">{status.restartRequired.reason}</div>}
-      {status?.lastError && <div className="mb-3 rounded border border-amber-500/60 bg-amber-500/10 p-3 text-sm"><p className="font-medium text-amber-700 dark:text-amber-300">最近一次热加载失败，仍使用上一份有效配置：</p><ul className="mt-1 space-y-1 text-xs">{status.lastError.issues.map((issue, index) => <li key={`${issue.path}-${index}`}><code>{issue.path}</code>: {issue.message}</li>)}</ul></div>}
-      {conflict && <div className="mb-3 rounded border border-destructive bg-destructive/10 p-3 text-sm text-destructive">配置已被其他窗口或文件编辑器更新，请重新加载后合并修改。</div>}
+      <div className="mb-4 rounded-md border border-destructive/70 bg-destructive/10 p-3 text-sm"><div className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><div><p className="font-medium text-destructive">{t("secretWarningTitle")}</p><p className="text-xs text-muted-foreground">{t("secretWarningDescription")}</p></div></div></div>
+      <div className="mb-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-[auto_1fr] sm:gap-x-3"><span>{t("file")}</span><code className="break-all text-foreground">{path || t("loading")}</code><span>{t("revision")}</span><code className="text-foreground">{revision ?? "-"}</code><span>{t("status")}</span><span className="text-foreground">{status?.loadedFromFile ? t("statusLoaded") : status?.fileExists ? t("statusPending") : t("statusMissing")}</span></div>
+      {status?.restartRequired && <div className="mb-3 rounded border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">{t("success.driverRestart")}</div>}
+      {status?.lastError && <div className="mb-3 rounded border border-amber-500/60 bg-amber-500/10 p-3 text-sm"><p className="font-medium text-amber-700 dark:text-amber-300">{t("lastError")}</p><ul className="mt-1 space-y-1 text-xs">{status.lastError.issues.map((issue, index) => <li key={`${issue.path}-${index}`}><code>{issue.path}</code></li>)}</ul></div>}
+      {conflict && <div className="mb-3 rounded border border-destructive bg-destructive/10 p-3 text-sm text-destructive">{t("conflict")}</div>}
       {error && <div className="mb-3 rounded border border-destructive bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
-      {issues.length > 0 && <div className="mb-3 rounded border border-destructive/70 p-3 text-sm"><p className="font-medium text-destructive">校验问题</p><ul className="mt-1 space-y-1 text-xs">{issues.map((issue, index) => <li key={`${issue.path}-${index}`}><code>{issue.path}</code>: {issue.message}</li>)}</ul></div>}
+      {issues.length > 0 && <div className="mb-3 rounded border border-destructive/70 p-3 text-sm"><p className="font-medium text-destructive">{t("validationIssues")}</p><ul className="mt-1 space-y-1 text-xs">{issues.map((issue, index) => <li key={`${issue.path}-${index}`}><code>{issue.path}</code></li>)}</ul></div>}
+      {mode === "visual" && missingRequiredFields.length > 0 && <div className="mb-3 rounded border border-destructive/70 bg-destructive/10 p-3 text-sm text-destructive">{t("requiredSecrets", { fields: formattedRequiredFields })}</div>}
       {message && <div className="mb-3 flex items-center gap-2 rounded border border-green-600/50 bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-300"><CheckCircle2 className="h-4 w-4" />{message}</div>}
 
       <Tabs value={mode} onValueChange={changeMode}>
-        <TabsList><TabsTrigger value="visual">视觉配置</TabsTrigger><TabsTrigger value="yaml">原始 YAML</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="visual">{t("visual")}</TabsTrigger><TabsTrigger value="yaml">{t("yaml")}</TabsTrigger></TabsList>
         <TabsContent value="visual" className="space-y-3 pt-1">
-          {config && defaults && groupedFields.map(({ group, fields }, groupIndex) => (
-            <details key={group} open={groupIndex < 4} className="rounded-md border bg-muted/20">
-              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold">{runtimeGroupLabels[group]} <span className="ml-1 text-xs font-normal text-muted-foreground">({fields.length})</span></summary>
+          {config && defaults && groupedFields.map(({ group, fields }) => (
+            <details key={group} className="rounded-md border bg-muted/20">
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold">{t(`groups.${group}` as never)} <span className="ml-1 text-xs font-normal text-muted-foreground">({fields.length})</span></summary>
               <div className="grid gap-3 border-t p-3 md:grid-cols-2 xl:grid-cols-3">
                 {fields.map(([fieldPath, metadata]) => <RuntimeField key={fieldPath} path={fieldPath} metadata={metadata} value={getPath(config, fieldPath)} defaultValue={getPath(defaults, fieldPath)} disabled={disabled} onChange={value => setConfig(current => current ? setPath(current, fieldPath, value) : current)} />)}
               </div>
             </details>
           ))}
         </TabsContent>
-        <TabsContent value="yaml"><Textarea value={yaml} onChange={event => setYaml(event.target.value)} disabled={disabled} aria-label="完整 YAML 运行配置" spellCheck={false} className="min-h-[34rem] resize-y whitespace-pre font-mono text-xs leading-5" /></TabsContent>
+        <TabsContent value="yaml"><Textarea value={yaml} onChange={event => setYaml(event.target.value)} disabled={disabled} aria-label={t("yamlAria")} spellCheck={false} className="min-h-[34rem] resize-y whitespace-pre font-mono text-xs leading-5" /></TabsContent>
       </Tabs>
 
-      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">外部编辑仍会自动校验并热加载；数据库类型变化由守护进程重启后生效。</p><Button onClick={() => void saveConfig()} disabled={disabled}><Save className="mr-1 h-4 w-4" />{saving ? "校验并保存中" : "保存并应用"}</Button></div>
+      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{t("externalEditHint")}</p><Button onClick={() => void saveConfig()} disabled={disabled || (mode === "visual" && missingRequiredFields.length > 0)}><Save className="mr-1 h-4 w-4" />{saving ? t("saving") : t("save")}</Button></div>
     </div>
   )
 }

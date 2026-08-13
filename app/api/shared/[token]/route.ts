@@ -3,10 +3,10 @@ import { emailShares } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { setupRequiredResponse } from "@/lib/request-auth"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
-// 通过分享token获取邮箱信息
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -18,7 +18,6 @@ export async function GET(
   const db = createDb()
 
   try {
-    // 查找分享记录
     const share = await db.query.emailShares.findFirst({
       where: eq(emailShares.token, token),
       with: {
@@ -27,26 +26,15 @@ export async function GET(
     })
 
     if (!share) {
-      return NextResponse.json(
-        { error: "Share link not found or expired" },
-        { status: 404 }
-      )
+      return apiError("SHARE_NOT_FOUND", 404)
     }
 
-    // 检查分享是否过期
     if (share.expiresAt && share.expiresAt < new Date()) {
-      return NextResponse.json(
-        { error: "Share link has expired" },
-        { status: 410 }
-      )
+      return apiError("SHARE_EXPIRED", 410)
     }
 
-    // 检查邮箱是否过期
     if (share.email.expiresAt < new Date()) {
-      return NextResponse.json(
-        { error: "Email has expired" },
-        { status: 410 }
-      )
+      return apiError("MAILBOX_EXPIRED", 410)
     }
 
     return NextResponse.json({
@@ -58,11 +46,8 @@ export async function GET(
       }
     })
   } catch (error) {
-    console.error("Failed to fetch shared email:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch shared email" },
-      { status: 500 }
-    )
+    console.error("shared_mailbox.read_failed", error)
+    return apiError("SHARED_MAILBOX_READ_FAILED", 500)
   }
 }
 

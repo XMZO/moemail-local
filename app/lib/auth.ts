@@ -2,7 +2,13 @@ import NextAuth, { CredentialsSignin } from "next-auth"
 import GitHub from "next-auth/providers/github"
 import Google from "next-auth/providers/google"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
-import { createDb, Db } from "./db"
+import {
+  createDb,
+  type Db,
+  getDatabaseDriver,
+  getPostgresPool,
+  getSqlite,
+} from "./db"
 import { accounts, users, roles, userRoles } from "./schema"
 import { and, eq } from "drizzle-orm"
 import { ROLES, Role } from "./permissions"
@@ -18,13 +24,6 @@ import { getConfig } from "./config/runtime"
 
 class AuthenticationTemporarilyUnavailableError extends CredentialsSignin {
   code = "temporarily_unavailable"
-}
-
-const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  [ROLES.EMPEROR]: "皇帝（网站所有者）",
-  [ROLES.DUKE]: "公爵（超级用户）",
-  [ROLES.KNIGHT]: "骑士（高级用户）",
-  [ROLES.CIVILIAN]: "平民（普通用户）",
 }
 
 const getDefaultRole = async (): Promise<Role> => {
@@ -50,7 +49,7 @@ async function findOrCreateRole(db: Db, roleName: Role) {
     const [newRole] = await db.insert(roles)
       .values({
         name: roleName,
-        description: ROLE_DESCRIPTIONS[roleName],
+        description: null,
       })
       .returning()
     role = newRole
@@ -59,15 +58,76 @@ async function findOrCreateRole(db: Db, roleName: Role) {
   return role
 }
 
-export async function assignRoleToUser(db: Db, userId: string, roleId: string) {
-  await db.delete(userRoles)
-    .where(eq(userRoles.userId, userId))
+export async function assignRoleToUser(
+  _db: Db,
+  userId: string,
+  roleId: string,
+  options: { preserveEmperor?: boolean; onlyIfUnassigned?: boolean } = {},
+) {
+  if (getDatabaseDriver() === "sqlite") {
+    return getSqlite().transaction(() => {
+      const target = getSqlite().prepare(`
+        SELECT id FROM user WHERE id = ? LIMIT 1
+      `).get(userId)
+      if (!target) throw new Error("USER_NOT_FOUND")
 
-  await db.insert(userRoles)
-    .values({
-      userId,
-      roleId,
-    })
+      const current = getSqlite().prepare(`
+        SELECT role.name
+        FROM user_role
+        INNER JOIN role ON role.id = user_role.role_id
+        WHERE user_role.user_id = ?
+      `).all(userId) as Array<{ name: string }>
+      if (options.onlyIfUnassigned && current.length > 0) return false
+      if (options.preserveEmperor && current.some(role => role.name === ROLES.EMPEROR)) {
+        throw new Error("EMPEROR_ROLE_IMMUTABLE")
+      }
+      getSqlite().prepare("DELETE FROM user_role WHERE user_id = ?").run(userId)
+      getSqlite().prepare(`
+        INSERT INTO user_role (user_id, role_id, created_at) VALUES (?, ?, ?)
+      `).run(userId, roleId, Date.now())
+      return true
+    }).immediate()
+  }
+
+  const client = await getPostgresPool().connect()
+  try {
+    await client.query("BEGIN")
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('moemail:init-emperor'))")
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [`moemail:user-role:${userId}`],
+    )
+    const target = await client.query(
+      `SELECT id FROM "user" WHERE id = $1 FOR UPDATE`,
+      [userId],
+    )
+    if (target.rowCount !== 1) throw new Error("USER_NOT_FOUND")
+
+    const current = await client.query<{ name: string }>(`
+      SELECT role.name
+      FROM user_role
+      INNER JOIN role ON role.id = user_role.role_id
+      WHERE user_role.user_id = $1
+    `, [userId])
+    if (options.onlyIfUnassigned && current.rows.length > 0) {
+      await client.query("COMMIT")
+      return false
+    }
+    if (options.preserveEmperor && current.rows.some(role => role.name === ROLES.EMPEROR)) {
+      throw new Error("EMPEROR_ROLE_IMMUTABLE")
+    }
+    await client.query("DELETE FROM user_role WHERE user_id = $1", [userId])
+    await client.query(`
+      INSERT INTO user_role (user_id, role_id, created_at) VALUES ($1, $2, NOW())
+    `, [userId, roleId])
+    await client.query("COMMIT")
+    return true
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 /** 只挂载配置文件里已填好 Client ID/Secret 的 OAuth 提供方。 */
@@ -104,6 +164,10 @@ export const {
   secret: getConfig().auth.secret ?? undefined,
   // 本地部署始终位于自有反向代理之后，回调地址由请求头推导。
   trustHost: true,
+  pages: {
+    signIn: "/login",
+    error: "/auth-error",
+  },
   adapter: DrizzleAdapter(createDb(), {
     usersTable: users,
     accountsTable: accounts,
@@ -111,14 +175,14 @@ export const {
   providers: [
     ...oauthProviders(),
     CredentialsProvider({
-      name: "Credentials",
+      name: "CREDENTIALS",
       credentials: {
-        username: { label: "用户名", type: "text", placeholder: "请输入用户名" },
-        password: { label: "密码", type: "password", placeholder: "请输入密码" },
+        username: { label: "USERNAME", type: "text", placeholder: "USERNAME" },
+        password: { label: "PASSWORD", type: "password", placeholder: "PASSWORD" },
       },
       async authorize(credentials) {
         if (!credentials) {
-          throw new Error("请输入用户名和密码")
+          throw new Error("CREDENTIALS_REQUIRED")
         }
 
         const { username, password, turnstileToken } = credentials as Record<string, string | undefined>
@@ -128,15 +192,15 @@ export const {
           parsedCredentials = authSchema.parse({ username, password, turnstileToken })
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (error) {
-          throw new Error("输入格式不正确")
+          throw new Error("INVALID_CREDENTIALS_INPUT")
         }
 
         const verification = await verifyTurnstileToken(parsedCredentials.turnstileToken)
         if (!verification.success) {
           if (verification.reason === "missing-token") {
-            throw new Error("请先完成安全验证")
+            throw new Error("TURNSTILE_REQUIRED")
           }
-          throw new Error("安全验证未通过")
+          throw new Error("TURNSTILE_FAILED")
         }
 
         const db = createDb()
@@ -146,11 +210,11 @@ export const {
         })
 
         if (!user) {
-          throw new Error("用户名或密码错误")
+          throw new Error("INVALID_CREDENTIALS")
         }
 
         if (!user.password) {
-          throw new Error("用户名或密码错误")
+          throw new Error("INVALID_CREDENTIALS")
         }
 
         let passwordVerification
@@ -166,7 +230,7 @@ export const {
           throw error
         }
         if (!passwordVerification.valid) {
-          throw new Error("用户名或密码错误")
+          throw new Error("INVALID_CREDENTIALS")
         }
 
         if (passwordVerification.needsRehash) {
@@ -176,7 +240,7 @@ export const {
               .set({ password: upgradedPassword })
               .where(and(eq(users.id, user.id), eq(users.password, user.password)))
           } catch (error) {
-            console.error("Failed to upgrade password hash:", error)
+            console.error("auth.password_hash_upgrade_failed", error)
           }
         }
 
@@ -205,9 +269,9 @@ export const {
 
         const defaultRole = await getDefaultRole()
         const role = await findOrCreateRole(db, defaultRole)
-        await assignRoleToUser(db, user.id, role.id)
+        await assignRoleToUser(db, user.id, role.id, { onlyIfUnassigned: true })
       } catch (error) {
-        console.error('Error assigning role:', error)
+        console.error("auth.role_assignment_failed", error)
       }
     },
   },
@@ -237,13 +301,11 @@ export const {
         if (!userRoleRecords.length) {
           const defaultRole = await getDefaultRole()
           const role = await findOrCreateRole(db, defaultRole)
-          await assignRoleToUser(db, session.user.id, role.id)
-          userRoleRecords = [{
-            userId: session.user.id,
-            roleId: role.id,
-            createdAt: new Date(),
-            role: role
-          }]
+          await assignRoleToUser(db, session.user.id, role.id, { onlyIfUnassigned: true })
+          userRoleRecords = await db.query.userRoles.findMany({
+            where: eq(userRoles.userId, session.user.id),
+            with: { role: true },
+          })
         }
 
         session.user.roles = userRoleRecords.map(ur => ({
@@ -256,6 +318,7 @@ export const {
           .filter(([, enabled]) => enabled)
           .map(([permission]) => permission)
         session.user.quotas = access.quotas
+        session.user.allowedDomains = access.allowedDomains
 
         const userAccounts = await db.query.accounts.findMany({
           where: eq(accounts.userId, session.user.id),
@@ -274,7 +337,7 @@ export const {
 
 export class UsernameAlreadyExistsError extends Error {
   constructor() {
-    super("用户名已存在")
+    super("USERNAME_ALREADY_EXISTS")
     this.name = "UsernameAlreadyExistsError"
   }
 }

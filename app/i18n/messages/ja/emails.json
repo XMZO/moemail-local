@@ -2,10 +2,10 @@
   "noPermission": {
     "title": "権限がありません",
     "description": "このページにアクセスする権限がありません。サイト管理者に連絡してください",
-    "adminContact": "管理者の連絡先",
+      "adminContact": "管理者の連絡先：{contact}",
     "backToHome": "ホームに戻る",
-    "needPermission": "需要公爵或更高权限才能管理 API Key",
-    "contactAdmin": "请联系网站管理员升级您的角色"
+    "needPermission": "API キーの管理には公爵以上の権限が必要です",
+    "contactAdmin": "ロールの昇格についてサイト管理者に連絡してください"
   },
   "layout": {
     "myEmails": "マイメールボックス",
@@ -44,19 +44,30 @@
     "create": "作成",
     "creating": "作成中...",
     "success": "メールボックスを作成しました",
-    "failed": "メールボックスの作成に失敗しました"
+    "failed": "メールボックスの作成に失敗しました",
+    "noAvailableDomains": "このアカウントで利用できるメールドメインがありません",
+    "invalidName": "1～64文字の英数字、ドット、アンダースコア、プラス記号、ハイフンを使用してください",
+    "domainDiscarded": "@ より前の名前だけを使用します。ドメインは別に選択してください",
+    "randomName": "ランダムなメールボックス名を生成"
   },
   "messages": {
     "received": "受信箱",
     "sent": "送信済み",
     "noMessages": "メールはまだありません",
-    "messageCount": "件のメール",
+    "messageCount": "メール {count} 件",
     "from": "差出人",
     "to": "宛先",
     "subject": "件名",
+    "noSubject": "（件名なし）",
     "date": "日付",
     "loading": "読み込み中...",
-    "loadingMore": "さらに読み込み中..."
+    "loadingMore": "さらに読み込み中...",
+    "quota": {
+      "receive": "受信残数",
+      "send": "送信残数",
+      "window": "期間内 {count}",
+      "lifetime": "通算 {count}"
+    }
   },
   "send": {
     "title": "メールを送信",
@@ -67,13 +78,23 @@
     "subjectPlaceholder": "メールの件名",
     "content": "内容",
     "contentPlaceholder": "メール内容（HTML 対応）",
+    "requiredFields": "必須項目を入力してください：{fields}",
     "send": "送信",
     "sending": "送信中...",
     "success": "メールを送信しました",
     "failed": "メールの送信に失敗しました",
     "dailyLimitReached": "1日の送信上限に達しました",
     "dailyLimit": "1日の上限: {count}/{max}",
-    "dailyLimitUnit": "通/日"
+    "dailyLimitUnit": "通/日",
+    "permissionDenied": "このメールボックスから送信する権限がありません",
+    "permissionCheckFailed": "送信権限の確認に失敗しました",
+    "formats": {
+      "text": "プレーンテキスト",
+      "html": "HTML"
+    },
+    "htmlPlaceholder": "HTML メール本文",
+    "htmlHelp": "HTML 断片または完全な文書を入力できます。断片は送信前に <html> を含む有効な文書へ自動的に包まれます。",
+    "textHelp": "プレーンテキストは安全にエスケープされ、テキスト版と互換 HTML 版の両方で送信されます。"
   },
   "messageView": {
     "loading": "メール詳細を読み込み中...",
@@ -114,7 +135,17 @@
     "deleteFailed": "削除に失敗しました",
     "createSuccess": "共有リンクを作成しました",
     "createFailed": "共有リンクの作成に失敗しました",
-    "shareButton": "共有"
+    "shareButton": "共有",
+    "custom": "カスタム",
+    "customValue": "カスタム期間",
+    "customUnit": "期間の単位",
+    "units": {
+      "minute": "分",
+      "hour": "時間",
+      "day": "日",
+      "week": "週間",
+      "month": "か月"
+    }
   },
   "shareMessage": {
     "title": "メールを共有",
@@ -144,7 +175,17 @@
     "deleteFailed": "削除に失敗しました",
     "createSuccess": "共有リンクを作成しました",
     "createFailed": "共有リンクの作成に失敗しました",
-    "shareButton": "メールを共有"
+    "shareButton": "メールを共有",
+    "custom": "カスタム",
+    "customValue": "カスタム期間",
+    "customUnit": "期間の単位",
+    "units": {
+      "minute": "分",
+      "hour": "時間",
+      "day": "日",
+      "week": "週間",
+      "month": "か月"
+    }
   },
   "shared": {
     "loading": "読み込み中...",

@@ -2,11 +2,35 @@
   "app": {
     "name": "MoeMail"
   },
+  "locales": {
+    "en": "英語",
+    "zh-CN": "簡體中文",
+    "zh-TW": "繁體中文",
+    "ja": "日語",
+    "ko": "韓語"
+  },
   "actions": {
     "ok": "確定",
     "cancel": "取消",
     "save": "儲存",
-    "delete": "刪除"
+    "delete": "刪除",
+    "close": "關閉",
+    "toggleTheme": "切換主題",
+    "switchLanguage": "切換語言",
+    "switchingLanguage": "正在切換語言",
+    "copy": "複製"
+  },
+  "format": {
+    "label": "{label}：",
+    "labelValue": "{label}：{value}",
+    "labelCodeValue": "{label}：<code>{value}</code>",
+    "identityRole": "{identity}（{role}）"
+  },
+  "feedback": {
+    "success": "成功",
+    "error": "錯誤",
+    "copied": "已複製到剪貼簿",
+    "copyFailed": "複製失敗"
   },
   "nav": {
     "home": "首頁",

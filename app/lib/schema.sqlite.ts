@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core"
+import { check, integer, sqliteTable, text, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core"
 import type { AdapterAccountType } from "next-auth/adapters"
 import { relations, sql } from "drizzle-orm"
 
@@ -69,6 +69,46 @@ export const messages = sqliteTable("message", {
 }, (table) => [
   index("message_email_id_idx").on(table.emailId),
   index("message_email_id_received_at_type_idx").on(table.emailId, table.receivedAt, table.type),
+])
+
+export const sendQuotaEvents = sqliteTable("send_quota_event", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .references(() => users.id, { onDelete: "set null" }),
+  quotaSubject: text("quota_subject").notNull(),
+  policyRole: text("policy_role", { enum: ["emperor", "duke", "knight", "civilian"] }).notNull(),
+  direction: text("direction", { enum: ["send", "receive"] }).notNull().default("send"),
+  senderDomain: text("sender_domain").notNull(),
+  mailboxAddress: text("mailbox_address").notNull().default(""),
+  status: text("status", { enum: ["reserved", "sent"] }).notNull().default("reserved"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  reservationExpiresAt: integer("reservation_expires_at", { mode: "timestamp_ms" }).notNull(),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+}, (table) => [
+  index("send_quota_event_subject_created_idx").on(table.quotaSubject, table.createdAt),
+  index("send_quota_event_subject_domain_created_idx").on(table.quotaSubject, table.senderDomain, table.createdAt),
+  index("send_quota_event_subject_direction_created_idx").on(table.quotaSubject, table.direction, table.createdAt),
+  index("send_quota_event_subject_direction_domain_created_idx").on(table.quotaSubject, table.direction, table.senderDomain, table.createdAt),
+  index("send_quota_event_user_direction_mailbox_created_idx").on(table.userId, table.direction, table.mailboxAddress, table.createdAt),
+  index("send_quota_event_user_created_idx").on(table.userId, table.createdAt),
+  index("send_quota_event_role_created_idx").on(table.policyRole, table.createdAt),
+  check("send_quota_event_status_check", sql`${table.status} IN ('reserved', 'sent')`),
+  check("send_quota_event_direction_check", sql`${table.direction} IN ('send', 'receive')`),
+  check("send_quota_event_role_check", sql`${table.policyRole} IN ('emperor', 'duke', 'knight', 'civilian')`),
+])
+
+export const mailboxNameBlocks = sqliteTable("mailbox_name_block", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  scopeKey: text("scope_key").notNull(),
+  localPart: text("local_part").notNull(),
+  domain: text("domain").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("mailbox_name_block_scope_unique").on(table.scopeKey, table.localPart, table.domain),
+  index("mailbox_name_block_lookup_idx").on(table.localPart, table.domain, table.scopeKey),
 ])
 
 export const webhooks = sqliteTable("webhook", {
@@ -167,6 +207,16 @@ export const userRolesRelations = relations(userRoles, ({ one }) => ({
 export const usersRelations = relations(users, ({ many }) => ({
   userRoles: many(userRoles),
   apiKeys: many(apiKeys),
+  sendQuotaEvents: many(sendQuotaEvents),
+  mailboxNameBlocks: many(mailboxNameBlocks),
+}))
+
+export const sendQuotaEventsRelations = relations(sendQuotaEvents, ({ one }) => ({
+  user: one(users, { fields: [sendQuotaEvents.userId], references: [users.id] }),
+}))
+
+export const mailboxNameBlocksRelations = relations(mailboxNameBlocks, ({ one }) => ({
+  user: one(users, { fields: [mailboxNameBlocks.userId], references: [users.id] }),
 }))
 
 export const rolesRelations = relations(roles, ({ many }) => ({

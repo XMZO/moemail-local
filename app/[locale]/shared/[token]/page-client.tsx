@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useTranslations } from "next-intl"
+import { useFormatter, useTranslations } from "next-intl"
 import { BrandHeader } from "@/components/ui/brand-header"
 import { FloatingLanguageSwitcher } from "@/components/layout/floating-language-switcher"
 import { SharedMessageList } from "@/components/emails/shared-message-list"
@@ -44,8 +44,10 @@ export function SharedEmailPageClient({
   initialTotal,
   token
 }: SharedEmailPageClientProps) {
+  const format = useFormatter()
   const t = useTranslations("emails")
   const tShared = useTranslations("emails.shared")
+  const tFormat = useTranslations("common.format")
   const { emailPollIntervalMs: pollIntervalMs } = useRuntimeConfig()
 
   const [messages, setMessages] = useState<Message[]>(initialMessages)
@@ -113,7 +115,7 @@ export function SharedEmailPageClient({
         }
       }
     } catch (err) {
-      console.error("Failed to fetch messages:", err)
+      console.error("shared_mailbox.messages_fetch_failed", err)
     } finally {
       setLoadingMore(false)
       setRefreshing(false)
@@ -158,7 +160,7 @@ export function SharedEmailPageClient({
       setNextCursor(data.nextCursor)
       setTotal(data.total ?? data.messages.length)
     } catch (error) {
-      console.error("Failed to refresh messages:", error)
+      console.error("shared_mailbox.messages_refresh_failed", error)
     } finally {
       setRefreshing(false)
     }
@@ -186,13 +188,14 @@ export function SharedEmailPageClient({
       const response = await fetch(`/api/shared/${token}/messages/${messageId}`)
 
       if (!response.ok) {
-        throw new Error("Failed to load message")
+        console.error("shared_mailbox.message_read_failed", { status: response.status })
+        return
       }
 
       const data = await response.json() as { message: MessageDetail }
       setSelectedMessage(data.message)
     } catch (err) {
-      console.error("Failed to fetch message:", err)
+      console.error("shared_mailbox.message_fetch_failed", err)
     } finally {
       setMessageLoading(false)
     }
@@ -209,7 +212,10 @@ export function SharedEmailPageClient({
               if (isNaN(expiresDate.getTime())) return tShared("sharedMailbox")
               return expiresDate.getFullYear() === 9999
                 ? tShared("permanent")
-                : `${tShared("expiresAt")}: ${expiresDate.toLocaleDateString()} ${expiresDate.toLocaleTimeString()}`
+                : tFormat("labelValue", {
+                  label: tShared("expiresAt"),
+                  value: format.dateTime(expiresDate),
+                })
             } catch {
               return tShared("sharedMailbox")
             }
@@ -254,9 +260,9 @@ export function SharedEmailPageClient({
               t={{
                 received: t("messages.received"),
                 noMessages: t("messages.noMessages"),
-                messageCount: t("messages.messageCount"),
                 loading: t("messageView.loading"),
-                loadingMore: t("messages.loadingMore")
+                loadingMore: t("messages.loadingMore"),
+                noSubject: t("messages.noSubject")
               }}
             />
           </div>
@@ -294,7 +300,8 @@ export function SharedEmailPageClient({
                 subject: t("messages.subject"),
                 time: t("messageView.time"),
                 htmlFormat: t("messageView.htmlFormat"),
-                textFormat: t("messageView.textFormat")
+                textFormat: t("messageView.textFormat"),
+                noSubject: t("messages.noSubject")
               }}
             />
           </div>
@@ -339,9 +346,9 @@ export function SharedEmailPageClient({
                 t={{
                   received: t("messages.received"),
                   noMessages: t("messages.noMessages"),
-                  messageCount: t("messages.messageCount"),
                   loading: t("messageView.loading"),
-                  loadingMore: t("messages.loadingMore")
+                  loadingMore: t("messages.loadingMore"),
+                  noSubject: t("messages.noSubject")
                 }}
               />
             ) : (
@@ -389,7 +396,8 @@ export function SharedEmailPageClient({
                       subject: t("messages.subject"),
                       time: t("messageView.time"),
                       htmlFormat: t("messageView.htmlFormat"),
-                      textFormat: t("messageView.textFormat")
+                      textFormat: t("messageView.textFormat"),
+                      noSubject: t("messages.noSubject")
                     }}
                   />
                 </div>

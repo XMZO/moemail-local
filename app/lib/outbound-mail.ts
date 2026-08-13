@@ -6,20 +6,24 @@ import {
   type SmtpOutboundPolicy,
 } from "./domain-policies"
 import { normalizeMailboxAddress, normalizeMailboxDomain } from "./email-address"
+import { htmlToPlainText } from "./mail-content"
 
 export const outboundMessageSchema = z.object({
   to: z.string()
     .trim()
-    .min(3, "收件人不能为空")
-    .max(320, "收件人地址过长")
-    .refine(value => !/[\r\n]/.test(value), "收件人地址格式无效")
-    .refine(value => Boolean(normalizeMailboxAddress(value)), "收件人地址格式无效"),
+    .min(3, "RECIPIENT_REQUIRED")
+    .max(320, "RECIPIENT_TOO_LONG")
+    .refine(value => !/[\r\n]/.test(value), "RECIPIENT_INVALID")
+    .refine(value => Boolean(normalizeMailboxAddress(value)), "RECIPIENT_INVALID"),
   subject: z.string()
     .trim()
-    .min(1, "主题不能为空")
-    .max(998, "主题过长")
-    .refine(value => !/[\r\n]/.test(value), "主题不能包含换行"),
-  content: z.string().min(1, "内容不能为空").max(2 * 1024 * 1024, "邮件内容过大"),
+    .min(1, "SUBJECT_REQUIRED")
+    .max(998, "SUBJECT_TOO_LONG")
+    .refine(value => !/[\r\n]/.test(value), "SUBJECT_INVALID"),
+  content: z.string().min(1, "CONTENT_REQUIRED").max(2 * 1024 * 1024, "CONTENT_TOO_LARGE"),
+  // Legacy API clients sent HTML without a format field. The WebUI always
+  // sends an explicit value, while omission retains the pre-format contract.
+  format: z.enum(["text", "html"]).default("html"),
 }).strict()
 
 export type OutboundMessage = z.infer<typeof outboundMessageSchema>
@@ -33,12 +37,37 @@ function sender(fromName: string | null, address: string) {
   return fromName ? { name: fromName, address } : address
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+}
+
+export function outboundContent(message: OutboundMessage) {
+  if (message.format === "html") {
+    return {
+      html: /<html(?:\s|>)/iu.test(message.content)
+        ? message.content
+        : `<!doctype html><html><head><meta charset="utf-8"></head><body>${message.content}</body></html>`,
+      text: htmlToPlainText(message.content) || message.subject,
+    }
+  }
+  return {
+    text: message.content,
+    html: `<!doctype html><html><head><meta charset="utf-8"></head><body><pre style="white-space:pre-wrap;font:inherit">${escapeHtml(message.content)}</pre></body></html>`,
+  }
+}
+
 async function sendWithResend(
   policy: Extract<DomainPolicy["outbound"], { mode: "resend" }>,
   fromAddress: string,
   message: OutboundMessage,
 ) {
   const from = policy.fromName ? `${policy.fromName} <${fromAddress}>` : fromAddress
+  const content = outboundContent(message)
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     redirect: "manual",
@@ -50,24 +79,17 @@ async function sendWithResend(
       from,
       to: [message.to],
       subject: message.subject,
-      html: message.content,
+      ...content,
     }),
     signal: AbortSignal.timeout(20_000),
   })
 
   if (!response.ok) {
-    let providerMessage = ""
-    try {
-      const body = await response.json() as { message?: unknown }
-      providerMessage = typeof body.message === "string" ? body.message.slice(0, 500) : ""
-    } catch {
-      // Provider error bodies are optional and must not block the generic failure path.
-    }
     console.error("outbound.resend.failed", {
       status: response.status,
       provider: "resend",
     })
-    throw new Error(providerMessage || `Resend 发件失败 (${response.status})`)
+    throw new Error(`RESEND_SEND_FAILED:${response.status}`)
   }
 }
 
@@ -110,13 +132,14 @@ async function sendWithSmtp(
   message: OutboundMessage,
 ) {
   const transport = smtpTransport(policy)
+  const content = outboundContent(message)
 
   try {
     await transport.sendMail({
       from: sender(policy.fromName, fromAddress),
       to: message.to,
       subject: message.subject,
-      html: message.content,
+      ...content,
     })
   } finally {
     transport.close()
@@ -135,8 +158,8 @@ export async function sendOutboundMessage(
 ) {
   const message = outboundMessageSchema.parse(input)
   const policy = resolvedPolicy ?? await resolveOutboundPolicy(fromAddress)
-  if (!policy) throw new Error("发件域名未配置")
-  if (policy.outbound.mode === "disabled") throw new Error("该域名未启用发件")
+  if (!policy) throw new Error("OUTBOUND_DOMAIN_NOT_CONFIGURED")
+  if (policy.outbound.mode === "disabled") throw new Error("OUTBOUND_DISABLED")
 
   if (policy.outbound.mode === "resend") {
     await sendWithResend(policy.outbound, fromAddress, message)

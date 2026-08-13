@@ -5,6 +5,7 @@ import {
   getEffectiveAccessPolicy,
   type EffectiveAccessPolicy,
 } from "./access-policies"
+import { apiError } from "./api-response"
 
 export interface RequestPrincipal {
   userId: string
@@ -26,10 +27,9 @@ const validRoles = new Set<Role>(Object.values(ROLES))
 export function setupRequiredResponse() {
   if (isSetupCompleted()) return null
 
-  return NextResponse.json(
-    { error: "MoeMail 尚未完成初始化", code: "SETUP_REQUIRED" },
-    { status: 503, headers: { "Cache-Control": "no-store" } },
-  )
+  return apiError("SETUP_REQUIRED", 503, {
+    headers: { "Cache-Control": "no-store" },
+  })
 }
 
 function supportsApiKey(pathname: string) {
@@ -64,7 +64,7 @@ export async function authorizeRequest(
     if (!supportsApiKey(new URL(request.url).pathname)) {
       return {
         ok: false,
-        response: NextResponse.json({ error: "无权限查看" }, { status: 403 }),
+        response: apiError("API_KEY_ROUTE_FORBIDDEN", 403),
       }
     }
 
@@ -73,7 +73,7 @@ export async function authorizeRequest(
     if (!apiKeyPrincipal) {
       return {
         ok: false,
-        response: NextResponse.json({ error: "无效的 API Key" }, { status: 401 }),
+        response: apiError("API_KEY_INVALID", 401),
       }
     }
 
@@ -87,7 +87,7 @@ export async function authorizeRequest(
     if (!session?.user?.id) {
       return {
         ok: false,
-        response: NextResponse.json({ error: "未授权" }, { status: 401 }),
+        response: apiError("UNAUTHORIZED", 401),
       }
     }
 
@@ -106,7 +106,7 @@ export async function authorizeRequest(
   if (options.permission && !principal.access.permissions[options.permission]) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "权限不足" }, { status: 403 }),
+      response: apiError("PERMISSION_DENIED", 403),
     }
   }
 

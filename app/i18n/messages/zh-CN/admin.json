@@ -1,0 +1,299 @@
+{
+  "navigation": {
+    "account": "账户",
+    "domains": "域名收发",
+    "access": "权限配额",
+    "users": "用户",
+    "site": "站点",
+    "appearance": "外观",
+    "runtime": "运行配置",
+    "webhook": "Webhook 配置",
+    "apiKey": "接口密钥"
+  },
+  "access": {
+    "title": "权限与配额",
+    "description": "配置功能权限、四态域名权限以及独立的收发额度。常规额度 0 表示不限；收发额度 -1 表示不限、0 表示禁止。",
+    "tabs": {
+      "roles": "角色默认值",
+      "users": "单用户覆盖",
+      "blocks": "邮箱名黑名单"
+    },
+    "sections": {
+      "permissions": "功能权限",
+      "quotas": "额度",
+      "domains": "可用域名",
+      "permissionOverrides": "权限覆盖",
+      "quotaOverrides": "额度覆盖",
+      "domainOverrides": "域名覆盖"
+    },
+    "actions": {
+      "resetRole": "重置此角色",
+      "save": "保存",
+      "inheritAll": "全部继承",
+      "saveUser": "保存用户覆盖"
+    },
+    "searchPlaceholder": "搜索用户名或邮箱",
+    "selectUser": "选择用户",
+    "selectUserHint": "选择一个用户后设置覆盖值",
+    "emperorLocked": "皇帝权限不可编辑",
+    "emperorLockedHint": "这是应用与后端 API 同时强制的系统不变量，包括皇帝本人也不能修改。",
+    "emperorQuotaEditableHint": "皇帝的功能权限、常规额度和域名权限由系统锁定；收件与发件额度仍可配置。",
+    "overrideHint": "未覆盖的项继续继承用户角色。权限可明确允许或拒绝；额度仅在启用后覆盖。",
+    "inherit": "继承",
+    "allow": "允许",
+    "deny": "拒绝",
+    "domains": {
+      "roleHelp": "控制该角色可在哪些域名创建邮箱以及收发邮件；已有邮箱仍然可见。",
+      "userHelp": "为该用户覆盖角色的域名列表。自定义列表为空表示禁用全部域名，但不会隐藏已有邮箱。",
+      "allowAll": "允许所有当前及以后新增的域名",
+      "noneConfigured": "尚未配置邮箱域名",
+      "inherit": "继承角色默认值",
+      "all": "允许全部域名",
+      "custom": "自定义域名",
+      "default": "未单独设置及以后新增域名的默认权限",
+      "modes": {
+        "allow": "允许收发",
+        "receive": "仅允许收件",
+        "send": "仅允许发件",
+        "deny": "全部禁止"
+      }
+    },
+    "errors": {
+      "loadPolicies": "读取权限策略失败",
+      "loadUsers": "读取用户失败",
+      "savePolicies": "保存权限策略失败",
+      "saveUser": "保存用户覆盖失败",
+      "resetUser": "重置用户覆盖失败",
+      "loadBlocks": "读取邮箱名黑名单失败"
+    },
+    "success": {
+      "savePolicies": "角色权限与配额已保存",
+      "saveUser": "用户权限覆盖已保存",
+      "resetUser": "用户已恢复继承角色默认值",
+      "resetUsage": "额度用量已重置",
+      "createBlock": "邮箱名已加入黑名单",
+      "deleteBlock": "邮箱名黑名单已移除",
+      "resetMailboxUsage": "该邮箱的额度用量已重置"
+    },
+    "permissions": {
+      "view_email": "查看邮件",
+      "create_email": "创建邮箱",
+      "delete_email": "删除邮箱与邮件",
+      "receive_email": "接收邮件",
+      "send_email": "发送邮件",
+      "share_email": "创建分享链接",
+      "manage_webhook": "管理 Webhook",
+      "promote_user": "管理用户角色",
+      "manage_config": "管理站点与域名配置",
+      "manage_api_key": "管理 API Key"
+    },
+    "quotas": {
+      "maxActiveMailboxes": {
+        "label": "活动邮箱上限",
+        "help": "0 = 不限"
+      },
+      "maxMailboxLifetimeDays": {
+        "label": "邮箱最长有效期（天）",
+        "help": "0 = 不限"
+      },
+      "dailyReceiveLimit": {
+        "label": "每日收件数",
+        "help": "0 = 不限"
+      },
+      "maxMessageBytes": {
+        "label": "单封收件大小上限（字节）",
+        "help": "0 = 仅受系统 25 MiB 硬上限"
+      }
+    },
+    "sendQuota": {
+      "title": "发件额度",
+      "userTitle": "用户发件额度覆盖",
+      "help": "总额度与域名额度同时生效；任一额度耗尽都会阻止发送。采用滚动时间窗口，1 个月按 30 天计算。",
+      "userHelp": "未勾选的项继承角色。用户一旦覆盖任一发件额度，该用户的额度将独立计算，不再占用角色共享额度。",
+      "limit": "封数",
+      "every": "每",
+      "unit": "单位",
+      "total": "所有发件的总额度",
+      "domains": "单域名额度（未启用即不限）",
+      "customize": "单独限制",
+      "overrideTotal": "覆盖总额度",
+      "overrideDomain": "覆盖域名",
+      "noneConfigured": "尚未配置邮箱域名",
+      "unlimited": "不限",
+      "scope": {
+        "user": "每个用户分别计算",
+        "role": "整个角色共享额度"
+      },
+      "units": {
+        "second": "秒",
+        "minute": "分钟",
+        "hour": "小时",
+        "day": "天",
+        "week": "周",
+        "month": "月（30 天）"
+      },
+      "usage": {
+        "title": "实际发件统计",
+        "aggregate": "按用户额度汇总",
+        "shared": "共享角色额度",
+        "individual": "独立用户额度",
+        "allTime": "历史已发",
+        "window": "当前窗口",
+        "pending": "发送中预留",
+        "domainLine": "历史 {allTime} · 窗口 {sent} / {limit}"
+      }
+    },
+    "mailQuota": {
+      "send": {
+        "title": "发件额度",
+        "help": "总额度、域名额度、单邮箱滚动额度和单邮箱生命周期额度同时生效。",
+        "userTitle": "用户发件额度覆盖"
+      },
+      "receive": {
+        "title": "收件额度",
+        "help": "总额度、域名额度、单邮箱滚动额度或生命周期额度任一耗尽时，入站投递都会被拒绝。",
+        "userTitle": "用户收件额度覆盖"
+      },
+      "userHelp": "未勾选的值继承角色；一旦设置任一覆盖，该方向的额度会为此用户独立计算。",
+      "limit": "封数",
+      "every": "每",
+      "unit": "单位",
+      "lifetime": "生命周期上限",
+      "total": "所有域名的总额度",
+      "mailboxDefault": "每个邮箱的默认额度",
+      "domains": "单域名额度",
+      "domainTotal": "限制该域名总量",
+      "domainMailbox": "覆盖该域名下每个邮箱",
+      "overrideTotal": "覆盖总额度",
+      "overrideMailbox": "覆盖单邮箱默认额度",
+      "overrideDomain": "覆盖域名总额度",
+      "overrideDomainMailbox": "覆盖该域名下的邮箱额度",
+      "unlimited": "不限",
+      "scope": {
+        "user": "每个用户分别计算",
+        "role": "角色成员共享聚合额度"
+      },
+      "units": {
+        "second": "秒",
+        "minute": "分钟",
+        "hour": "小时",
+        "day": "天",
+        "week": "周",
+        "month": "月（30 天）"
+      },
+      "exact": {
+        "title": "精确邮箱覆盖",
+        "help": "可选：为某个完整邮箱地址单独设置滚动上限和生命周期上限。",
+        "localPart": "邮箱名",
+        "invalidLocalPart": "请输入 1–64 位字母、数字、点、下划线、加号或连字符",
+        "domain": "域名",
+        "add": "添加覆盖",
+        "remove": "移除",
+        "reset": "重置用量"
+      },
+      "usage": {
+        "title": "实际用量",
+        "aggregate": "按用户额度汇总",
+        "shared": "角色共享额度",
+        "individual": "用户独立额度",
+        "allTime": "历史已完成",
+        "window": "当前窗口",
+        "pending": "进行中预留",
+        "domainLine": "历史 {allTime} · 窗口 {completed} / {limit}"
+      },
+      "reset": {
+        "action": "重置用量",
+        "title": "重置该额度用量？",
+        "description": "这会永久清除所选收发方向与目标的滚动窗口和生命周期计数，但不会修改额度规则。",
+        "cancel": "取消",
+        "confirm": "重置计数",
+        "mailboxTitle": "重置这个邮箱的用量？",
+        "mailboxDescription": "这会永久清除 {address} 在所选收发方向上的滚动和生命周期计数，其他邮箱不受影响。"
+      }
+    },
+    "directions": {
+      "send": "发件",
+      "receive": "收件"
+    },
+    "blocks": {
+      "title": "邮箱名黑名单",
+      "help": "可以在全站禁止某个邮箱名，或只禁止某个用户使用。不会删除已有邮箱；清除规则前无法再次创建。",
+      "localPart": "邮箱名",
+      "invalidLocalPart": "请输入 1–64 位字母、数字、点、下划线、加号或连字符",
+      "domain": "域名",
+      "global": "所有用户",
+      "user": "单个用户",
+      "selectUser": "选择用户",
+      "add": "加入黑名单",
+      "empty": "当前没有被禁止的邮箱名。",
+      "globalScope": "所有用户均禁止",
+      "userScope": "仅禁止 {user}",
+      "deleteTitle": "移除该邮箱名黑名单？",
+      "deleteDescription": "移除后，受影响用户可再次创建 {address}。",
+      "cancel": "取消",
+      "delete": "移除规则"
+    }
+  },
+  "appearance": {
+    "errors": {
+      "load": "读取外观配置失败",
+      "saveFont": "保存字体配置失败",
+      "saveAdvanced": "保存高级外观失败"
+    },
+    "success": {
+      "fontTitle": "全站字体已保存",
+      "fontDescription": "刷新页面后，所有服务端渲染页面都会使用新字体。",
+      "advancedSavedTitle": "高级外观已保存",
+      "advancedSavedDescription": "刷新页面后生效；若页面异常，可使用安全外观模式。",
+      "advancedClearedTitle": "高级外观已清空",
+      "advancedClearedDescription": "所有注入均已禁用。"
+    },
+    "font": {
+      "title": "全站字体",
+      "description": "填写 CSS font-family；只接受安全的字体名称与回退列表。",
+      "family": "字体族",
+      "preview": "预览",
+      "previewPrimary": "MoeMail 邮箱 Aa 123",
+      "previewSecondary": "简洁、可靠、可自托管。",
+      "restoreDefault": "恢复默认",
+      "save": "保存字体",
+      "presets": {
+        "pixel": "默认像素字体",
+        "sans": "系统无衬线",
+        "mono": "系统等宽",
+        "serif": "系统衬线"
+      }
+    },
+    "advanced": {
+      "title": "高危高级外观",
+      "subtitle": "直接注入 CSS、Head HTML、Body 尾部 HTML 和 JavaScript",
+      "emperorOnly": "高级外观只允许皇帝账号修改。",
+      "warningTitle": "注入内容拥有当前登录用户的页面权限",
+      "warningDescription": "恶意 HTML 或 JavaScript 可以读取邮件、调用接口或窃取页面数据。只使用自己编写且已完整审查的内容；不要粘贴陌生代码。",
+      "enabled": "启用高级外观注入",
+      "enabledDescription": "关闭时保留已填写内容，但全站不执行任何高级注入。",
+      "customCss": "自定义 CSS",
+      "customCssPlaceholder": "/* 无需 <style> 标签 */\n@import url(\"https://fonts.example/font.css\");\n:root { --radius: 0.75rem; }",
+      "customCssHelp": "追加到页面样式末尾，可使用 @font-face、@import 或覆盖现有选择器。",
+      "headHtml": "页头 HTML",
+      "headHtmlPlaceholder": "<!-- 插入 document.head 末尾 -->\n<link rel=\"preconnect\" href=\"https://fonts.example\">",
+      "bodyEndHtml": "Body 尾部 HTML",
+      "bodyEndHtmlPlaceholder": "<!-- 插入 document.body 末尾 -->\n<div class=\"custom-footer\">...</div>",
+      "customJs": "自定义 JavaScript",
+      "customJsHelp": "无需 <script> 标签；必须再单独开启执行开关。",
+      "allowExecution": "允许执行",
+      "customJsPlaceholder": "// 在浏览器中执行\nconsole.log(\"MoeMail custom appearance\")",
+      "safeMode": "如果自定义内容导致页面无法操作，在任意页面 URL 后添加 ?safe-appearance=1（已有参数时使用 &safe-appearance=1）。该次请求会跳过全部高级注入，再进入这里清空或修正。",
+      "limits": "每个输入最多 128 KiB，合计最多 256 KiB。内容保存在当前数据库，备份数据库时会一并保存。",
+      "clear": "清空并禁用",
+      "save": "保存高级外观",
+      "clearTitle": "清空全部高级外观？",
+      "saveTitle": "确认保存高危注入内容？",
+      "clearDescription": "这会永久删除保存的 CSS、HTML 和 JavaScript，并立即关闭高级注入。",
+      "saveDescription": "这些内容会在所有访问者的浏览器中加载。请确认代码由你编写或已经完整审查；保存后请刷新页面验证。",
+      "cancel": "取消",
+      "saving": "保存中",
+      "confirm": "我已理解并继续"
+    }
+  }
+}

@@ -1,6 +1,8 @@
-import { createDefaultAccessPolicies, getAccessPolicies, saveAccessPolicies } from "@/lib/access-policies"
+import { createDefaultAccessPolicies, getAccessPolicies, updateAccessPolicies } from "@/lib/access-policies"
 import { PERMISSIONS, ROLES } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
+import { getDomainPolicies } from "@/lib/domain-policies"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -13,7 +15,7 @@ async function authorizeEmperor(request: Request) {
   if (!authorization.principal.roles.includes(ROLES.EMPEROR)) {
     return {
       ok: false as const,
-      response: Response.json({ error: "仅皇帝可以修改权限策略" }, { status: 403, headers }),
+      response: apiError("EMPEROR_REQUIRED", 403, { headers }),
     }
   }
   return authorization
@@ -24,14 +26,19 @@ export async function GET(request: Request) {
   if (!authorization.ok) return authorization.response
 
   try {
+    const [policies, domainPolicies] = await Promise.all([
+      getAccessPolicies(),
+      getDomainPolicies(),
+    ])
     return Response.json({
-      policies: await getAccessPolicies(),
+      policies,
       defaults: createDefaultAccessPolicies(),
       permissions: Object.values(PERMISSIONS),
+      domains: domainPolicies.map(policy => policy.domain),
     }, { headers })
   } catch (error) {
-    console.error("Failed to load access policies:", error)
-    return Response.json({ error: "读取权限策略失败" }, { status: 500, headers })
+    console.error("access_policy.read_failed", error)
+    return apiError("ACCESS_POLICIES_READ_FAILED", 500, { headers })
   }
 }
 
@@ -43,20 +50,19 @@ export async function PUT(request: Request) {
   try {
     payload = await request.json()
   } catch {
-    return Response.json({ error: "请求格式无效" }, { status: 400, headers })
+    return apiError("INVALID_JSON", 400, { headers })
   }
 
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return Response.json({ error: "请求格式无效" }, { status: 400, headers })
+    return apiError("INVALID_REQUEST", 400, { headers })
   }
 
   try {
-    const current = await getAccessPolicies()
     const roles = (payload as { roles?: unknown }).roles
-    const policies = await saveAccessPolicies({ ...current, roles })
+    const policies = await updateAccessPolicies(current => ({ ...current, roles }))
     return Response.json({ ok: true, policies }, { headers })
   } catch (error) {
-    console.error("Failed to save access policies:", error)
-    return Response.json({ error: "权限策略校验或保存失败" }, { status: 400, headers })
+    console.error("access_policy.save_failed", error)
+    return apiError("ACCESS_POLICIES_SAVE_FAILED", 400, { headers })
   }
 }

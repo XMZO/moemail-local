@@ -10,6 +10,7 @@ import { readLastKnownGoodFile } from "@/lib/config/file"
 import { ensureSetupToken, getSetupTokenPath } from "@/lib/setup-token"
 import type { Locale } from "@/i18n/config"
 import { stringify } from "yaml"
+import { SetupHeader } from "@/components/layout/setup-header"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -21,7 +22,6 @@ export default async function SetupPage({
 }) {
   const { locale: localeFromParams } = await params
   const locale = localeFromParams as Locale
-
   if (isSetupCompleted()) {
     redirect(`/${locale}`)
   }
@@ -98,36 +98,37 @@ export default async function SetupPage({
       rcloneConfigContent: config.offsite.rcloneConfigContent,
     },
   }, { lineWidth: 0 })
-  const advancedYaml = hasPersistedConfig
-    ? "# Existing advanced values are preserved but are not echoed before setup ownership is proven.\n"
-    : freshAdvancedYaml
+  const advancedYaml = hasPersistedConfig ? "" : freshAdvancedYaml
 
   return (
-    <SetupWizard
-      locale={locale}
-      configPath={status.path}
-      setupTokenPath={getSetupTokenPath()}
-      configInvalid={Boolean(status.fatal)}
-      advancedYaml={advancedYaml}
-      defaults={{
-        server: {
-          baseUrl: config.server.baseUrl,
-          trustProxyHeaders: config.server.trustProxyHeaders,
-          emailPollIntervalMs: config.server.emailPollIntervalMs,
-        },
-        database: {
-          driver: config.database.driver,
-          sqlite: { path: config.database.sqlite.path },
-          postgres: {
-            // setup=false 页面是匿名可达的，绝不把可能含密码的已暂存 URL 回显。
-            url: hasPersistedConfig
-              ? null
-              : "postgresql://moemail@postgres:5432/moemail",
-            ssl: config.database.postgres.ssl,
-            sslRejectUnauthorized: config.database.postgres.sslRejectUnauthorized,
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      <SetupHeader />
+      <SetupWizard
+        configPath={status.path}
+        setupTokenPath={getSetupTokenPath()}
+        configInvalid={Boolean(status.fatal)}
+        advancedYaml={advancedYaml}
+        advancedValuesPreserved={hasPersistedConfig}
+        defaults={{
+          server: {
+            baseUrl: config.server.baseUrl,
+            trustProxyHeaders: config.server.trustProxyHeaders,
+            emailPollIntervalMs: config.server.emailPollIntervalMs,
           },
-        },
-      }}
-    />
+          database: {
+            driver: config.database.driver,
+            sqlite: { path: config.database.sqlite.path },
+            postgres: {
+              // setup=false 页面是匿名可达的，绝不把可能含密码的已暂存 URL 回显。
+              url: hasPersistedConfig
+                ? null
+                : "postgresql://moemail@postgres:5432/moemail",
+              ssl: config.database.postgres.ssl,
+              sslRejectUnauthorized: config.database.postgres.sslRejectUnauthorized,
+            },
+          },
+        }}
+      />
+    </div>
   )
 }

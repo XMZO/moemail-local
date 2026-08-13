@@ -5,6 +5,7 @@ import { emails } from "@/lib/schema"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -73,10 +74,7 @@ export async function GET(request: Request) {
       total: totalCount
     })
   } catch (error) {
-    console.error('Failed to fetch user emails:', error)
-    return NextResponse.json(
-      { error: "Failed to fetch emails" },
-      { status: 500 }
-    )
+    console.error("mailbox.read_failed", error)
+    return apiError("MAILBOXES_READ_FAILED", 500)
   }
 }

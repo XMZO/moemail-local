@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useTranslations } from "next-intl"
+import { useFormatter, useTranslations } from "next-intl"
 import {Mail, Calendar, RefreshCw, Trash2, Share2} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useThrottle } from "@/hooks/use-throttle"
+import { readApiErrorCode } from "@/lib/api-error-client"
 import { useRuntimeConfig } from "@/providers"
 import { useToast } from "@/components/ui/use-toast"
 import { ShareMessageDialog } from "./share-message-dialog"
@@ -50,10 +51,23 @@ interface MessageResponse {
   total?: number
 }
 
+interface MailboxQuotaCounter {
+  rolling: { remaining: number | null }
+  lifetimeRemaining: number | null
+}
+
+interface MailboxQuotaResponse {
+  send?: { allowed: boolean; error?: string; quota?: { mailbox?: MailboxQuotaCounter } }
+  receive?: { allowed: boolean; error?: string; quota?: { mailbox?: MailboxQuotaCounter } }
+}
+
 export function MessageList({ email, messageType, onMessageSelect, selectedMessageId, refreshTrigger }: MessageListProps) {
+  const format = useFormatter()
   const t = useTranslations("emails.messages")
   const tList = useTranslations("emails.list")
   const tCommon = useTranslations("common.actions")
+  const tFormat = useTranslations("common.format")
+  const tApi = useTranslations("api")
   const { emailPollIntervalMs: pollIntervalMs } = useRuntimeConfig()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,10 +78,20 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
   const messagesRef = useRef<Message[]>([]) // 添加 ref 来追踪最新的消息列表
   const [total, setTotal] = useState(0)
   const [messageToDelete, setMessageToDelete] = useState<Message | null>(null)
+  const [quota, setQuota] = useState<MailboxQuotaResponse | null>(null)
   const { toast } = useToast()
   const { checkPermission } = useRolePermission()
   const canShare = checkPermission(PERMISSIONS.SHARE_EMAIL)
   const canDelete = checkPermission(PERMISSIONS.DELETE_EMAIL)
+
+  const fetchQuota = async () => {
+    try {
+      const response = await fetch(`/api/emails/${email.id}/quota`, { cache: "no-store" })
+      if (response.ok) setQuota(await response.json() as MailboxQuotaResponse)
+    } catch (error) {
+      console.error("mailbox.quota_fetch_failed", error)
+    }
+  }
 
   // 当 messages 改变时更新 ref
   useEffect(() => {
@@ -101,11 +125,13 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
           setMessages(newMessages)
           setNextCursor(data.nextCursor)
           setTotal(data.total ?? newMessages.length)
+          void fetchQuota()
           return
         }
         const uniqueNewMessages = newMessages.slice(0, lastDuplicateIndex)
         setMessages([...uniqueNewMessages, ...oldMessages])
         setTotal(current => data.total ?? current + uniqueNewMessages.length)
+        if (uniqueNewMessages.length > 0) void fetchQuota()
         return
       }
       setMessages(prev => [...prev, ...data.messages])
@@ -114,7 +140,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
         setTotal(data.total)
       }
     } catch (error) {
-      console.error("Failed to fetch messages:", error)
+      console.error("message.list_fetch_failed", error)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -163,10 +189,10 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
       })
 
       if (!response.ok) {
-        const data = await response.json()
+        const code = await readApiErrorCode(response, "MESSAGE_DELETE_FAILED")
         toast({
           title: tList("error"),
-          description: (data as { error: string }).error,
+          description: tApi.has(code as never) ? tApi(code as never) : tList("deleteFailed"),
           variant: "destructive"
         })
         return
@@ -201,6 +227,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
     setLoading(true)
     setNextCursor(null)
     fetchMessages(undefined, true)
+    void fetchQuota()
     startPolling() 
 
     return () => {
@@ -220,7 +247,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
   return (
   <>
     <div className="h-full flex flex-col">
-      <div className="p-2 flex justify-between items-center border-b border-primary/20">
+      <div className="p-2 flex flex-wrap justify-between items-center gap-1 border-b border-primary/20">
         <Button
           variant="ghost"
           size="icon"
@@ -231,8 +258,38 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
           <RefreshCw className="h-4 w-4" />
         </Button>
         <span className="text-xs text-gray-500">
-          {total > 0 ? `${total} ${t("messageCount")}` : t("noMessages")}
+          {total > 0 ? t("messageCount", { count: total }) : t("noMessages")}
         </span>
+        {quota && <div className="basis-full flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+          {(["receive", "send"] as const).map(direction => {
+            const state = quota[direction]
+            if (!state) return null
+            if (!state.allowed && state.error) {
+              const reason = tApi.has(state.error as never)
+                ? tApi(state.error as never)
+                : t(`quota.${direction}` as never)
+              return <span key={direction}>{tFormat("labelValue", {
+                label: t(`quota.${direction}` as never),
+                value: reason,
+              })}</span>
+            }
+            const mailbox = state.quota?.mailbox
+            if (!mailbox) return null
+            const parts = [
+              mailbox.rolling.remaining === null
+                ? null
+                : t("quota.window", { count: mailbox.rolling.remaining }),
+              mailbox.lifetimeRemaining === null
+                ? null
+                : t("quota.lifetime", { count: mailbox.lifetimeRemaining }),
+            ].filter((value): value is string => value !== null)
+            if (parts.length === 0) return null
+            return <span key={direction}>{tFormat("labelValue", {
+              label: t(`quota.${direction}` as never),
+              value: format.list(parts, { type: "unit" }),
+            })}</span>
+          })}
+        </div>}
       </div>
 
       <div className="flex-1 overflow-auto" onScroll={handleScroll}>
@@ -252,22 +309,22 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                 <div className="flex items-start gap-3">
                   <Mail className="w-4 h-4 text-primary/60 mt-1" />
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{message.subject}</p>
+                    <p className="font-medium text-sm truncate">{message.subject || t("noSubject")}</p>
                     <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
                       <span className="truncate">
                         {message.from_address || message.to_address || ''}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(message.received_at || message.sent_at || 0).toLocaleString()}
+                        {format.dateTime(new Date(message.received_at || message.sent_at || 0))}
                       </span>
                     </div>
                   </div>
-                  {(canShare || canDelete) && <div className="opacity-0 group-hover:opacity-100 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  {(canShare || canDelete) && <div className="flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
                     {canShare && <ShareMessageDialog
                       emailId={email.id}
                       messageId={message.id}
-                      messageSubject={message.subject}
+                      messageSubject={message.subject || t("noSubject")}
                       trigger={
                         <Button
                           variant="ghost"
@@ -311,7 +368,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
         <AlertDialogHeader>
           <AlertDialogTitle>{tList("deleteConfirm")}</AlertDialogTitle>
           <AlertDialogDescription>
-            {tList("deleteDescription", { email: messageToDelete?.subject || "" })}
+            {tList("deleteDescription", { email: messageToDelete?.subject || t("noSubject") })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

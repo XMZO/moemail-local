@@ -1,0 +1,101 @@
+{
+  "title": "域名收发策略",
+  "description": "每个域名的收件与发件互相独立；密钥只返回给拥有配置权限的管理员。",
+  "add": "添加",
+  "save": "保存",
+  "saving": "保存中",
+  "errors": {
+    "load": "读取域名配置失败",
+    "save": "保存域名配置失败",
+    "imapTest": "IMAP 连接测试失败",
+    "smtpTest": "SMTP 连接测试失败"
+  },
+  "success": {
+    "saved": "域名收发策略已保存",
+    "imapTitle": "IMAP 连接成功",
+    "imapDescription": "{mailbox}：{messages} 封邮件",
+    "smtpTitle": "SMTP 连接与鉴权成功"
+  },
+  "summary": "收件：{inbound} · 发件：{outbound}",
+  "domainInbound": "域名与收件",
+  "deleteDomain": "删除当前域名",
+  "domain": "邮箱域名",
+  "inboundMode": "收件方式",
+  "inboundModes": {
+    "worker": "Cloudflare Email Worker",
+    "imap": "外部邮箱 IMAP",
+    "disabled": "关闭收件"
+  },
+  "outbound": "发件",
+  "outboundDescription": "Resend API Key 与 SMTP 凭据按域名保存。",
+  "outboundMode": "发件方式",
+  "outboundModes": {
+    "resend": "Resend",
+    "smtp": "外部 SMTP",
+    "disabled": "关闭发件"
+  },
+  "common": {
+    "port": "端口",
+    "security": "安全模式",
+    "username": "用户名",
+    "strictCertificate": "严格校验证书",
+    "securityOptions": {
+      "tls993": "TLS（通常 993）",
+      "starttls143": "STARTTLS（通常 143）",
+      "tls": "TLS",
+      "starttls": "STARTTLS",
+      "plain": "明文"
+    }
+  },
+  "imap": {
+    "host": "IMAP 主机",
+    "mailbox": "邮箱文件夹",
+    "password": "密码或应用专用密码",
+    "recipientHeader": "本地地址 Header",
+    "recipientHeaders": {
+      "auto": "自动检测投递追踪头（推荐）",
+      "xOriginalTo": "X-Original-To",
+      "deliveredTo": "Delivered-To",
+      "envelopeTo": "Envelope-To",
+      "xEnvelopeTo": "X-Envelope-To"
+    },
+    "initialSync": "首次同步",
+    "initialSyncOptions": {
+      "new": "仅保存后到达的新邮件（推荐）",
+      "unseen": "同时导入未读邮件"
+    },
+    "pollInterval": "轮询间隔（秒）",
+    "maxMessages": "每轮最多邮件数",
+    "certificateHelp": "使用公共邮箱服务商时请保持开启。",
+    "test": "测试 IMAP 连接",
+    "testing": "连接中",
+    "readOnlyHelp": "轮询以只读方式访问邮箱，不会标记已读、移动或删除邮件。别名或全域转发必须保留能识别原始收件人的 Header。"
+  },
+  "smtp": {
+    "host": "SMTP 主机",
+    "authMethod": "认证方式",
+    "authMethods": {
+      "auto": "自动协商（推荐）",
+      "plain": "强制 PLAIN",
+      "login": "强制 LOGIN（Microsoft/Outlook 等）"
+    },
+    "fromName": "发件人名称（可选）",
+    "username": "用户名（可选）",
+    "password": "密码（可选）",
+    "certificateHelp": "生产环境建议保持开启。",
+    "test": "测试 SMTP 连接",
+    "testing": "连接中"
+  },
+  "resendApiKey": "Resend 接口密钥",
+  "resetDomain": "重置当前域名",
+  "secrets": {
+    "show": "显示密钥",
+    "hide": "隐藏密钥"
+  },
+  "deleteConfirm": {
+    "title": "移除此域名？",
+    "description": "从当前草稿中移除 {domain}？保存后，该域名的收件和发件配置将停用。",
+    "cancel": "保留域名",
+    "confirm": "移除"
+  }
+}

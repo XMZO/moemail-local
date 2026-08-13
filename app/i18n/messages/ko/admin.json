@@ -1,0 +1,299 @@
+{
+  "navigation": {
+    "account": "계정",
+    "domains": "메일 도메인",
+    "access": "권한 및 할당량",
+    "users": "사용자",
+    "site": "사이트",
+    "appearance": "모양",
+    "runtime": "런타임 구성",
+    "webhook": "Webhook 설정",
+    "apiKey": "API 키"
+  },
+  "access": {
+    "title": "권한 및 할당량",
+    "description": "기능 접근, 4단계 도메인 권한과 독립적인 송수신 할당량을 설정합니다. 일반 할당량 0은 무제한, 메일 할당량 -1은 무제한, 0은 금지입니다.",
+    "tabs": {
+      "roles": "역할 기본값",
+      "users": "사용자별 재정의",
+      "blocks": "메일함 이름 차단"
+    },
+    "sections": {
+      "permissions": "기능 권한",
+      "quotas": "할당량",
+      "domains": "사용 가능한 도메인",
+      "permissionOverrides": "권한 재정의",
+      "quotaOverrides": "할당량 재정의",
+      "domainOverrides": "도메인 재정의"
+    },
+    "actions": {
+      "resetRole": "이 역할 초기화",
+      "save": "저장",
+      "inheritAll": "모두 상속",
+      "saveUser": "사용자 재정의 저장"
+    },
+    "searchPlaceholder": "사용자 이름 또는 이메일 검색",
+    "selectUser": "사용자 선택",
+    "selectUserHint": "재정의 값을 설정할 사용자를 선택하세요",
+    "emperorLocked": "황제 권한은 편집할 수 없습니다",
+    "emperorLockedHint": "애플리케이션과 API가 함께 강제하는 시스템 불변 조건이며 황제 본인도 변경할 수 없습니다.",
+    "emperorQuotaEditableHint": "황제의 기능, 일반 할당량과 도메인 권한은 고정됩니다. 발신 및 수신 할당량은 설정할 수 있습니다.",
+    "overrideHint": "재정의하지 않은 항목은 사용자 역할에서 상속됩니다. 권한은 명시적으로 허용하거나 거부할 수 있고, 할당량은 활성화한 항목만 재정의됩니다.",
+    "inherit": "상속",
+    "allow": "허용",
+    "deny": "거부",
+    "domains": {
+      "roleHelp": "이 역할이 메일함 생성과 메일 송수신에 사용할 수 있는 도메인을 제어합니다. 기존 메일함은 계속 표시됩니다.",
+      "userHelp": "이 사용자에 대해 역할의 도메인 목록을 재정의합니다. 사용자 지정 목록을 비우면 기존 메일함을 숨기지 않고 모든 도메인을 거부합니다.",
+      "allowAll": "현재 및 앞으로 추가되는 모든 도메인 허용",
+      "noneConfigured": "설정된 메일 도메인이 없습니다",
+      "inherit": "역할 기본값 상속",
+      "all": "모든 도메인 허용",
+      "custom": "도메인 선택",
+      "default": "별도 지정하지 않았거나 앞으로 추가될 도메인의 기본 권한",
+      "modes": {
+        "allow": "송수신 허용",
+        "receive": "수신만 허용",
+        "send": "발신만 허용",
+        "deny": "모두 금지"
+      }
+    },
+    "errors": {
+      "loadPolicies": "접근 정책을 불러오지 못했습니다",
+      "loadUsers": "사용자를 불러오지 못했습니다",
+      "savePolicies": "접근 정책을 저장하지 못했습니다",
+      "saveUser": "사용자 재정의를 저장하지 못했습니다",
+      "resetUser": "사용자 재정의를 초기화하지 못했습니다",
+      "loadBlocks": "메일함 이름 차단 목록을 불러오지 못했습니다"
+    },
+    "success": {
+      "savePolicies": "역할 권한과 할당량을 저장했습니다",
+      "saveUser": "사용자 권한 재정의를 저장했습니다",
+      "resetUser": "사용자가 역할 기본값을 모두 상속하도록 복원했습니다",
+      "resetUsage": "할당량 사용량을 초기화했습니다",
+      "createBlock": "메일함 이름을 차단했습니다",
+      "deleteBlock": "메일함 이름 차단을 해제했습니다",
+      "resetMailboxUsage": "메일함 할당량 사용량을 초기화했습니다"
+    },
+    "permissions": {
+      "view_email": "메일 보기",
+      "create_email": "메일함 만들기",
+      "delete_email": "메일함 및 메일 삭제",
+      "receive_email": "메일 받기",
+      "send_email": "메일 보내기",
+      "share_email": "공유 링크 만들기",
+      "manage_webhook": "Webhook 관리",
+      "promote_user": "사용자 역할 관리",
+      "manage_config": "사이트 및 도메인 설정 관리",
+      "manage_api_key": "API Key 관리"
+    },
+    "quotas": {
+      "maxActiveMailboxes": {
+        "label": "활성 메일함 한도",
+        "help": "0 = 무제한"
+      },
+      "maxMailboxLifetimeDays": {
+        "label": "메일함 최대 유효 기간(일)",
+        "help": "0 = 무제한"
+      },
+      "dailyReceiveLimit": {
+        "label": "일일 수신 한도",
+        "help": "0 = 무제한"
+      },
+      "maxMessageBytes": {
+        "label": "수신 메일 한 통의 최대 크기(바이트)",
+        "help": "0 = 시스템 하드 한도 25 MiB만 적용"
+      }
+    },
+    "sendQuota": {
+      "title": "발신 할당량",
+      "userTitle": "사용자별 발신 할당량 재정의",
+      "help": "전체 할당량과 도메인별 할당량이 함께 적용되며 둘 중 하나라도 소진되면 발신할 수 없습니다. 이동 시간 창을 사용하고 한 달은 30일로 계산합니다.",
+      "userHelp": "선택하지 않은 값은 역할에서 상속합니다. 발신 할당량을 하나라도 재정의하면 해당 사용자는 역할 공유 할당량을 사용하지 않고 독립적으로 집계됩니다.",
+      "limit": "메일 수",
+      "every": "주기",
+      "unit": "단위",
+      "total": "모든 도메인의 전체 할당량",
+      "domains": "도메인별 할당량(활성화하지 않으면 무제한)",
+      "customize": "별도 제한",
+      "overrideTotal": "전체 할당량 재정의",
+      "overrideDomain": "도메인 재정의",
+      "noneConfigured": "설정된 메일 도메인이 없습니다",
+      "unlimited": "무제한",
+      "scope": {
+        "user": "사용자마다 별도 집계",
+        "role": "역할 전체가 하나의 할당량 공유"
+      },
+      "units": {
+        "second": "초",
+        "minute": "분",
+        "hour": "시간",
+        "day": "일",
+        "week": "주",
+        "month": "개월(30일)"
+      },
+      "usage": {
+        "title": "실제 발신 통계",
+        "aggregate": "사용자별 할당량 합계",
+        "shared": "역할 공유 할당량",
+        "individual": "독립 사용자 할당량",
+        "allTime": "누적 발신",
+        "window": "현재 시간 창",
+        "pending": "발신 중 예약",
+        "domainLine": "누적 {allTime} · 시간 창 {sent} / {limit}"
+      }
+    },
+    "mailQuota": {
+      "send": {
+        "title": "발신 할당량",
+        "help": "전체, 도메인, 메일함별 롤링 및 수명 한도가 함께 적용됩니다.",
+        "userTitle": "사용자별 발신 할당량 재정의"
+      },
+      "receive": {
+        "title": "수신 할당량",
+        "help": "전체, 도메인, 메일함 롤링 또는 수명 한도 중 하나라도 소진되면 수신을 거부합니다.",
+        "userTitle": "사용자별 수신 할당량 재정의"
+      },
+      "userHelp": "선택하지 않은 값은 역할에서 상속합니다. 하나라도 재정의하면 이 사용자의 해당 방향을 별도로 계산합니다.",
+      "limit": "메일 수",
+      "every": "기간",
+      "unit": "단위",
+      "lifetime": "수명 한도",
+      "total": "모든 도메인 합계",
+      "mailboxDefault": "메일함별 기본값",
+      "domains": "도메인별 한도",
+      "domainTotal": "도메인 합계 제한",
+      "domainMailbox": "이 도메인의 각 메일함 재정의",
+      "overrideTotal": "전체 할당량 재정의",
+      "overrideMailbox": "메일함 기본 할당량 재정의",
+      "overrideDomain": "도메인 합계 재정의",
+      "overrideDomainMailbox": "도메인 내 메일함 재정의",
+      "unlimited": "무제한",
+      "scope": {
+        "user": "사용자별로 계산",
+        "role": "역할 전체가 집계 할당량 공유"
+      },
+      "units": {
+        "second": "초",
+        "minute": "분",
+        "hour": "시간",
+        "day": "일",
+        "week": "주",
+        "month": "개월(30일)"
+      },
+      "exact": {
+        "title": "특정 메일함 재정의",
+        "help": "선택 사항: 전체 메일 주소에 별도의 롤링 및 수명 한도를 설정합니다.",
+        "localPart": "메일함 이름",
+        "invalidLocalPart": "1~64자의 영문자, 숫자, 점, 밑줄, 더하기 기호 또는 하이픈을 사용하세요",
+        "domain": "도메인",
+        "add": "재정의 추가",
+        "remove": "삭제",
+        "reset": "사용량 초기화"
+      },
+      "usage": {
+        "title": "실제 사용량",
+        "aggregate": "사용자별 할당량 합계",
+        "shared": "역할 공유 할당량",
+        "individual": "사용자 독립 할당량",
+        "allTime": "전체 완료",
+        "window": "현재 기간",
+        "pending": "처리 중 예약",
+        "domainLine": "전체 {allTime} · 기간 {completed} / {limit}"
+      },
+      "reset": {
+        "action": "사용량 초기화",
+        "title": "이 할당량 사용량을 초기화할까요?",
+        "description": "선택한 방향과 대상의 롤링 기간 및 수명 카운터를 영구적으로 삭제합니다. 할당량 규칙은 변경하지 않습니다.",
+        "cancel": "취소",
+        "confirm": "카운터 초기화",
+        "mailboxTitle": "이 메일함의 사용량을 초기화할까요?",
+        "mailboxDescription": "{address}의 선택한 방향에 대한 롤링 기간 및 수명 카운터를 영구적으로 삭제합니다. 다른 메일함은 변경되지 않습니다."
+      }
+    },
+    "directions": {
+      "send": "발신",
+      "receive": "수신"
+    },
+    "blocks": {
+      "title": "메일함 이름 차단",
+      "help": "로컬 이름을 전체 사용자 또는 선택한 사용자에게만 금지합니다. 기존 메일함은 삭제하지 않으며 규칙을 제거할 때까지 새 생성을 거부합니다.",
+      "localPart": "메일함 이름",
+      "invalidLocalPart": "1~64자의 영문자, 숫자, 점, 밑줄, 더하기 기호 또는 하이픈을 사용하세요",
+      "domain": "도메인",
+      "global": "모든 사용자",
+      "user": "사용자 한 명",
+      "selectUser": "사용자 선택",
+      "add": "차단",
+      "empty": "차단된 메일함 이름이 없습니다.",
+      "globalScope": "모든 사용자에게 금지",
+      "userScope": "{user}에게만 금지",
+      "deleteTitle": "이 메일함 이름 차단을 해제할까요?",
+      "deleteDescription": "해제하면 대상 사용자가 {address}를 다시 생성할 수 있습니다.",
+      "cancel": "취소",
+      "delete": "차단 해제"
+    }
+  },
+  "appearance": {
+    "errors": {
+      "load": "모양 설정을 불러오지 못했습니다",
+      "saveFont": "글꼴 설정을 저장하지 못했습니다",
+      "saveAdvanced": "고급 모양 설정을 저장하지 못했습니다"
+    },
+    "success": {
+      "fontTitle": "사이트 전체 글꼴을 저장했습니다",
+      "fontDescription": "페이지를 새로 고치면 모든 서버 렌더링 페이지에 적용됩니다.",
+      "advancedSavedTitle": "고급 모양 설정을 저장했습니다",
+      "advancedSavedDescription": "페이지를 새로 고치면 적용됩니다. 페이지를 사용할 수 없게 되면 안전 모양 모드를 사용하세요.",
+      "advancedClearedTitle": "고급 모양 설정을 지웠습니다",
+      "advancedClearedDescription": "모든 삽입을 비활성화했습니다."
+    },
+    "font": {
+      "title": "사이트 전체 글꼴",
+      "description": "CSS font-family 값을 입력하세요. 안전한 글꼴 이름과 대체 목록만 허용됩니다.",
+      "family": "글꼴 모음",
+      "preview": "미리 보기",
+      "previewPrimary": "MoeMail 메일함 Aa 123",
+      "previewSecondary": "간결하고 안정적이며 직접 호스팅할 수 있습니다.",
+      "restoreDefault": "기본값 복원",
+      "save": "글꼴 저장",
+      "presets": {
+        "pixel": "기본 픽셀 글꼴",
+        "sans": "시스템 산세리프",
+        "mono": "시스템 고정폭",
+        "serif": "시스템 세리프"
+      }
+    },
+    "advanced": {
+      "title": "고위험 고급 모양",
+      "subtitle": "CSS, Head HTML, Body 끝 HTML 및 JavaScript를 직접 삽입",
+      "emperorOnly": "고급 모양은 황제 계정만 수정할 수 있습니다.",
+      "warningTitle": "삽입된 콘텐츠는 현재 로그인한 사용자의 페이지 권한으로 실행됩니다",
+      "warningDescription": "악성 HTML 또는 JavaScript는 메일을 읽고 API를 호출하거나 페이지 데이터를 훔칠 수 있습니다. 직접 작성하고 완전히 검토한 코드만 사용하고, 신뢰할 수 없는 코드는 붙여 넣지 마세요.",
+      "enabled": "고급 모양 삽입 활성화",
+      "enabledDescription": "끄면 입력한 내용은 보존되지만 사이트에서 고급 삽입을 실행하지 않습니다.",
+      "customCss": "사용자 지정 CSS",
+      "customCssPlaceholder": "/* <style> 태그가 필요하지 않습니다 */\n@import url(\"https://fonts.example/font.css\");\n:root { --radius: 0.75rem; }",
+      "customCssHelp": "페이지 스타일 끝에 추가됩니다. @font-face, @import 또는 기존 선택자 재정의를 사용할 수 있습니다.",
+      "headHtml": "헤더 HTML",
+      "headHtmlPlaceholder": "<!-- document.head 끝에 추가 -->\n<link rel=\"preconnect\" href=\"https://fonts.example\">",
+      "bodyEndHtml": "Body 끝 HTML",
+      "bodyEndHtmlPlaceholder": "<!-- document.body 끝에 추가 -->\n<div class=\"custom-footer\">...</div>",
+      "customJs": "사용자 지정 JavaScript",
+      "customJsHelp": "<script> 태그는 필요하지 않습니다. 실행 스위치도 별도로 켜야 합니다.",
+      "allowExecution": "실행 허용",
+      "customJsPlaceholder": "// 브라우저에서 실행\nconsole.log(\"MoeMail custom appearance\")",
+      "safeMode": "사용자 지정 콘텐츠 때문에 페이지를 사용할 수 없으면 아무 페이지 URL에 ?safe-appearance=1을 추가하세요(기존 쿼리가 있으면 &safe-appearance=1). 해당 요청은 모든 고급 삽입을 건너뛰므로 여기에서 지우거나 수정할 수 있습니다.",
+      "limits": "각 입력은 최대 128 KiB, 합계는 최대 256 KiB입니다. 콘텐츠는 현재 데이터베이스에 저장되며 데이터베이스 백업에도 포함됩니다.",
+      "clear": "지우고 비활성화",
+      "save": "고급 모양 저장",
+      "clearTitle": "고급 모양을 모두 지울까요?",
+      "saveTitle": "고위험 삽입 콘텐츠를 저장할까요?",
+      "clearDescription": "저장된 CSS, HTML 및 JavaScript를 영구 삭제하고 고급 삽입을 즉시 비활성화합니다.",
+      "saveDescription": "이 콘텐츠는 모든 방문자의 브라우저에 로드됩니다. 직접 작성했거나 완전히 검토한 코드인지 확인하고 저장 후 페이지를 새로 고쳐 검증하세요.",
+      "cancel": "취소",
+      "saving": "저장 중",
+      "confirm": "이해했으며 계속"
+    }
+  }
+}

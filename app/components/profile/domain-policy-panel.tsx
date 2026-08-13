@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Globe2, Loader2, PlugZap, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
+import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,6 +15,19 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/use-toast"
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
+import { SecretInput } from "@/components/ui/secret-input"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 type Inbound =
   | { mode: "worker" }
@@ -87,6 +101,10 @@ const imapDefaults = (): Extract<Inbound, { mode: "imap" }> => ({
 })
 
 export function DomainPolicyPanel() {
+  const format = useFormatter()
+  const t = useTranslations("domains")
+  const tFormat = useTranslations("common.format")
+  const tApi = useTranslations("api")
   const [policies, setPolicies] = useState<DomainPolicy[]>([])
   const [selected, setSelected] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -94,6 +112,7 @@ export function DomainPolicyPanel() {
   const [testingImap, setTestingImap] = useState(false)
   const [testingSmtp, setTestingSmtp] = useState(false)
   const [error, setError] = useState("")
+  const [deleteDomain, setDeleteDomain] = useState<string | null>(null)
   const { toast } = useToast()
 
   const load = useCallback(async () => {
@@ -101,16 +120,20 @@ export function DomainPolicyPanel() {
     setError("")
     try {
       const response = await fetch("/api/config/domains", { cache: "no-store" })
-      const body = await response.json() as { policies?: DomainPolicy[]; error?: string }
-      if (!response.ok || !body.policies) throw new Error(body.error || "读取域名配置失败")
+      const body = await response.clone().json() as { policies?: DomainPolicy[]; error?: string }
+      if (!response.ok || !body.policies) {
+        const code = await readApiErrorCode(response, "DOMAIN_POLICIES_READ_FAILED")
+        throw new LocalizedUiError(tApi.has(code as never) ? tApi(code as never) : t("errors.load"))
+      }
       setPolicies(body.policies)
       setSelected(index => Math.min(index, Math.max(0, body.policies!.length - 1)))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "读取域名配置失败")
+      console.error("domain_policy.load_failed", caught)
+      setError(t("errors.load"))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t, tApi])
 
   useEffect(() => { void load() }, [load])
 
@@ -147,11 +170,15 @@ export function DomainPolicyPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "imap", policy: current.inbound }),
       })
-      const body = await response.json() as { error?: string; mailbox?: string; messages?: number }
-      if (!response.ok) throw new Error(body.error || "IMAP 连接测试失败")
-      toast({ title: "IMAP 连接成功", description: `${body.mailbox ?? "INBOX"}：${body.messages ?? 0} 封邮件` })
+      const body = await response.json() as { error?: string; code?: string; mailbox?: string; messages?: number }
+      if (!response.ok) {
+        const code = body.code ?? body.error ?? "IMAP_CONNECTION_FAILED"
+        throw new LocalizedUiError(tApi.has(code as never) ? tApi(code as never) : t("errors.imapTest"))
+      }
+      toast({ title: t("success.imapTitle"), description: t("success.imapDescription", { mailbox: body.mailbox ?? "INBOX", messages: body.messages ?? 0 }) })
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "IMAP 连接测试失败")
+      console.error("domain_policy.imap_test_failed", caught)
+      setError(localizedUiErrorMessage(caught, t("errors.imapTest")))
     } finally {
       setTestingImap(false)
     }
@@ -167,11 +194,14 @@ export function DomainPolicyPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "smtp", policy: current.outbound }),
       })
-      const body = await response.json() as { error?: string }
-      if (!response.ok) throw new Error(body.error || "SMTP 连接测试失败")
-      toast({ title: "SMTP 连接与鉴权成功" })
+      if (!response.ok) {
+        const code = await readApiErrorCode(response, "SMTP_CONNECTION_FAILED")
+        throw new LocalizedUiError(tApi.has(code as never) ? tApi(code as never) : t("errors.smtpTest"))
+      }
+      toast({ title: t("success.smtpTitle") })
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "SMTP 连接测试失败")
+      console.error("domain_policy.smtp_test_failed", caught)
+      setError(localizedUiErrorMessage(caught, t("errors.smtpTest")))
     } finally {
       setTestingSmtp(false)
     }
@@ -189,16 +219,24 @@ export function DomainPolicyPanel() {
       const body = await response.json() as {
         policies?: DomainPolicy[]
         error?: string
-        issues?: Array<{ path: string; message: string }>
+        issues?: Array<{ path: string; code?: string }>
       }
       if (!response.ok || !body.policies) {
-        const detail = body.issues?.map(issue => `${issue.path}: ${issue.message}`).join("；")
-        throw new Error(detail || body.error || "保存域名配置失败")
+        const paths = body.issues?.map(issue => issue.path).filter(Boolean) ?? []
+        const code = body.error ?? "DOMAIN_POLICIES_SAVE_FAILED"
+        const translated = tApi.has(code as never) ? tApi(code as never) : t("errors.save")
+        throw new LocalizedUiError(paths.length > 0
+          ? tFormat("labelValue", {
+            label: translated,
+            value: format.list(paths, { type: "unit" }),
+          })
+          : translated)
       }
       setPolicies(body.policies)
-      toast({ title: "域名收发策略已保存" })
+      toast({ title: t("success.saved") })
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "保存域名配置失败")
+      console.error("domain_policy.save_failed", caught)
+      setError(localizedUiErrorMessage(caught, t("errors.save")))
     } finally {
       setSaving(false)
     }
@@ -214,12 +252,16 @@ export function DomainPolicyPanel() {
     if (policies.length <= 1) return
     setPolicies(previous => previous.filter((_, index) => index !== selected))
     setSelected(index => Math.max(0, index - 1))
+    setDeleteDomain(null)
   }
 
   const modeSummary = useMemo(() => current
-    ? `收件：${current.inbound.mode} · 发件：${current.outbound.mode}`
+    ? t("summary", {
+      inbound: t(`inboundModes.${current.inbound.mode}` as never),
+      outbound: t(`outboundModes.${current.outbound.mode}` as never),
+    })
     : "",
-  [current])
+  [current, t])
 
   if (loading) {
     return <div className="flex min-h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
@@ -229,12 +271,12 @@ export function DomainPolicyPanel() {
     <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 font-semibold"><Globe2 className="h-5 w-5 text-primary" />域名收发策略</div>
-          <p className="mt-1 text-xs text-muted-foreground">每个域的收件与发件互相独立；密钥只返回给有配置权限的管理员。</p>
+          <div className="flex items-center gap-2 font-semibold"><Globe2 className="h-5 w-5 text-primary" />{t("title")}</div>
+          <p className="mt-1 text-xs text-muted-foreground">{t("description")}</p>
         </div>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={addDomain}><Plus className="mr-1 h-4 w-4" />添加</Button>
-          <Button type="button" size="sm" onClick={() => void save()} disabled={saving}><Save className="mr-1 h-4 w-4" />{saving ? "保存中" : "保存"}</Button>
+          <Button type="button" variant="outline" size="sm" onClick={addDomain}><Plus className="mr-1 h-4 w-4" />{t("add")}</Button>
+          <Button type="button" size="sm" onClick={() => void save()} disabled={saving}><Save className="mr-1 h-4 w-4" />{saving ? t("saving") : t("save")}</Button>
         </div>
       </div>
 
@@ -259,84 +301,96 @@ export function DomainPolicyPanel() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <section className="space-y-4 rounded-md border p-4">
               <div className="flex items-center justify-between gap-2">
-                <div><h3 className="font-medium">域与收件</h3><p className="text-xs text-muted-foreground">{modeSummary}</p></div>
-                <Button type="button" variant="ghost" size="icon" onClick={removeCurrent} disabled={policies.length <= 1} title="删除当前域"><Trash2 className="h-4 w-4" /></Button>
+                <div><h3 className="font-medium">{t("domainInbound")}</h3><p className="text-xs text-muted-foreground">{modeSummary}</p></div>
+                <Button type="button" variant="ghost" size="icon" onClick={() => setDeleteDomain(current.domain)} disabled={policies.length <= 1} title={t("deleteDomain")}><Trash2 className="h-4 w-4" /></Button>
               </div>
               <div className="space-y-2">
-                <Label>邮箱域名</Label>
+                <Label>{t("domain")}</Label>
                 <Input value={current.domain} onChange={event => updateCurrent(policy => ({ ...policy, domain: event.target.value }))} spellCheck={false} />
               </div>
               <div className="space-y-2">
-                <Label>收件方式</Label>
+                <Label>{t("inboundMode")}</Label>
                 <Select value={current.inbound.mode} onValueChange={mode => setInboundMode(mode as Inbound["mode"])}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="worker">Cloudflare Email Worker</SelectItem>
-                    <SelectItem value="imap">外部邮箱 IMAP</SelectItem>
-                    <SelectItem value="disabled">关闭收件</SelectItem>
+                    <SelectItem value="worker">{t("inboundModes.worker")}</SelectItem>
+                    <SelectItem value="imap">{t("inboundModes.imap")}</SelectItem>
+                    <SelectItem value="disabled">{t("inboundModes.disabled")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {current.inbound.mode === "imap" && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2"><Label>IMAP 主机</Label><Input value={current.inbound.host} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), host: event.target.value } }))} /></div>
-                  <div className="space-y-2"><Label>端口</Label><Input type="number" min={1} max={65535} value={current.inbound.port} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), port: Number(event.target.value) } }))} /></div>
-                  <div className="space-y-2"><Label>安全模式</Label><Select value={current.inbound.security} onValueChange={security => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), security: security as "plain" | "starttls" | "tls" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tls">TLS（通常 993）</SelectItem><SelectItem value="starttls">STARTTLS（通常 143）</SelectItem><SelectItem value="plain">明文</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>邮箱文件夹</Label><Input value={current.inbound.mailbox} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), mailbox: event.target.value } }))} /></div>
-                  <div className="space-y-2"><Label>用户名</Label><Input autoComplete="username" value={current.inbound.username} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), username: event.target.value } }))} /></div>
-                  <div className="space-y-2"><Label>密码或应用专用密码</Label><Input type="password" autoComplete="new-password" value={current.inbound.password} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), password: event.target.value } }))} /></div>
-                  <div className="space-y-2"><Label>本地地址 Header</Label><Select value={current.inbound.recipientHeader} onValueChange={recipientHeader => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), recipientHeader: recipientHeader as Extract<Inbound, { mode: "imap" }>["recipientHeader"] } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动检测投递追踪头（推荐）</SelectItem><SelectItem value="x-original-to">X-Original-To</SelectItem><SelectItem value="delivered-to">Delivered-To</SelectItem><SelectItem value="envelope-to">Envelope-To</SelectItem><SelectItem value="x-envelope-to">X-Envelope-To</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>首次同步</Label><Select value={current.inbound.initialSync} onValueChange={initialSync => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), initialSync: initialSync as "new" | "unseen" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">仅保存后新邮件（推荐）</SelectItem><SelectItem value="unseen">同时导入未读邮件</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>轮询间隔（秒）</Label><Input type="number" min={15} max={86400} value={current.inbound.pollIntervalSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), pollIntervalSeconds: Number(event.target.value) } }))} /></div>
-                  <div className="space-y-2"><Label>每轮最多邮件</Label><Input type="number" min={1} max={1000} value={current.inbound.maxMessagesPerPoll} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), maxMessagesPerPoll: Number(event.target.value) } }))} /></div>
-                  <div className="flex items-center justify-between gap-3 rounded border p-3 sm:col-span-2"><div><Label>严格校验证书</Label><p className="text-xs text-muted-foreground">公共邮局请保持开启。</p></div><Switch checked={current.inbound.rejectUnauthorized} onCheckedChange={rejectUnauthorized => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), rejectUnauthorized } }))} /></div>
-                  <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => void testImap()} disabled={testingImap}><PlugZap className="mr-1 h-4 w-4" />{testingImap ? "连接中" : "测试 IMAP 连接"}</Button></div>
-                  <p className="text-xs text-muted-foreground sm:col-span-2">轮询以只读方式访问邮箱，不标记已读、不移动也不删除邮件。别名/全域转发必须保留能识别原始收件人的 Header。</p>
+                  <div className="space-y-2"><Label>{t("imap.host")}</Label><Input value={current.inbound.host} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), host: event.target.value } }))} /></div>
+                  <div className="space-y-2"><Label>{t("common.port")}</Label><Input type="number" min={1} max={65535} value={current.inbound.port} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), port: Number(event.target.value) } }))} /></div>
+                  <div className="space-y-2"><Label>{t("common.security")}</Label><Select value={current.inbound.security} onValueChange={security => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), security: security as "plain" | "starttls" | "tls" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tls">{t("common.securityOptions.tls993")}</SelectItem><SelectItem value="starttls">{t("common.securityOptions.starttls143")}</SelectItem><SelectItem value="plain">{t("common.securityOptions.plain")}</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>{t("imap.mailbox")}</Label><Input value={current.inbound.mailbox} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), mailbox: event.target.value } }))} /></div>
+                  <div className="space-y-2"><Label>{t("common.username")}</Label><Input autoComplete="username" value={current.inbound.username} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), username: event.target.value } }))} /></div>
+                  <div className="space-y-2"><Label>{t("imap.password")}</Label><SecretInput showLabel={t("secrets.show")} hideLabel={t("secrets.hide")} autoComplete="new-password" value={current.inbound.password} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), password: event.target.value } }))} /></div>
+                  <div className="space-y-2"><Label>{t("imap.recipientHeader")}</Label><Select value={current.inbound.recipientHeader} onValueChange={recipientHeader => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), recipientHeader: recipientHeader as Extract<Inbound, { mode: "imap" }>["recipientHeader"] } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">{t("imap.recipientHeaders.auto")}</SelectItem><SelectItem value="x-original-to">{t("imap.recipientHeaders.xOriginalTo")}</SelectItem><SelectItem value="delivered-to">{t("imap.recipientHeaders.deliveredTo")}</SelectItem><SelectItem value="envelope-to">{t("imap.recipientHeaders.envelopeTo")}</SelectItem><SelectItem value="x-envelope-to">{t("imap.recipientHeaders.xEnvelopeTo")}</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>{t("imap.initialSync")}</Label><Select value={current.inbound.initialSync} onValueChange={initialSync => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), initialSync: initialSync as "new" | "unseen" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">{t("imap.initialSyncOptions.new")}</SelectItem><SelectItem value="unseen">{t("imap.initialSyncOptions.unseen")}</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>{t("imap.pollInterval")}</Label><Input type="number" min={15} max={86400} value={current.inbound.pollIntervalSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), pollIntervalSeconds: Number(event.target.value) } }))} /></div>
+                  <div className="space-y-2"><Label>{t("imap.maxMessages")}</Label><Input type="number" min={1} max={1000} value={current.inbound.maxMessagesPerPoll} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), maxMessagesPerPoll: Number(event.target.value) } }))} /></div>
+                  <div className="flex items-center justify-between gap-3 rounded border p-3 sm:col-span-2"><div><Label>{t("common.strictCertificate")}</Label><p className="text-xs text-muted-foreground">{t("imap.certificateHelp")}</p></div><Switch checked={current.inbound.rejectUnauthorized} onCheckedChange={rejectUnauthorized => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), rejectUnauthorized } }))} /></div>
+                  <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => void testImap()} disabled={testingImap}><PlugZap className="mr-1 h-4 w-4" />{testingImap ? t("imap.testing") : t("imap.test")}</Button></div>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">{t("imap.readOnlyHelp")}</p>
                 </div>
               )}
               <Button type="button" variant="outline" size="sm" onClick={() => updateCurrent(() => freshPolicy(current.domain))}>
-                <RotateCcw className="mr-1 h-4 w-4" />重置此域
+                <RotateCcw className="mr-1 h-4 w-4" />{t("resetDomain")}
               </Button>
             </section>
 
             <section className="space-y-4 rounded-md border p-4">
-              <div><h3 className="font-medium">发件</h3><p className="text-xs text-muted-foreground">Resend API Key 与 SMTP 凭据按域保存。</p></div>
+              <div><h3 className="font-medium">{t("outbound")}</h3><p className="text-xs text-muted-foreground">{t("outboundDescription")}</p></div>
               <div className="space-y-2">
-                <Label>发件方式</Label>
+                <Label>{t("outboundMode")}</Label>
                 <Select value={current.outbound.mode} onValueChange={mode => setOutboundMode(mode as Outbound["mode"])}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="resend">Resend</SelectItem>
-                    <SelectItem value="smtp">外部 SMTP</SelectItem>
-                    <SelectItem value="disabled">关闭发件</SelectItem>
+                    <SelectItem value="resend">{t("outboundModes.resend")}</SelectItem>
+                    <SelectItem value="smtp">{t("outboundModes.smtp")}</SelectItem>
+                    <SelectItem value="disabled">{t("outboundModes.disabled")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {current.outbound.mode === "resend" && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2"><Label>Resend API Key</Label><Input type="password" autoComplete="new-password" value={current.outbound.apiKey} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "resend" }>), apiKey: event.target.value } }))} /></div>
-                  <div className="space-y-2 sm:col-span-2"><Label>发件人名称（可选）</Label><Input value={current.outbound.fromName ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "resend" }>), fromName: event.target.value || null } }))} /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label>{t("resendApiKey")}</Label><SecretInput showLabel={t("secrets.show")} hideLabel={t("secrets.hide")} autoComplete="new-password" value={current.outbound.apiKey} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "resend" }>), apiKey: event.target.value } }))} /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label>{t("smtp.fromName")}</Label><Input value={current.outbound.fromName ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "resend" }>), fromName: event.target.value || null } }))} /></div>
                 </div>
               )}
 
               {current.outbound.mode === "smtp" && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2"><Label>SMTP 主机</Label><Input value={current.outbound.host} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), host: event.target.value } }))} /></div>
-                  <div className="space-y-2"><Label>端口</Label><Input type="number" min={1} max={65535} value={current.outbound.port} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), port: Number(event.target.value) } }))} /></div>
-                  <div className="space-y-2"><Label>安全模式</Label><Select value={current.outbound.security} onValueChange={security => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), security: security as "plain" | "starttls" | "tls" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="starttls">STARTTLS</SelectItem><SelectItem value="tls">TLS</SelectItem><SelectItem value="plain">明文</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>认证方式</Label><Select value={current.outbound.authMethod} onValueChange={authMethod => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), authMethod: authMethod as "auto" | "plain" | "login" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动协商（推荐）</SelectItem><SelectItem value="plain">强制 PLAIN</SelectItem><SelectItem value="login">强制 LOGIN（Microsoft/Outlook 等）</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>发件人名称（可选）</Label><Input value={current.outbound.fromName ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), fromName: event.target.value || null } }))} /></div>
-                  <div className="space-y-2"><Label>用户名（可选）</Label><Input value={current.outbound.username ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), username: event.target.value || null } }))} /></div>
-                  <div className="space-y-2"><Label>密码（可选）</Label><Input type="password" autoComplete="new-password" value={current.outbound.password ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), password: event.target.value || null } }))} /></div>
-                  <div className="flex items-center justify-between gap-3 rounded border p-3 sm:col-span-2"><div><Label>严格校验证书</Label><p className="text-xs text-muted-foreground">生产环境建议保持开启。</p></div><Switch checked={current.outbound.rejectUnauthorized} onCheckedChange={rejectUnauthorized => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), rejectUnauthorized } }))} /></div>
-                  <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => void testSmtp()} disabled={testingSmtp}><PlugZap className="mr-1 h-4 w-4" />{testingSmtp ? "连接中" : "测试 SMTP 连接"}</Button></div>
+                  <div className="space-y-2"><Label>{t("smtp.host")}</Label><Input value={current.outbound.host} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), host: event.target.value } }))} /></div>
+                  <div className="space-y-2"><Label>{t("common.port")}</Label><Input type="number" min={1} max={65535} value={current.outbound.port} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), port: Number(event.target.value) } }))} /></div>
+                  <div className="space-y-2"><Label>{t("common.security")}</Label><Select value={current.outbound.security} onValueChange={security => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), security: security as "plain" | "starttls" | "tls" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="starttls">{t("common.securityOptions.starttls")}</SelectItem><SelectItem value="tls">{t("common.securityOptions.tls")}</SelectItem><SelectItem value="plain">{t("common.securityOptions.plain")}</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>{t("smtp.authMethod")}</Label><Select value={current.outbound.authMethod} onValueChange={authMethod => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), authMethod: authMethod as "auto" | "plain" | "login" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">{t("smtp.authMethods.auto")}</SelectItem><SelectItem value="plain">{t("smtp.authMethods.plain")}</SelectItem><SelectItem value="login">{t("smtp.authMethods.login")}</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>{t("smtp.fromName")}</Label><Input value={current.outbound.fromName ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), fromName: event.target.value || null } }))} /></div>
+                  <div className="space-y-2"><Label>{t("smtp.username")}</Label><Input value={current.outbound.username ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), username: event.target.value || null } }))} /></div>
+                  <div className="space-y-2"><Label>{t("smtp.password")}</Label><SecretInput showLabel={t("secrets.show")} hideLabel={t("secrets.hide")} autoComplete="new-password" value={current.outbound.password ?? ""} onChange={event => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), password: event.target.value || null } }))} /></div>
+                  <div className="flex items-center justify-between gap-3 rounded border p-3 sm:col-span-2"><div><Label>{t("common.strictCertificate")}</Label><p className="text-xs text-muted-foreground">{t("smtp.certificateHelp")}</p></div><Switch checked={current.outbound.rejectUnauthorized} onCheckedChange={rejectUnauthorized => updateCurrent(policy => ({ ...policy, outbound: { ...(policy.outbound as Extract<Outbound, { mode: "smtp" }>), rejectUnauthorized } }))} /></div>
+                  <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => void testSmtp()} disabled={testingSmtp}><PlugZap className="mr-1 h-4 w-4" />{testingSmtp ? t("smtp.testing") : t("smtp.test")}</Button></div>
                 </div>
               )}
             </section>
           </div>
         </>
       )}
+      <AlertDialog open={deleteDomain !== null} onOpenChange={open => { if (!open) setDeleteDomain(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("deleteConfirm.title")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteConfirm.description", { domain: deleteDomain ?? "" })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("deleteConfirm.cancel")}</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={removeCurrent}>{t("deleteConfirm.confirm")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

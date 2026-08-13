@@ -6,12 +6,20 @@ import { Card } from "@/components/ui/card"
 import { BrandHeader } from "@/components/ui/brand-header"
 import { FloatingLanguageSwitcher } from "@/components/layout/floating-language-switcher"
 
+type SharedMessageKey =
+  | "emailNotFound"
+  | "messageNotFound"
+  | "linkExpired"
+  | "linkInvalid"
+  | "linkInvalidDescription"
+  | "createOwnEmail"
+
 interface SharedErrorPageProps {
-  titleKey: string
-  subtitleKey: string
-  errorKey: string
-  descriptionKey: string
-  ctaTextKey: string
+  titleKey: SharedMessageKey
+  subtitleKey: SharedMessageKey
+  errorKey: SharedMessageKey
+  descriptionKey: SharedMessageKey
+  ctaTextKey: SharedMessageKey
 }
 
 export function SharedErrorPage({

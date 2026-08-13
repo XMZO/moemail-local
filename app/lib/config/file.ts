@@ -12,7 +12,7 @@ import {
 } from "node:fs"
 import { randomBytes } from "node:crypto"
 import { dirname, resolve } from "node:path"
-import { Document, isMap, isPair, parse } from "yaml"
+import { Document, parse } from "yaml"
 import type { AppConfig } from "./schema"
 
 export const DEFAULT_CONFIG_RELATIVE_PATH = "data/config.yaml"
@@ -72,54 +72,19 @@ export function parseConfigDocument(raw: string): unknown {
     if (offset !== null) {
       const before = raw.slice(0, offset)
       const lines = before.split(/\r\n|\r|\n/)
-      location = `，第 ${lines.length} 行，第 ${(lines.at(-1)?.length ?? 0) + 1} 列`
+      location = `:${lines.length}:${(lines.at(-1)?.length ?? 0) + 1}`
     }
-    throw new Error(`YAML 语法错误（${code}${location}）`)
+    throw new Error(`YAML_PARSE_FAILED:${code}${location}`)
   }
   if (parsed === null || parsed === undefined) return {}
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("配置文件的顶层必须是键值对")
+    throw new Error("CONFIG_ROOT_OBJECT_REQUIRED")
   }
   return parsed
 }
 
-const FILE_HEADER = [
-  " MoeMail 运行配置",
-  "",
-  " - 本文件是唯一的运行时配置来源，不再使用环境变量或 .env。",
-  " - 直接编辑本文件即可生效：进程会检测改动、校验后热加载；校验失败会保留上一份可用配置。",
-  " - 也可以在 WebUI「运行配置」面板中修改，保存后会写回本文件。",
-  " - 文件含明文密钥，权限应保持 0600。",
-].join("\n")
-
-const SECTION_COMMENTS: Record<string, string> = {
-  setup: " 首次启动向导的完成状态；置为 false 会重新进入初始化向导。",
-  server: " 站点地址与前端行为。反向代理终止 TLS 时请开启 trustProxyHeaders。",
-  database: " 数据库类型与连接参数。切换 driver 需要重启进程（默认自动重启）。",
-  auth: " 会话密钥、OAuth 与登录防滥用限制。",
-  email: " Email Worker 入站投递鉴权；外部 IMAP/SMTP 凭据按域保存在站点配置中。",
-  cleanup: " 过期邮箱清理任务的批量参数。",
-  scheduler: " Docker / systemd 常驻 scheduler 的执行间隔。",
-  monitor: " 磁盘、WAL、HTTP 5xx 与投递失败的监控阈值。",
-  offsite: " rclone 异地备份同步。",
-}
-
 export function stringifyConfig(config: AppConfig) {
   const document = new Document(config)
-  document.commentBefore = FILE_HEADER
-
-  const contents = document.contents
-  if (isMap(contents)) {
-    for (const item of contents.items) {
-      if (!isPair(item)) continue
-      const key = (item.key as { value?: unknown })?.value
-      const comment = typeof key === "string" ? SECTION_COMMENTS[key] : undefined
-      if (comment && item.key && typeof item.key === "object") {
-        ;(item.key as { commentBefore?: string }).commentBefore = comment
-      }
-    }
-  }
-
   return document.toString({ lineWidth: 0, nullStr: "null" })
 }
 

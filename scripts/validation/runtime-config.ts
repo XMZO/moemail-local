@@ -323,6 +323,19 @@ try {
     watcherAppliedWithoutManualReload: true,
   }, null, 2))
 } finally {
+  const state = (globalThis as typeof globalThis & {
+    __moemailConfigState?: { path?: string }
+  }).__moemailConfigState
+  if (state) {
+    const runtime = await import(pathToFileURL(
+      resolve(repositoryRoot, "app/lib/config/runtime.ts"),
+    ).href)
+    const database = await import(pathToFileURL(
+      resolve(repositoryRoot, "app/lib/db.ts"),
+    ).href)
+    await runtime.closeConfigRuntime()
+    await database.closeDatabase()
+  }
   process.chdir(repositoryRoot)
   rmSync(temporaryRoot, { recursive: true, force: true })
 }

@@ -2,9 +2,10 @@
 
 import type { User } from "next-auth"
 import { signOut } from "next-auth/react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Crown, Gem, Github, KeyRound, Mail, Settings, SlidersHorizontal, Sword, Type, User2, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -20,6 +21,9 @@ import { WebsiteConfigPanel } from "./website-config-panel"
 import { WebhookConfig } from "./webhook-config"
 
 interface ProfileCardProps { user: User }
+
+const profileTabs = ["account", "domains", "access", "users", "site", "appearance", "runtime", "webhook", "keys"] as const
+type ProfileTab = typeof profileTabs[number]
 
 const roleConfigs = {
   emperor: { key: "EMPEROR", icon: Crown },
@@ -46,33 +50,100 @@ export function ProfileCard({ user }: ProfileCardProps) {
   const tAuth = useTranslations("auth.signButton")
   const tWebhook = useTranslations("profile.webhook")
   const tNav = useTranslations("common.nav")
+  const tFormat = useTranslations("common.format")
+  const tAdminNav = useTranslations("admin.navigation")
   const locale = useLocale()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { checkPermission } = useRolePermission()
   const canManageWebhook = checkPermission(PERMISSIONS.MANAGE_WEBHOOK)
   const canManageApiKey = checkPermission(PERMISSIONS.MANAGE_API_KEY)
   const canPromote = checkPermission(PERMISSIONS.PROMOTE_USER)
   const canManageConfig = checkPermission(PERMISSIONS.MANAGE_CONFIG)
   const isEmperor = user.roles?.some(role => role.name === ROLES.EMPEROR) ?? false
+  const allowedTabs = useMemo(() => new Set<ProfileTab>([
+    "account",
+    ...(canManageConfig ? ["domains", "site", "appearance"] as const : []),
+    ...(isEmperor ? ["access", "runtime"] as const : []),
+    ...(canPromote ? ["users"] as const : []),
+    ...(canManageWebhook ? ["webhook"] as const : []),
+    ...(canManageApiKey ? ["keys"] as const : []),
+  ]), [canManageApiKey, canManageConfig, canManageWebhook, canPromote, isEmperor])
+  const requestedTab = searchParams.get("tab")
+  const requestedActiveTab: ProfileTab = profileTabs.includes(requestedTab as ProfileTab)
+    && allowedTabs.has(requestedTab as ProfileTab)
+    ? requestedTab as ProfileTab
+    : "account"
+  const [activeTab, setActiveTab] = useState<ProfileTab>(requestedActiveTab)
+  const [visitedTabs, setVisitedTabs] = useState<Set<ProfileTab>>(
+    () => new Set([requestedActiveTab]),
+  )
+
+  useEffect(() => {
+    setActiveTab(requestedActiveTab)
+    setVisitedTabs(previous => {
+      if (previous.has(requestedActiveTab)) return previous
+      return new Set(previous).add(requestedActiveTab)
+    })
+  }, [requestedActiveTab])
+
+  useEffect(() => {
+    const preload = () => {
+      setVisitedTabs(previous => {
+        if (previous.size === allowedTabs.size && [...allowedTabs].every(tab => previous.has(tab))) {
+          return previous
+        }
+        return new Set([...previous, ...allowedTabs])
+      })
+    }
+    const idleWindow = window as typeof window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+      cancelIdleCallback?: (handle: number) => void
+    }
+    if (idleWindow.requestIdleCallback) {
+      const handle = idleWindow.requestIdleCallback(preload, { timeout: 300 })
+      return () => idleWindow.cancelIdleCallback?.(handle)
+    }
+    const handle = window.setTimeout(preload, 120)
+    return () => window.clearTimeout(handle)
+  }, [allowedTabs])
+
+  const changeTab = (value: string) => {
+    const tab = value as ProfileTab
+    if (!allowedTabs.has(tab) || tab === activeTab) return
+    setActiveTab(tab)
+    setVisitedTabs(previous => new Set(previous).add(tab))
+    const next = new URLSearchParams(searchParams.toString())
+    if (tab === "account") next.delete("tab")
+    else next.set("tab", tab)
+    const search = next.toString()
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+    )
+  }
+
+  const persistentTabClass = "data-[state=inactive]:hidden data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-150"
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <Tabs defaultValue="account" className="w-full">
+      <Tabs value={activeTab} onValueChange={changeTab} className="w-full">
         <div className="overflow-x-auto pb-1">
           <TabsList className="h-auto min-w-max justify-start">
-            <TabsTrigger value="account"><TabLabel icon={User2}>账户</TabLabel></TabsTrigger>
-            {canManageConfig && <TabsTrigger value="domains"><TabLabel icon={Mail}>域名收发</TabLabel></TabsTrigger>}
-            {isEmperor && <TabsTrigger value="access"><TabLabel icon={SlidersHorizontal}>权限配额</TabLabel></TabsTrigger>}
-            {canPromote && <TabsTrigger value="users"><TabLabel icon={Users}>用户</TabLabel></TabsTrigger>}
-            {canManageConfig && <TabsTrigger value="site"><TabLabel icon={Settings}>站点</TabLabel></TabsTrigger>}
-            {canManageConfig && <TabsTrigger value="appearance"><TabLabel icon={Type}>外观</TabLabel></TabsTrigger>}
-            {isEmperor && <TabsTrigger value="runtime"><TabLabel icon={SlidersHorizontal}>运行配置</TabLabel></TabsTrigger>}
-            {canManageWebhook && <TabsTrigger value="webhook"><TabLabel icon={Settings}>Webhook</TabLabel></TabsTrigger>}
-            {canManageApiKey && <TabsTrigger value="keys"><TabLabel icon={KeyRound}>API Key</TabLabel></TabsTrigger>}
+            <TabsTrigger value="account"><TabLabel icon={User2}>{tAdminNav("account")}</TabLabel></TabsTrigger>
+            {canManageConfig && <TabsTrigger value="domains"><TabLabel icon={Mail}>{tAdminNav("domains")}</TabLabel></TabsTrigger>}
+            {isEmperor && <TabsTrigger value="access"><TabLabel icon={SlidersHorizontal}>{tAdminNav("access")}</TabLabel></TabsTrigger>}
+            {canPromote && <TabsTrigger value="users"><TabLabel icon={Users}>{tAdminNav("users")}</TabLabel></TabsTrigger>}
+            {canManageConfig && <TabsTrigger value="site"><TabLabel icon={Settings}>{tAdminNav("site")}</TabLabel></TabsTrigger>}
+            {canManageConfig && <TabsTrigger value="appearance"><TabLabel icon={Type}>{tAdminNav("appearance")}</TabLabel></TabsTrigger>}
+            {isEmperor && <TabsTrigger value="runtime"><TabLabel icon={SlidersHorizontal}>{tAdminNav("runtime")}</TabLabel></TabsTrigger>}
+            {canManageWebhook && <TabsTrigger value="webhook"><TabLabel icon={Settings}>{tAdminNav("webhook")}</TabLabel></TabsTrigger>}
+            {canManageApiKey && <TabsTrigger value="keys"><TabLabel icon={KeyRound}>{tAdminNav("apiKey")}</TabLabel></TabsTrigger>}
           </TabsList>
         </div>
 
-        <TabsContent value="account">
+        {visitedTabs.has("account") && <TabsContent value="account" forceMount className={persistentTabClass}>
           <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-6">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-primary/10 ring-2 ring-primary/20">
@@ -80,21 +151,21 @@ export function ProfileCard({ user }: ProfileCardProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-xl font-bold">{user.name || user.username}</h2>{user.providers?.map(provider => { const config = providerConfigs[provider as keyof typeof providerConfigs]; if (!config) return null; const Icon = config.icon; return <span key={provider} className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${config.className}`}><Icon className="h-3 w-3" />{config.label}</span> })}</div>
-                <p className="mt-1 truncate text-sm text-muted-foreground">{user.email || `${t("name")}: ${user.username}`}</p>
+                <p className="mt-1 truncate text-sm text-muted-foreground">{user.email || tFormat("labelValue", { label: t("name"), value: user.username ?? "" })}</p>
                 <div className="mt-2 flex flex-wrap gap-2">{user.roles?.map(({ name }) => { const role = roleConfigs[name as keyof typeof roleConfigs]; if (!role) return null; const Icon = role.icon; return <span key={name} className="flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"><Icon className="h-3 w-3" />{t(`roles.${role.key}` as never)}</span> })}</div>
               </div>
               <div className="flex shrink-0 gap-2 sm:flex-col"><Button onClick={() => router.push(`/${locale}/moe`)} className="flex-1 gap-2"><Mail className="h-4 w-4" />{tNav("backToMailbox")}</Button><Button variant="outline" onClick={() => signOut({ callbackUrl: `/${locale}` })} className="flex-1">{tAuth("logout")}</Button></div>
             </div>
           </div>
-        </TabsContent>
-        {canManageConfig && <TabsContent value="domains"><DomainPolicyPanel /></TabsContent>}
-        {isEmperor && <TabsContent value="access"><AccessPolicyPanel /></TabsContent>}
-        {canPromote && <TabsContent value="users"><PromotePanel /></TabsContent>}
-        {canManageConfig && <TabsContent value="site"><WebsiteConfigPanel /></TabsContent>}
-        {canManageConfig && <TabsContent value="appearance"><AppearancePanel /></TabsContent>}
-        {isEmperor && <TabsContent value="runtime"><RuntimeConfigPanel /></TabsContent>}
-        {canManageWebhook && <TabsContent value="webhook"><div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-6"><div className="mb-5 flex items-center gap-2"><Settings className="h-5 w-5 text-primary" /><h2 className="font-semibold">{tWebhook("title")}</h2></div><WebhookConfig /></div></TabsContent>}
-        {canManageApiKey && <TabsContent value="keys"><ApiKeyPanel /></TabsContent>}
+        </TabsContent>}
+        {canManageConfig && visitedTabs.has("domains") && <TabsContent value="domains" forceMount className={persistentTabClass}><DomainPolicyPanel /></TabsContent>}
+        {isEmperor && visitedTabs.has("access") && <TabsContent value="access" forceMount className={persistentTabClass}><AccessPolicyPanel /></TabsContent>}
+        {canPromote && visitedTabs.has("users") && <TabsContent value="users" forceMount className={persistentTabClass}><PromotePanel /></TabsContent>}
+        {canManageConfig && visitedTabs.has("site") && <TabsContent value="site" forceMount className={persistentTabClass}><WebsiteConfigPanel /></TabsContent>}
+        {canManageConfig && visitedTabs.has("appearance") && <TabsContent value="appearance" forceMount className={persistentTabClass}><AppearancePanel allowAdvanced={isEmperor} /></TabsContent>}
+        {isEmperor && visitedTabs.has("runtime") && <TabsContent value="runtime" forceMount className={persistentTabClass}><RuntimeConfigPanel /></TabsContent>}
+        {canManageWebhook && visitedTabs.has("webhook") && <TabsContent value="webhook" forceMount className={persistentTabClass}><div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-6"><div className="mb-5 flex items-center gap-2"><Settings className="h-5 w-5 text-primary" /><h2 className="font-semibold">{tWebhook("title")}</h2></div><WebhookConfig /></div></TabsContent>}
+        {canManageApiKey && visitedTabs.has("keys") && <TabsContent value="keys" forceMount className={persistentTabClass}><ApiKeyPanel /></TabsContent>}
       </Tabs>
     </div>
   )

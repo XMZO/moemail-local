@@ -15,6 +15,7 @@ import { createDefaultConfig, parseConfig } from "@/lib/config/schema"
 import { checkDriverBinding } from "@/lib/db"
 import { ROLES } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
+import { apiErrorBody, apiIssues } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -42,7 +43,7 @@ async function authorizeEmperor(request: Request) {
   if (!authorization.principal.roles.includes(ROLES.EMPEROR)) {
     return {
       ok: false as const,
-      response: json({ error: "仅皇帝可以查看或修改运行配置" }, 403),
+      response: json(apiErrorBody("EMPEROR_REQUIRED"), 403),
     }
   }
 
@@ -78,8 +79,8 @@ export async function GET(request: Request) {
       status,
     })
   } catch (error) {
-    console.error("Failed to read runtime config:", error)
-    return json({ error: "读取运行配置失败" }, 500)
+    console.error("runtime_config.read_failed", error)
+    return json(apiErrorBody("RUNTIME_CONFIG_READ_FAILED"), 500)
   }
 }
 
@@ -91,11 +92,11 @@ export async function POST(request: Request) {
   try {
     payload = await request.json()
   } catch {
-    return json({ error: "请求格式无效", issues: [] }, 400)
+    return json(apiErrorBody("INVALID_JSON", { issues: [] }), 400)
   }
 
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return json({ error: "请求格式无效", issues: [] }, 400)
+    return json(apiErrorBody("INVALID_REQUEST", { issues: [] }), 400)
   }
 
   const { yaml, config, fingerprint } = payload as {
@@ -104,16 +105,14 @@ export async function POST(request: Request) {
     fingerprint?: unknown
   }
   if (typeof yaml !== "string" && config === undefined) {
-    return json({
-      error: "必须提供 YAML 文本或视觉配置对象",
-      issues: [{ path: "config", message: "缺少配置内容" }],
-    }, 400)
+    return json(apiErrorBody("CONFIG_CONTENT_REQUIRED", {
+      issues: apiIssues([{ path: "config" }], "CONFIG_CONTENT_REQUIRED"),
+    }), 400)
   }
   if (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
-    return json({
-      error: "配置文件指纹无效",
-      issues: [{ path: "fingerprint", message: "必须先重新加载当前配置" }],
-    }, 400)
+    return json(apiErrorBody("CONFIG_FINGERPRINT_INVALID", {
+      issues: apiIssues([{ path: "fingerprint" }], "CONFIG_FINGERPRINT_INVALID"),
+    }), 400)
   }
 
   let document: unknown = config
@@ -121,19 +120,18 @@ export async function POST(request: Request) {
     try {
       document = parseConfigDocument(yaml)
     } catch (error) {
-      return json({
-        error: "YAML 解析失败",
-        issues: [{
-          path: "(file)",
-          message: error instanceof Error ? error.message : String(error),
-        }],
-      }, 400)
+      console.error("runtime_config.yaml_parse_failed", error)
+      return json(apiErrorBody("YAML_PARSE_FAILED", {
+        issues: apiIssues([{ path: "(file)" }], "YAML_PARSE_FAILED"),
+      }), 400)
     }
   }
 
   const parsed = parseConfig(document)
   if (!parsed.ok) {
-    return json({ error: "配置校验未通过", issues: parsed.issues }, 400)
+    return json(apiErrorBody("CONFIG_VALIDATION_FAILED", {
+      issues: apiIssues(parsed.issues),
+    }), 400)
   }
 
   try {
@@ -145,10 +143,10 @@ export async function POST(request: Request) {
       const conflict = result.issues.some(issue => (
         issue.path === "(revision)" || issue.path === "(fingerprint)"
       ))
-      return json({
-        error: conflict ? "配置已被其他修改更新" : "配置未应用",
-        issues: result.issues,
-      }, conflict ? 409 : 400)
+      return json(apiErrorBody(
+        conflict ? "CONFIG_CONFLICT" : "CONFIG_NOT_APPLIED",
+        { issues: apiIssues(result.issues) },
+      ), conflict ? 409 : 400)
     }
 
     checkDriverBinding()
@@ -166,7 +164,7 @@ export async function POST(request: Request) {
       status,
     })
   } catch (error) {
-    console.error("Failed to save runtime config:", error)
-    return json({ error: "保存运行配置失败", issues: [] }, 500)
+    console.error("runtime_config.save_failed", error)
+    return json(apiErrorBody("RUNTIME_CONFIG_SAVE_FAILED", { issues: [] }), 500)
   }
 }

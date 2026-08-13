@@ -55,7 +55,7 @@ export async function getSharedEmail(token: string): Promise<SharedEmail | null>
       expiresAt: share.email.expiresAt
     }
   } catch (error) {
-    console.error("Failed to fetch shared email:", error)
+    console.error("shared_mailbox.fetch_failed", error)
     return null
   }
 }
@@ -83,6 +83,10 @@ export async function getSharedEmailMessages(token: string, limit = 20): Promise
 
     // 检查分享是否过期
     if (share.expiresAt && share.expiresAt < new Date()) {
+      return { messages: [], nextCursor: null, total: 0 }
+    }
+
+    if (share.email.expiresAt.getTime() <= Date.now()) {
       return { messages: [], nextCursor: null, total: 0 }
     }
 
@@ -144,7 +148,7 @@ export async function getSharedEmailMessages(token: string, limit = 20): Promise
       total: totalCount
     }
   } catch (error) {
-    console.error("Failed to fetch shared email messages:", error)
+    console.error("shared_mailbox.messages_fetch_failed", error)
     return { messages: [], nextCursor: null, total: 0 }
   }
 }
@@ -179,6 +183,7 @@ export async function getSharedMessage(token: string): Promise<SharedMessage | n
     const email = await db.query.emails.findFirst({
       where: eq(emails.id, message.emailId)
     })
+    if (!email || email.expiresAt.getTime() <= Date.now()) return null
 
     return {
       id: message.id,
@@ -190,11 +195,11 @@ export async function getSharedMessage(token: string): Promise<SharedMessage | n
       received_at: message.receivedAt,
       sent_at: message.sentAt,
       expiresAt: share.expiresAt ?? undefined,
-      emailAddress: email?.address,
-      emailExpiresAt: email?.expiresAt
+      emailAddress: email.address,
+      emailExpiresAt: email.expiresAt
     }
   } catch (error) {
-    console.error("Failed to fetch shared message:", error)
+    console.error("shared_message.fetch_failed", error)
     return null
   }
 }

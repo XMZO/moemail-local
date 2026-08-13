@@ -177,7 +177,7 @@ export async function hashPassword(
   }, peppered, pepper)
 
   if (!derivedKey) {
-    throw new Error("auth.passwordPepper is required for the selected password hash")
+    throw new Error("PASSWORD_PEPPER_REQUIRED")
   }
 
   return [

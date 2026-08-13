@@ -4,6 +4,7 @@ import { NextResponse } from "next/server"
 import { PERMISSIONS } from "@/lib/permissions"
 import { eq, and } from "drizzle-orm"
 import { authorizeRequest } from "@/lib/request-auth"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -30,19 +31,13 @@ export async function DELETE(
       .returning()
 
     if (!result.length) {
-      return NextResponse.json(
-        { error: "API Key 不存在或无权删除" },
-        { status: 404 }
-      )
+      return apiError("API_KEY_NOT_FOUND", 404)
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Failed to delete API key:", error)
-    return NextResponse.json(
-      { error: "删除 API Key 失败" },
-      { status: 500 }
-    )
+    console.error("api_key.delete_failed", error)
+    return apiError("API_KEY_DELETE_FAILED", 500)
   }
 }
 
@@ -72,18 +67,12 @@ export async function PATCH(
       .returning()
 
     if (!result.length) {
-      return NextResponse.json(
-        { error: "API Key 不存在或无权更新" },
-        { status: 404 }
-      )
+      return apiError("API_KEY_NOT_FOUND", 404)
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Failed to update API key:", error)
-    return NextResponse.json(
-      { error: "更新 API Key 失败" },
-      { status: 500 }
-    )
+    console.error("api_key.update_failed", error)
+    return apiError("API_KEY_UPDATE_FAILED", 500)
   }
 }

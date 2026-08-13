@@ -14,8 +14,11 @@ import {
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { parse, stringify } from "yaml"
+import Database from "better-sqlite3"
+import { Pool } from "pg"
 import { stringifyConfig } from "../../app/lib/config/file"
 import { createDefaultConfig } from "../../app/lib/config/schema"
+import { parsePostgresConnectionUrl } from "../../app/lib/postgres-connection"
 
 const repositoryRoot = process.cwd()
 const temporaryRoot = mkdtempSync(join(tmpdir(), "moemail-setup-http-"))
@@ -29,6 +32,31 @@ const expectedDriver = postgresUrl ? "postgres" : "sqlite"
 const stagedRedactionProbe = process.argv.includes("--staged-lkg-redaction")
 const verifyMaintenanceBundle = process.argv.includes("--verify-maintenance-bundle")
 const stagedRcloneSecret = "staged-rclone-secret-must-not-appear-in-setup-html"
+
+type MailDirection = "send" | "receive"
+type DomainAccessMode = "allow" | "receive" | "send" | "deny"
+type MailQuotaRule = { limit: number; windowValue: number; windowUnit: "second" | "minute" | "hour" | "day" | "week" | "month" }
+type MailboxQuotaRule = { rolling: MailQuotaRule; lifetimeLimit: number }
+type MailQuotaPolicy = {
+  scope: "user" | "role"
+  total: MailQuotaRule
+  domains: Record<string, MailQuotaRule>
+  mailbox: MailboxQuotaRule
+  domainMailboxes: Record<string, MailboxQuotaRule>
+  mailboxes: Record<string, MailboxQuotaRule>
+}
+type RoleAccessPolicy = {
+  permissions: Record<string, boolean>
+  quotas: { maxActiveMailboxes: number; maxMailboxLifetimeDays: number; maxMessageBytes: number }
+  domainAccess: { default: DomainAccessMode; domains: Record<string, DomainAccessMode> }
+  sendQuota: MailQuotaPolicy
+  receiveQuota: MailQuotaPolicy
+}
+
+const mailboxRule = (rollingLimit: number, lifetimeLimit: number): MailboxQuotaRule => ({
+  rolling: { limit: rollingLimit, windowValue: 1, windowUnit: "day" },
+  lifetimeLimit,
+})
 
 class CookieJar {
   private readonly values = new Map<string, string>()
@@ -88,6 +116,43 @@ async function stop(child: ChildProcess) {
     new Promise<void>(resolvePromise => setTimeout(resolvePromise, 5_000)),
   ])
   if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+}
+
+async function expireMailbox(mailboxId: string) {
+  const expiresAt = new Date(Date.now() - 60_000)
+  if (postgresUrl) {
+    const target = parsePostgresConnectionUrl(postgresUrl)
+    const pool = new Pool({
+      host: target.host,
+      port: Number(target.port),
+      database: target.database,
+      user: target.user,
+      password: async () => target.password,
+      max: 1,
+    })
+    try {
+      const result = await pool.query(
+        `UPDATE email SET expires_at = $1 WHERE id = $2`,
+        [expiresAt, mailboxId],
+      )
+      assert.equal(result.rowCount, 1)
+    } finally {
+      await pool.end()
+    }
+    return
+  }
+
+  const sqlite = new Database(join(temporaryRoot, "data/http-setup.db"), {
+    fileMustExist: true,
+    timeout: 5_000,
+  })
+  try {
+    const result = sqlite.prepare(`UPDATE email SET expires_at = ? WHERE id = ?`)
+      .run(expiresAt.getTime(), mailboxId)
+    assert.equal(result.changes, 1)
+  } finally {
+    sqlite.close()
+  }
 }
 
 async function verifyCompressedFontAsset(baseUrl: string, html: string) {
@@ -178,14 +243,35 @@ try {
   assert.equal(root.status, 307)
   assert.equal(new URL(root.headers.get("location") as string, baseUrl).pathname, "/zh-CN/setup")
 
-  const setupPage = await fetch(`${baseUrl}/zh-CN/setup`)
-  assert.equal(setupPage.status, 200)
-  const setupHtml = await setupPage.text()
-  assert.match(setupHtml, /MoeMail/)
+  const localizedSetupExpectations = {
+    en: { marker: "Set up MoeMail", configPath: "Config file: <code" },
+    "zh-CN": { marker: "一次性初始化令牌", configPath: "配置文件：<code" },
+    "zh-TW": { marker: "一次性初始化權杖", configPath: "設定檔：<code" },
+    ja: { marker: "MoeMail をセットアップ", configPath: "設定ファイル：<code" },
+    ko: { marker: "MoeMail 설정", configPath: "구성 파일: <code" },
+  } as const
+  const localizedSetupHtml = new Map<string, string>()
+  for (const [locale, expectation] of Object.entries(localizedSetupExpectations)) {
+    const setupPage = await fetch(`${baseUrl}/${locale}/setup`)
+    assert.equal(setupPage.status, 200)
+    const html = await setupPage.text()
+    assert.ok(html.includes(expectation.marker), `${locale} setup page must render its own translation`)
+    assert.ok(
+      html.includes(expectation.configPath),
+      `${locale} setup page must use locale-specific punctuation and spacing`,
+    )
+    localizedSetupHtml.set(locale, html)
+  }
+  const setupHtml = localizedSetupHtml.get("zh-CN") as string
+  const setupHeaderHtml = setupHtml.match(/<header[\s\S]*?<\/header>/u)?.[0]
+  assert.ok(setupHeaderHtml, "setup page must render its header")
+  assert.match(setupHeaderHtml, /切换语言/u)
+  assert.match(setupHeaderHtml, /切换主题/u)
+  assert.doesNotMatch(setupHeaderHtml, /登录\/注册/u)
   await verifyCompressedFontAsset(baseUrl, setupHtml)
   if (stagedRedactionProbe) {
     assert.doesNotMatch(setupHtml, new RegExp(stagedRcloneSecret))
-    assert.match(setupHtml, /Existing advanced values are preserved/)
+    assert.match(setupHtml, /已保留现有高级配置值/)
 
     // 覆盖 LKG 随后丢失、runtime 仅保留已验证内存配置的边界；匿名页面仍
     // 不得把 staged secret 当作 fresh defaults 序列化出来。
@@ -196,7 +282,7 @@ try {
     assert.equal(memoryOnlySetupPage.status, 200)
     const memoryOnlyHtml = await memoryOnlySetupPage.text()
     assert.doesNotMatch(memoryOnlyHtml, new RegExp(stagedRcloneSecret))
-    assert.match(memoryOnlyHtml, /Existing advanced values are preserved/)
+    assert.match(memoryOnlyHtml, /已保留现有高级配置值/)
   } else {
     assert.match(setupHtml, /rcloneConfigContent/)
   }
@@ -302,18 +388,45 @@ try {
   })
   assert.equal(setupClosed.status, 409)
 
+  const authSignInFallback = await fetch(`${baseUrl}/api/auth/signin`, { redirect: "manual" })
+  assert.ok([302, 303, 307, 308].includes(authSignInFallback.status))
+  const authSignInEntry = new URL(authSignInFallback.headers.get("location") as string, baseUrl)
+  assert.equal(authSignInEntry.pathname, "/login")
+  const localizedAuthSignIn = await fetch(authSignInEntry, { redirect: "manual" })
+  assert.ok([302, 303, 307, 308].includes(localizedAuthSignIn.status))
+  assert.equal(
+    new URL(localizedAuthSignIn.headers.get("location") as string, baseUrl).pathname,
+    "/en/login",
+  )
+  const authErrorMarkers = {
+    en: "Authentication failed",
+    "zh-CN": "身份验证失败",
+    "zh-TW": "身分驗證失敗",
+    ja: "認証に失敗しました",
+    ko: "인증에 실패했습니다",
+  } as const
+  for (const [locale, marker] of Object.entries(authErrorMarkers)) {
+    const authErrorPage = await fetch(`${baseUrl}/${locale}/auth-error`)
+    assert.equal(authErrorPage.status, 200)
+    assert.ok(
+      (await authErrorPage.text()).includes(marker),
+      `${locale} Auth.js fallback page must render its own translation`,
+    )
+  }
+
   const jar = new CookieJar()
-  const request = async (path: string, init: RequestInit = {}) => {
+  const requestWithJar = async (cookieJar: CookieJar, path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers)
-    jar.apply(headers)
+    cookieJar.apply(headers)
     const response = await fetch(`${baseUrl}${path}`, {
       ...init,
       headers,
       redirect: init.redirect ?? "manual",
     })
-    jar.absorb(response.headers)
+    cookieJar.absorb(response.headers)
     return response
   }
+  const request = (path: string, init: RequestInit = {}) => requestWithJar(jar, path, init)
 
   const csrfResponse = await request("/api/auth/csrf")
   assert.equal(csrfResponse.status, 200)
@@ -346,7 +459,20 @@ try {
   assert.equal(session.user?.username, adminUsername)
   assert.ok(session.user?.roles?.some(role => role.name === "emperor"))
   assert.ok(session.user?.permissions?.includes("manage_config"))
-  assert.equal(session.user?.quotas?.dailySendLimit, 0)
+  assert.equal(session.user?.quotas?.maxActiveMailboxes, 0)
+
+  const localizedRuntimeTabs = {
+    "zh-CN": "此面板包含明文密钥",
+    ja: "このパネルには平文のシークレットが含まれます",
+    ko: "이 패널에는 평문 비밀값이 포함되어 있습니다",
+  } as const
+  for (const [locale, marker] of Object.entries(localizedRuntimeTabs)) {
+    const profile = await request(`/${locale}/profile?tab=runtime`)
+    assert.equal(profile.status, 200)
+    const html = await profile.text()
+    assert.ok(html.includes(marker), `${locale} profile must render the selected localized runtime panel`)
+    assert.match(html, /tab=runtime/u)
+  }
 
   const unauthenticatedMailTest = await fetch(`${baseUrl}/api/config/domains`, {
     method: "POST",
@@ -390,7 +516,7 @@ try {
       policies: [{
         domain: validationDomain,
         inbound: { mode: "worker" },
-        outbound: { mode: "disabled" },
+        outbound: { mode: "resend", apiKey: "re_http_validation_only", fromName: null },
       }],
     }),
   })
@@ -400,7 +526,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      name: "setup-http",
+      name: "setup-http@discarded.example",
       domain: validationDomain,
       expiryTime: 3_600_000,
     }),
@@ -437,12 +563,23 @@ try {
 
   const sendPermission = await request(`/api/emails/send-permission?emailId=${mailbox.id}`)
   assert.equal(sendPermission.status, 200)
-  assert.equal((await sendPermission.json() as { canSend?: boolean }).canSend, false)
+  assert.equal((await sendPermission.json() as { canSend?: boolean }).canSend, true)
 
   const accessPoliciesResponse = await request("/api/access-policies")
   assert.equal(accessPoliciesResponse.status, 200)
   const accessPoliciesBody = await accessPoliciesResponse.json() as {
-    policies: { roles: unknown }
+    policies: {
+      roles: Record<string, RoleAccessPolicy>
+    }
+  }
+  assert.equal(accessPoliciesBody.policies.roles.emperor.sendQuota.total.limit, -1)
+  accessPoliciesBody.policies.roles.emperor.sendQuota = {
+    ...accessPoliciesBody.policies.roles.emperor.sendQuota,
+    scope: "user",
+    total: { limit: 12, windowValue: 2, windowUnit: "hour" },
+    domains: {
+      [validationDomain]: { limit: 4, windowValue: 30, windowUnit: "minute" },
+    },
   }
   const saveRolePolicies = await request("/api/access-policies", {
     method: "PUT",
@@ -450,6 +587,13 @@ try {
     body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
   })
   assert.equal(saveRolePolicies.status, 200)
+  const emperorUsage = await request("/api/access-policies/usage?role=emperor")
+  assert.equal(emperorUsage.status, 200)
+  const emperorUsageBody = await emperorUsage.json() as {
+    usage?: { total?: { rule?: { limit?: number } }; domains?: Array<{ domain?: string }> }
+  }
+  assert.equal(emperorUsageBody.usage?.total?.rule?.limit, 12)
+  assert.ok(emperorUsageBody.usage?.domains?.some(domain => domain.domain === validationDomain))
 
   assert.ok(session.user?.id)
   const mutateEmperorAccess = await request(
@@ -461,6 +605,636 @@ try {
     },
   )
   assert.equal(mutateEmperorAccess.status, 400)
+  const mutateEmperorQuota = await request(
+    `/api/access-policies/users/${encodeURIComponent(session.user!.id!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        permissions: {},
+        quotas: {},
+        sendQuota: {
+          total: { limit: 3, windowValue: 90, windowUnit: "second" },
+        },
+      }),
+    },
+  )
+  assert.equal(mutateEmperorQuota.status, 200)
+  const emperorUserUsage = await request(
+    `/api/access-policies/usage?userId=${encodeURIComponent(session.user!.id!)}`,
+  )
+  assert.equal(emperorUserUsage.status, 200)
+  assert.equal(
+    (await emperorUserUsage.json() as { usage?: { total?: { rule?: { limit?: number } } } }).usage?.total?.rule?.limit,
+    3,
+  )
+
+  const memberUsername = "domain-member"
+  const memberPassword = "domain-member-password-123456"
+  const registerMember = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: memberUsername, password: memberPassword }),
+  })
+  assert.equal(registerMember.status, 201)
+  const member = await registerMember.json() as { user?: { id?: string } }
+  assert.ok(member.user?.id)
+
+  accessPoliciesBody.policies.roles.duke.quotas = {
+    ...accessPoliciesBody.policies.roles.duke.quotas,
+    maxActiveMailboxes: 2,
+  }
+  accessPoliciesBody.policies.roles.duke.domainAccess = {
+    default: "deny",
+    domains: { [validationDomain]: "allow" },
+  }
+  accessPoliciesBody.policies.roles.duke.sendQuota = {
+    ...accessPoliciesBody.policies.roles.duke.sendQuota,
+    scope: "role",
+    total: { limit: 2, windowValue: 1, windowUnit: "hour" },
+    domains: {
+      [validationDomain]: { limit: 1, windowValue: 1, windowUnit: "hour" },
+    },
+  }
+  accessPoliciesBody.policies.roles.duke.receiveQuota = {
+    ...accessPoliciesBody.policies.roles.duke.receiveQuota,
+    mailboxes: {
+      ...accessPoliciesBody.policies.roles.duke.receiveQuota.mailboxes,
+      [`domain-member@${validationDomain}`]: mailboxRule(2, 1),
+    },
+  }
+  const saveDukePolicy = await request("/api/access-policies", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
+  })
+  assert.equal(saveDukePolicy.status, 200)
+  const promoteMember = await request("/api/roles/promote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: member.user!.id, roleName: "duke" }),
+  })
+  assert.equal(promoteMember.status, 200)
+
+  const memberJar = new CookieJar()
+  const memberRequest = (path: string, init: RequestInit = {}) => requestWithJar(memberJar, path, init)
+  const memberCsrf = await memberRequest("/api/auth/csrf")
+  assert.equal(memberCsrf.status, 200)
+  const memberCsrfToken = (await memberCsrf.json() as { csrfToken?: string }).csrfToken
+  assert.ok(memberCsrfToken)
+  const memberLogin = await memberRequest("/api/auth/callback/credentials", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      csrfToken: memberCsrfToken,
+      username: memberUsername,
+      password: memberPassword,
+      callbackUrl: `${baseUrl}/zh-CN`,
+    }),
+  })
+  assert.ok([302, 303].includes(memberLogin.status))
+
+  const createMemberApiKey = await memberRequest("/api/api-keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "policy-e2e" }),
+  })
+  assert.equal(createMemberApiKey.status, 200)
+  const memberApiKey = (await createMemberApiKey.json() as { key?: string }).key
+  assert.match(memberApiKey ?? "", /^mk_[A-Za-z0-9_-]{32}$/)
+  const memberApiRequest = (path: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers)
+    headers.set("X-API-Key", memberApiKey as string)
+    return fetch(`${baseUrl}${path}`, { ...init, headers, redirect: init.redirect ?? "manual" })
+  }
+  const mailboxPayload = (name: string) => JSON.stringify({
+    name,
+    domain: validationDomain,
+    expiryTime: 3_600_000,
+  })
+
+  const globalBlockResponse = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "global", localPart: "globally-blocked", domain: validationDomain }),
+  })
+  assert.equal(globalBlockResponse.status, 201)
+  const globalBlock = await globalBlockResponse.json() as { block?: { id?: string } }
+  assert.ok(globalBlock.block?.id)
+  for (const requester of [memberRequest, memberApiRequest]) {
+    const blocked = await requester("/api/emails/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: mailboxPayload("globally-blocked"),
+    })
+    assert.equal(blocked.status, 403)
+    assert.equal((await blocked.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
+  }
+  const clearGlobalBlock = await request(
+    `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(globalBlock.block!.id!)}`,
+    { method: "DELETE" },
+  )
+  assert.equal(clearGlobalBlock.status, 200)
+
+  const userBlockResponse = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scope: "user",
+      userId: member.user!.id,
+      localPart: "user-blocked",
+      domain: validationDomain,
+    }),
+  })
+  assert.equal(userBlockResponse.status, 201)
+  const userBlock = await userBlockResponse.json() as { block?: { id?: string } }
+  assert.ok(userBlock.block?.id)
+  const userBlockedViaApi = await memberApiRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("user-blocked"),
+  })
+  assert.equal(userBlockedViaApi.status, 403)
+  assert.equal((await userBlockedViaApi.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
+  const sameAddressForEmperor = await request("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("user-blocked"),
+  })
+  assert.equal(sameAddressForEmperor.status, 200)
+  const emperorScopedMailbox = await sameAddressForEmperor.json() as { id: string }
+  assert.equal((await request(`/api/emails/${emperorScopedMailbox.id}`, { method: "DELETE" })).status, 200)
+  const clearUserBlock = await request(
+    `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(userBlock.block!.id!)}`,
+    { method: "DELETE" },
+  )
+  assert.equal(clearUserBlock.status, 200)
+
+  const memberMailboxResponse = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("domain-member"),
+  })
+  assert.equal(memberMailboxResponse.status, 200)
+  const memberMailbox = await memberMailboxResponse.json() as { id: string; email: string }
+
+  const denyMemberDomain = await request(
+    `/api/access-policies/users/${encodeURIComponent(member.user!.id!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        permissions: {},
+        quotas: {},
+        domainAccess: { default: "deny", domains: {} },
+      }),
+    },
+  )
+  assert.equal(denyMemberDomain.status, 200)
+
+  const deniedCreate = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "domain-member-denied",
+      domain: validationDomain,
+      expiryTime: 3_600_000,
+    }),
+  })
+  assert.equal(deniedCreate.status, 403)
+  assert.equal((await deniedCreate.json() as { code?: string }).code, "MAIL_DOMAIN_FORBIDDEN")
+
+  const deniedMemberMessage = Buffer.from([
+    "From: sender@example.net",
+    `To: ${memberMailbox.email}`,
+    "Subject: domain permission must reject",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "domain permission marker",
+  ].join("\r\n"))
+  const deniedIngest = await fetch(`${baseUrl}/api/internal/email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${completedBody.emailIngestSecret}`,
+      "Content-Type": "message/rfc822",
+      "X-MoeMail-Envelope-From": "sender@example.net",
+      "X-MoeMail-Envelope-To": memberMailbox.email,
+      "X-MoeMail-Raw-Size": String(deniedMemberMessage.byteLength),
+    },
+    body: deniedMemberMessage,
+  })
+  assert.equal(deniedIngest.status, 403)
+  assert.deepEqual(await deniedIngest.json(), {
+    status: "rejected",
+    reason: "MAIL_DOMAIN_RECEIVE_FORBIDDEN",
+    error: "MAIL_DOMAIN_RECEIVE_FORBIDDEN",
+    code: "MAIL_DOMAIN_RECEIVE_FORBIDDEN",
+  })
+
+  const deniedSendPermission = await memberRequest(
+    `/api/emails/send-permission?emailId=${encodeURIComponent(memberMailbox.id)}`,
+  )
+  assert.equal(deniedSendPermission.status, 200)
+  assert.equal((await deniedSendPermission.json() as { code?: string }).code, "MAIL_DOMAIN_SEND_FORBIDDEN")
+
+  const setMemberDomainMode = (mode: DomainAccessMode, extra: Record<string, unknown> = {}) => request(
+    `/api/access-policies/users/${encodeURIComponent(member.user!.id!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        permissions: {},
+        quotas: {},
+        domainAccess: { default: "deny", domains: { [validationDomain]: mode } },
+        ...extra,
+      }),
+    },
+  )
+
+  const receiveOnlyDomain = await setMemberDomainMode("receive")
+  assert.equal(receiveOnlyDomain.status, 200)
+  const receiveOnlySend = await memberApiRequest(
+    `/api/emails/send-permission?emailId=${encodeURIComponent(memberMailbox.id)}`,
+  )
+  assert.equal(receiveOnlySend.status, 200)
+  assert.equal((await receiveOnlySend.json() as { code?: string }).code, "MAIL_DOMAIN_SEND_FORBIDDEN")
+
+  const ingestFor = async (target: { email: string }, marker: string) => {
+    const raw = Buffer.from([
+      "From: sender@example.net",
+      `To: ${target.email}`,
+      `Subject: ${marker}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      marker,
+    ].join("\r\n"))
+    return fetch(`${baseUrl}/api/internal/email`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${completedBody.emailIngestSecret}`,
+        "Content-Type": "message/rfc822",
+        "X-MoeMail-Envelope-From": "sender@example.net",
+        "X-MoeMail-Envelope-To": target.email,
+        "X-MoeMail-Raw-Size": String(raw.byteLength),
+      },
+      body: raw,
+    })
+  }
+
+  const firstLifetimeReceive = await ingestFor(memberMailbox, "mailbox lifetime first")
+  assert.equal(firstLifetimeReceive.status, 201)
+  const lifetimeExceeded = await ingestFor(memberMailbox, "mailbox lifetime second")
+  assert.equal(lifetimeExceeded.status, 429)
+  assert.deepEqual(await lifetimeExceeded.json(), {
+    status: "rejected",
+    reason: "RECEIVE_MAILBOX_LIFETIME_QUOTA_EXCEEDED",
+    error: "RECEIVE_MAILBOX_LIFETIME_QUOTA_EXCEEDED",
+    code: "RECEIVE_MAILBOX_LIFETIME_QUOTA_EXCEEDED",
+  })
+
+  const receiveOnlyMailboxResponse = await memberApiRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("receive-only"),
+  })
+  assert.equal(receiveOnlyMailboxResponse.status, 200)
+  const receiveOnlyMailbox = await receiveOnlyMailboxResponse.json() as { id: string; email: string }
+  assert.equal((await ingestFor(receiveOnlyMailbox, "receive-only domain mode")).status, 201)
+  assert.equal((await memberRequest(`/api/emails/${receiveOnlyMailbox.id}`, { method: "DELETE" })).status, 200)
+
+  // Exactly one of these requests may consume the one remaining active-mailbox
+  // slot. Half use the browser session and half use the API key so neither
+  // authentication path can bypass the same atomic quota.
+  const concurrentCreates = await Promise.all(Array.from({ length: 8 }, (_, index) => (
+    (index % 2 === 0 ? memberRequest : memberApiRequest)("/api/emails/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: mailboxPayload(`parallel-${index}`),
+    })
+  )))
+  assert.equal(concurrentCreates.filter(response => response.status === 200).length, 1)
+  assert.equal(concurrentCreates.filter(response => response.status === 403).length, 7)
+  const parallelMailboxResponse = concurrentCreates.find(response => response.status === 200)
+  assert.ok(parallelMailboxResponse)
+  const parallelMailbox = await parallelMailboxResponse.json() as { id: string; email: string }
+  assert.ok(parallelMailbox.id && parallelMailbox.email.includes("@"))
+  for (const response of concurrentCreates.filter(response => response.status === 403)) {
+    assert.equal((await response.json() as { code?: string }).code, "MAILBOX_QUOTA_EXCEEDED")
+  }
+  const quotaByApiKey = await memberApiRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("api-key-overflow"),
+  })
+  assert.equal(quotaByApiKey.status, 403)
+  assert.equal((await quotaByApiKey.json() as { code?: string }).code, "MAILBOX_QUOTA_EXCEEDED")
+
+  const sendOnlyDomain = await setMemberDomainMode("send")
+  assert.equal(sendOnlyDomain.status, 200)
+  const sendOnlyPermission = await memberApiRequest(
+    `/api/emails/send-permission?emailId=${encodeURIComponent(memberMailbox.id)}`,
+  )
+  assert.equal(sendOnlyPermission.status, 200)
+  assert.equal((await sendOnlyPermission.json() as { canSend?: boolean }).canSend, true)
+  const sendOnlyInbound = await ingestFor(memberMailbox, "send-only domain mode")
+  assert.equal(sendOnlyInbound.status, 403)
+  assert.deepEqual(await sendOnlyInbound.json(), {
+    status: "rejected",
+    reason: "MAIL_DOMAIN_RECEIVE_FORBIDDEN",
+    error: "MAIL_DOMAIN_RECEIVE_FORBIDDEN",
+    code: "MAIL_DOMAIN_RECEIVE_FORBIDDEN",
+  })
+
+  const allowMemberDomain = await setMemberDomainMode("allow")
+  assert.equal(allowMemberDomain.status, 200)
+  assert.equal((await memberRequest(`/api/emails/${memberMailbox.id}`, { method: "DELETE" })).status, 200)
+  const recreatedResponse = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("domain-member"),
+  })
+  assert.equal(recreatedResponse.status, 200)
+  const recreatedMailbox = await recreatedResponse.json() as { id: string; email: string }
+  assert.equal(recreatedMailbox.email, memberMailbox.email)
+  const lifetimeSurvivesRecreation = await ingestFor(recreatedMailbox, "lifetime survives recreation")
+  assert.equal(lifetimeSurvivesRecreation.status, 429)
+
+  const quotaBeforeReset = await memberApiRequest(`/api/emails/${recreatedMailbox.id}/quota`)
+  assert.equal(quotaBeforeReset.status, 200)
+  assert.equal(
+    (await quotaBeforeReset.json() as { receive?: { quota?: { mailbox?: { lifetimeRemaining?: number } } } })
+      .receive?.quota?.mailbox?.lifetimeRemaining,
+    0,
+  )
+  const resetExactMailbox = await request("/api/access-policies/usage", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      direction: "receive" satisfies MailDirection,
+      userId: member.user!.id,
+      mailboxAddress: recreatedMailbox.email,
+    }),
+  })
+  assert.equal(resetExactMailbox.status, 200)
+  assert.ok((await resetExactMailbox.json() as { deleted?: number }).deleted)
+  const receiveAfterReset = await ingestFor(recreatedMailbox, "receive after emperor reset")
+  assert.equal(receiveAfterReset.status, 201)
+  const createdMessageId = (await receiveAfterReset.json() as { messageId?: string }).messageId
+  assert.ok(createdMessageId)
+
+  const customShareStart = Date.now()
+  const customMailboxShare = await memberApiRequest(`/api/emails/${recreatedMailbox.id}/share`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 5_400_000 }),
+  })
+  assert.equal(customMailboxShare.status, 201)
+  const customMailboxShareBody = await customMailboxShare.json() as { expiresAt?: string | null }
+  const customMailboxShareToken = (customMailboxShareBody as { token?: string }).token
+  assert.ok(customMailboxShareToken)
+  const customMailboxExpiry = Date.parse(customMailboxShareBody.expiresAt ?? "")
+  assert.ok(customMailboxExpiry >= customShareStart + 5_390_000)
+  assert.ok(customMailboxExpiry <= Date.now() + 5_410_000)
+  const permanentMailboxShare = await memberRequest(`/api/emails/${recreatedMailbox.id}/share`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 0 }),
+  })
+  assert.equal(permanentMailboxShare.status, 201)
+  assert.equal((await permanentMailboxShare.json() as { expiresAt?: string | null }).expiresAt, null)
+  const invalidMailboxShare = await memberRequest(`/api/emails/${recreatedMailbox.id}/share`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 30_000 }),
+  })
+  assert.equal(invalidMailboxShare.status, 400)
+  assert.equal((await invalidMailboxShare.json() as { code?: string }).code, "INVALID_SHARE_EXPIRY")
+  const customMessageShare = await memberApiRequest(
+    `/api/emails/${recreatedMailbox.id}/messages/${createdMessageId}/share`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: 7_200_000 }),
+    },
+  )
+  assert.equal(customMessageShare.status, 201)
+  const customMessageShareBody = await customMessageShare.json() as {
+    expiresAt?: string
+    token?: string
+  }
+  assert.ok(Date.parse(customMessageShareBody.expiresAt ?? "") > Date.now())
+  assert.ok(customMessageShareBody.token)
+
+  const disableMemberSendQuota = await setMemberDomainMode("allow", {
+    sendQuota: {
+      total: { limit: 0, windowValue: 45, windowUnit: "second" },
+    },
+  })
+  assert.equal(disableMemberSendQuota.status, 200)
+  const disabledByUserQuota = await memberRequest(
+    `/api/emails/send-permission?emailId=${encodeURIComponent(recreatedMailbox.id)}`,
+  )
+  assert.equal(disabledByUserQuota.status, 200)
+  assert.equal(
+    (await disabledByUserQuota.json() as { error?: string }).error,
+    "SEND_TOTAL_QUOTA_EXCEEDED",
+  )
+
+  await expireMailbox(recreatedMailbox.id)
+  const expiredMailboxPaths: Array<[string, (path: string, init?: RequestInit) => Promise<Response>, RequestInit?]> = [
+    [`/api/emails/${recreatedMailbox.id}`, memberRequest],
+    [`/api/emails/${recreatedMailbox.id}/${createdMessageId}`, memberApiRequest],
+    [`/api/emails/${recreatedMailbox.id}/${createdMessageId}`, memberRequest, { method: "DELETE" }],
+    [`/api/emails/${recreatedMailbox.id}/quota`, memberRequest],
+    [`/api/emails/send-permission?emailId=${encodeURIComponent(recreatedMailbox.id)}`, memberApiRequest],
+    [`/api/emails/${recreatedMailbox.id}/share`, memberRequest],
+    [`/api/emails/${recreatedMailbox.id}/share`, memberApiRequest, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: 60_000 }),
+    }],
+    [`/api/emails/${recreatedMailbox.id}/messages/${createdMessageId}/share`, memberRequest],
+  ]
+  for (const [path, requester, init] of expiredMailboxPaths) {
+    const response = await requester(path, init)
+    assert.equal(response.status, 410, `${path} must reject an expired mailbox`)
+    assert.equal((await response.json() as { code?: string }).code, "MAILBOX_EXPIRED")
+  }
+  const expiredMailboxShare = await fetch(`${baseUrl}/api/shared/${customMailboxShareToken}`)
+  assert.equal(expiredMailboxShare.status, 410)
+  assert.equal((await expiredMailboxShare.json() as { code?: string }).code, "MAILBOX_EXPIRED")
+  const expiredMessageShare = await fetch(`${baseUrl}/api/shared/message/${customMessageShareBody.token}`)
+  assert.equal(expiredMessageShare.status, 410)
+  assert.equal((await expiredMessageShare.json() as { code?: string }).code, "MAILBOX_EXPIRED")
+  const deleteExpiredMailbox = await memberRequest(
+    `/api/emails/${recreatedMailbox.id}`,
+    { method: "DELETE" },
+  )
+  assert.equal(deleteExpiredMailbox.status, 200)
+
+  // A non-Emperor may be granted user-management permission, but the
+  // database transaction must still reject deleting the Emperor. This proves
+  // the invariant is enforced server-side rather than by a hidden UI button.
+  const grantMemberUserManagement = await setMemberDomainMode("allow", {
+    permissions: { promote_user: true },
+  })
+  assert.equal(grantMemberUserManagement.status, 200)
+  const protectedEmperorDelete = await memberRequest(
+    `/api/users/${encodeURIComponent(session.user!.id!)}`,
+    { method: "DELETE" },
+  )
+  assert.equal(protectedEmperorDelete.status, 400)
+  assert.equal(
+    (await protectedEmperorDelete.json() as { code?: string }).code,
+    "CANNOT_DELETE_EMPEROR",
+  )
+
+  // Exercise the complete ordinary-user deletion unit: a non-cascading API
+  // key, a site_config policy override, and a user-scoped mailbox block must
+  // disappear with the user, while the deleted key becomes unusable.
+  const deletionUsername = "delete-tx-target"
+  const deletionPassword = "delete-transaction-password-123456"
+  const deletionRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: deletionUsername, password: deletionPassword }),
+  })
+  assert.equal(
+    deletionRegistration.status,
+    201,
+    `deletion fixture registration failed: ${await deletionRegistration.clone().text()}`,
+  )
+  const deletionUserId = (await deletionRegistration.json() as { user?: { id?: string } }).user?.id
+  assert.ok(deletionUserId)
+  const promoteDeletionTarget = await request("/api/roles/promote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: deletionUserId, roleName: "duke" }),
+  })
+  assert.equal(promoteDeletionTarget.status, 200)
+
+  const deletionJar = new CookieJar()
+  const deletionRequest = (path: string, init: RequestInit = {}) => requestWithJar(deletionJar, path, init)
+  const deletionCsrf = await deletionRequest("/api/auth/csrf")
+  assert.equal(deletionCsrf.status, 200)
+  const deletionCsrfToken = (await deletionCsrf.json() as { csrfToken?: string }).csrfToken
+  assert.ok(deletionCsrfToken)
+  const deletionLogin = await deletionRequest("/api/auth/callback/credentials", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      csrfToken: deletionCsrfToken,
+      username: deletionUsername,
+      password: deletionPassword,
+      callbackUrl: `${baseUrl}/zh-CN`,
+    }),
+  })
+  assert.ok([302, 303].includes(deletionLogin.status))
+  const deletionKeyResponse = await deletionRequest("/api/api-keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "delete-transaction-key" }),
+  })
+  assert.equal(deletionKeyResponse.status, 200)
+  const deletionApiKey = (await deletionKeyResponse.json() as { key?: string }).key
+  assert.match(deletionApiKey ?? "", /^mk_[A-Za-z0-9_-]{32}$/)
+  const deletionOverride = await request(
+    `/api/access-policies/users/${encodeURIComponent(deletionUserId!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        permissions: { send_email: false },
+        quotas: { maxActiveMailboxes: 1 },
+      }),
+    },
+  )
+  assert.equal(deletionOverride.status, 200)
+  const deletionBlockResponse = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scope: "user",
+      userId: deletionUserId,
+      localPart: "deleted-user-only",
+      domain: validationDomain,
+    }),
+  })
+  assert.equal(deletionBlockResponse.status, 201)
+  const deletionBlockId = (await deletionBlockResponse.json() as { block?: { id?: string } }).block?.id
+  assert.ok(deletionBlockId)
+
+  const deleteOrdinaryUser = await request(`/api/users/${encodeURIComponent(deletionUserId!)}`, {
+    method: "DELETE",
+  })
+  assert.equal(deleteOrdinaryUser.status, 200)
+  const deletedKeyProbe = await fetch(`${baseUrl}/api/emails`, {
+    headers: { "X-API-Key": deletionApiKey! },
+  })
+  assert.equal(deletedKeyProbe.status, 401)
+  assert.equal((await deletedKeyProbe.json() as { code?: string }).code, "API_KEY_INVALID")
+  const deletedUserSearch = await request(
+    `/api/roles/users?page=1&pageSize=50&search=${encodeURIComponent(deletionUsername)}`,
+  )
+  assert.equal(deletedUserSearch.status, 200)
+  assert.equal((await deletedUserSearch.json() as { total?: number }).total, 0)
+  const policiesAfterUserDelete = await request("/api/access-policies")
+  assert.equal(policiesAfterUserDelete.status, 200)
+  assert.equal(
+    (await policiesAfterUserDelete.json() as { policies?: { users?: Record<string, unknown> } })
+      .policies?.users?.[deletionUserId!],
+    undefined,
+  )
+  const recreateDeletedOverride = await request(
+    `/api/access-policies/users/${encodeURIComponent(deletionUserId!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        permissions: { send_email: false },
+        quotas: { maxActiveMailboxes: 1 },
+      }),
+    },
+  )
+  assert.equal(recreateDeletedOverride.status, 404)
+  assert.equal(
+    (await recreateDeletedOverride.json() as { code?: string }).code,
+    "USER_NOT_FOUND",
+  )
+  const resetDeletedOverride = await request(
+    `/api/access-policies/users/${encodeURIComponent(deletionUserId!)}`,
+    { method: "DELETE" },
+  )
+  assert.equal(resetDeletedOverride.status, 404)
+  assert.equal(
+    (await resetDeletedOverride.json() as { code?: string }).code,
+    "USER_NOT_FOUND",
+  )
+  const promoteDeletedUser = await request("/api/roles/promote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: deletionUserId, roleName: "duke" }),
+  })
+  assert.equal(promoteDeletedUser.status, 404)
+  assert.equal(
+    (await promoteDeletedUser.json() as { code?: string }).code,
+    "USER_NOT_FOUND",
+  )
+  const policiesAfterDeletedOverrideAttempts = await request("/api/access-policies")
+  assert.equal(policiesAfterDeletedOverrideAttempts.status, 200)
+  assert.equal(
+    (await policiesAfterDeletedOverrideAttempts.json() as {
+      policies?: { users?: Record<string, unknown> }
+    }).policies?.users?.[deletionUserId!],
+    undefined,
+  )
+  const blocksAfterUserDelete = await request("/api/access-policies/mailbox-blocks")
+  assert.equal(blocksAfterUserDelete.status, 200)
+  assert.equal(
+    (await blocksAfterUserDelete.json() as { blocks?: Array<{ id?: string }> }).blocks
+      ?.some(block => block.id === deletionBlockId),
+    false,
+  )
 
   const appearance = await request("/api/config/appearance", {
     method: "PUT",
@@ -475,6 +1249,60 @@ try {
     body: JSON.stringify({ fontFamily: "url(https://attacker.invalid/font)" }),
   })
   assert.equal(unsafeAppearance.status, 400)
+
+  const appearanceMarker = "moemail-advanced-appearance-http-marker"
+  const advancedAppearance = await request("/api/config/appearance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      advancedEnabled: true,
+      customCss: `:root { --${appearanceMarker}: 1; }`,
+      headHtml: `<meta name="${appearanceMarker}" content="head">`,
+      bodyEndHtml: `<div data-${appearanceMarker}="body"></div>`,
+      customJs: `globalThis["${appearanceMarker}"] = true`,
+      customJsEnabled: true,
+    }),
+  })
+  assert.equal(advancedAppearance.status, 200)
+  const advancedAppearanceBody = await advancedAppearance.json() as {
+    advancedEnabled?: boolean
+    customJsEnabled?: boolean
+  }
+  assert.equal(advancedAppearanceBody.advancedEnabled, true)
+  assert.equal(advancedAppearanceBody.customJsEnabled, true)
+
+  const appearanceRead = await request("/api/config/appearance")
+  assert.equal(appearanceRead.status, 200)
+  assert.match(await appearanceRead.text(), new RegExp(appearanceMarker))
+
+  const appearancePage = await request("/zh-CN/profile")
+  assert.equal(appearancePage.status, 200)
+  assert.match(await appearancePage.text(), new RegExp(appearanceMarker))
+
+  const safeAppearancePage = await request("/zh-CN/profile?safe-appearance=1")
+  assert.equal(safeAppearancePage.status, 200)
+  assert.doesNotMatch(await safeAppearancePage.text(), new RegExp(appearanceMarker))
+
+  const oversizedAppearance = await request("/api/config/appearance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ customCss: "x".repeat(128 * 1024 + 1) }),
+  })
+  assert.equal(oversizedAppearance.status, 400)
+
+  const clearAdvancedAppearance = await request("/api/config/appearance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      advancedEnabled: false,
+      customCss: "",
+      headHtml: "",
+      bodyEndHtml: "",
+      customJs: "",
+      customJsEnabled: false,
+    }),
+  })
+  assert.equal(clearAdvancedAppearance.status, 200)
 
   const runtimeResponse = await request("/api/runtime-config")
   assert.equal(runtimeResponse.status, 200)
@@ -559,6 +1387,7 @@ try {
     setupTokenGate: true,
     databaseProbeAndSetup: true,
     uniqueEmperorLogin: true,
+    authFallbackPagesLocalized: true,
     webUiYamlSaveApplied: true,
     staleWebUiSaveRejected: true,
     directFileHotReloadApplied: true,
@@ -571,9 +1400,21 @@ try {
     publicHealthConfigErrorsRedacted: true,
     mailConnectionTestAuthAndRedaction: true,
     domainPolicyAndWorkerIngestion: true,
+    accessDomainAndSendQuotaApis: true,
+    roleToUserFourStateDomainEnforcementE2e: true,
+    userSendQuotaEnforcementE2e: true,
+    sessionAndApiKeyPolicyParityE2e: true,
+    atomicMailboxQuotaE2e: true,
+    globalAndUserMailboxBlocksE2e: true,
+    receiveLifetimeQuotaSurvivesRecreationE2e: true,
+    emperorExactMailboxResetE2e: true,
+    customAndPermanentShareExpiryE2e: true,
     independentOutboundDisable: true,
     emperorAccessImmutable: true,
+    emperorDeletionProtectedServerSide: true,
+    atomicUserDeletionAndCredentialRevocationE2e: true,
     appearanceValidation: true,
+    advancedAppearanceInjectionAndSafeMode: true,
     compressedFontAsset: true,
     maintenanceBundleVerified,
   }, null, 2))

@@ -84,7 +84,7 @@ async function requireCurrentPolicy(policy: ImapDomainPolicy) {
     || current.inbound.mode !== "imap"
     || JSON.stringify(current.inbound) !== JSON.stringify(policy.inbound)
   ) {
-    throw new Error("IMAP policy changed while polling; discarded the stale poll")
+    throw new Error("IMAP_POLICY_CHANGED")
   }
 }
 
@@ -100,7 +100,7 @@ function parseSyncState(raw: string | null): SyncState {
   } catch {
     // Never turn damaged progress into an empty cursor: initialSync=new would
     // then jump to the current high-water mark and silently lose mail.
-    throw new Error("IMAP sync state is invalid; polling stopped without advancing cursors")
+    throw new Error("IMAP_SYNC_STATE_INVALID")
   }
 }
 
@@ -161,7 +161,7 @@ function renewAccountLease(state: SyncState, domain: string, token?: string) {
   if (!token) return
   const lease = state.leases[domain]
   if (!lease || lease.owner !== pollerInstanceId || lease.token !== token) {
-    throw new Error("IMAP poll lease was lost")
+    throw new Error("IMAP_POLL_LEASE_LOST")
   }
   lease.expiresAt = Date.now() + ACCOUNT_LEASE_MS
 }
@@ -384,19 +384,19 @@ async function searchUidBatch(
       uid: true,
       returnOptions: ["COUNT", { partial: `1:${limit}` }],
     })
-    if (result === false) throw new Error("IMAP UID SEARCH failed")
+    if (result === false) throw new Error("IMAP_UID_SEARCH_FAILED")
     if (!Array.isArray(result)) {
       if (typeof result.count !== "number") {
-        throw new Error("IMAP server omitted the requested ESEARCH COUNT result")
+        throw new Error("IMAP_ESEARCH_COUNT_MISSING")
       }
       if (result.count === 0) return { uids: [], scannedThrough: upperUid }
       if (!result.partial) {
-        throw new Error("IMAP server omitted the requested ESEARCH PARTIAL result")
+        throw new Error("IMAP_ESEARCH_PARTIAL_MISSING")
       }
       const uids = expandUidSequenceSet(result.partial.messages, limit)
         .filter(uid => uid >= lowerUid && uid <= upperUid)
       if (uids.length === 0) {
-        throw new Error("IMAP server returned an invalid ESEARCH PARTIAL result")
+        throw new Error("IMAP_ESEARCH_PARTIAL_INVALID")
       }
       return {
         uids,
@@ -421,7 +421,7 @@ async function searchUidBatch(
     ...(unseenOnly ? { seen: false } : {}),
   }
   const result = await client.search(fallbackQuery, { uid: true })
-  if (result === false) throw new Error("IMAP UID SEARCH failed")
+  if (result === false) throw new Error("IMAP_UID_SEARCH_FAILED")
   const uids = numericSearchResult(result)
     .filter(uid => uid >= lowerUid && uid <= fallbackUpper)
     .slice(0, limit)
@@ -538,7 +538,7 @@ async function pollImapDomainUnlocked(policy: ImapDomainPolicy, leaseToken?: str
         { uid: true },
       )
       if (fetched === false || !fetched.source) {
-        throw new Error(`IMAP message ${uid} has no RFC822 source`)
+        throw new Error(`IMAP_RFC822_SOURCE_MISSING:${uid}`)
       }
       if (fetched.source.byteLength > MAX_RAW_EMAIL_SIZE) {
         account.lastUid = uid

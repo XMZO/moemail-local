@@ -46,7 +46,7 @@ function claimSqlite(userId: string): EmperorClaimResult {
       sqlite.prepare(`
         INSERT INTO role (id, name, description, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?)
-      `).run(roleId, ROLES.EMPEROR, "皇帝（网站所有者）", now, now)
+      `).run(roleId, ROLES.EMPEROR, null, now, now)
     }
 
     sqlite.prepare("DELETE FROM user_role WHERE user_id = ?").run(userId)
@@ -99,7 +99,7 @@ async function claimPostgres(userId: string): Promise<EmperorClaimResult> {
         await client.query(`
           INSERT INTO "role" (id, name, description, created_at, updated_at)
           VALUES ($1, $2, $3, NOW(), NOW())
-        `, [roleId, ROLES.EMPEROR, "皇帝（网站所有者）"])
+        `, [roleId, ROLES.EMPEROR, null])
       }
 
       await client.query("DELETE FROM user_role WHERE user_id = $1", [userId])

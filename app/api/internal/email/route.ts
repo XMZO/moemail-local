@@ -1,7 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import { getConfig, isSetupCompleted } from "@/lib/config/runtime"
-import { ingestEmail, MAX_RAW_EMAIL_SIZE } from "@/lib/email-ingestion"
+import {
+  ingestEmail,
+  InboundIngestionError,
+  MAX_RAW_EMAIL_SIZE,
+} from "@/lib/email-ingestion"
 import { normalizeMailboxAddress } from "@/lib/email-address"
+import { apiErrorBody } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -38,7 +43,7 @@ async function readRawMessage(request: Request) {
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = true
-    void reader.cancel("Request body read timed out").catch(() => undefined)
+    void reader.cancel("MESSAGE_BODY_TIMEOUT").catch(() => undefined)
   }, BODY_READ_TIMEOUT)
 
   try {
@@ -47,7 +52,7 @@ async function readRawMessage(request: Request) {
       if (done) break
       total += value.byteLength
       if (total > MAX_RAW_EMAIL_SIZE) {
-        await reader.cancel("Message too large")
+        await reader.cancel("MESSAGE_TOO_LARGE")
         throw new Error("message_too_large")
       }
       chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
@@ -63,59 +68,64 @@ async function readRawMessage(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSetupCompleted()) return json({ error: "Email ingestion is unavailable" }, 503)
+  if (!isSetupCompleted()) return json(apiErrorBody("EMAIL_INGESTION_UNAVAILABLE"), 503)
   const ingestSecret = getConfig().email.ingestSecret
-  if (!ingestSecret) return json({ error: "Email ingestion is unavailable" }, 503)
+  if (!ingestSecret) return json(apiErrorBody("EMAIL_INGESTION_UNAVAILABLE"), 503)
   if (!isAuthorized(request.headers.get("authorization"), ingestSecret)) {
-    return json({ error: "Unauthorized" }, 401)
+    return json(apiErrorBody("UNAUTHORIZED"), 401)
   }
 
   const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase()
-  if (contentType !== CONTENT_TYPE) return json({ error: "Unsupported media type" }, 415)
+  if (contentType !== CONTENT_TYPE) return json(apiErrorBody("UNSUPPORTED_MEDIA_TYPE"), 415)
 
   const envelopeFrom = getEnvelopeHeader(request, "x-moemail-envelope-from", true)
   const envelopeTo = getEnvelopeHeader(request, "x-moemail-envelope-to")
-  if (envelopeFrom === null || envelopeTo === null) return json({ error: "Invalid envelope" }, 400)
-  if (!normalizeMailboxAddress(envelopeTo)) return json({ error: "Invalid envelope recipient" }, 400)
+  if (envelopeFrom === null || envelopeTo === null) return json(apiErrorBody("INVALID_ENVELOPE"), 400)
+  if (!normalizeMailboxAddress(envelopeTo)) return json(apiErrorBody("INVALID_ENVELOPE_RECIPIENT"), 400)
 
   const declaredSizeHeader = request.headers.get("x-moemail-raw-size")
   if (!declaredSizeHeader || !/^\d+$/.test(declaredSizeHeader)) {
-    return json({ error: "Invalid raw message size" }, 400)
+    return json(apiErrorBody("INVALID_RAW_MESSAGE_SIZE"), 400)
   }
   const declaredSize = Number(declaredSizeHeader)
-  if (!Number.isSafeInteger(declaredSize)) return json({ error: "Invalid raw message size" }, 400)
-  if (declaredSize > MAX_RAW_EMAIL_SIZE) return json({ error: "Message too large" }, 413)
+  if (!Number.isSafeInteger(declaredSize)) return json(apiErrorBody("INVALID_RAW_MESSAGE_SIZE"), 400)
+  if (declaredSize > MAX_RAW_EMAIL_SIZE) return json(apiErrorBody("MESSAGE_TOO_LARGE"), 413)
 
   const contentLength = request.headers.get("content-length")
   if (contentLength !== null) {
     const parsed = Number(contentLength)
-    if (!Number.isSafeInteger(parsed) || parsed < 0) return json({ error: "Invalid content length" }, 400)
-    if (parsed > MAX_RAW_EMAIL_SIZE) return json({ error: "Message too large" }, 413)
+    if (!Number.isSafeInteger(parsed) || parsed < 0) return json(apiErrorBody("INVALID_CONTENT_LENGTH"), 400)
+    if (parsed > MAX_RAW_EMAIL_SIZE) return json(apiErrorBody("MESSAGE_TOO_LARGE"), 413)
   }
 
   try {
     const raw = await readRawMessage(request)
-    if (raw.byteLength !== declaredSize) return json({ error: "Raw message size mismatch" }, 400)
+    if (raw.byteLength !== declaredSize) return json(apiErrorBody("RAW_MESSAGE_SIZE_MISMATCH"), 400)
     const result = await ingestEmail({ raw, envelopeFrom, envelopeTo, transport: "worker" })
     if (result.status === "created") return json(result, 201)
     if (result.status === "duplicate" || result.status === "ignored") return json(result, 200)
     if (result.reason === "quota_exceeded") {
-      return json({ status: "rejected", reason: result.reason }, 429)
+      return json(apiErrorBody(result.code, { status: "rejected", reason: result.code }), 429)
     }
     if (result.reason === "message_too_large") {
-      return json({ status: "rejected", reason: result.reason }, 413)
+      return json(apiErrorBody(result.code, { status: "rejected", reason: result.code }), 413)
     }
     return json(
-      { status: "rejected", reason: result.reason },
+      apiErrorBody(result.code, { status: "rejected", reason: result.code }),
       result.reason === "permission_denied" ? 403 : 409,
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown"
-    if (message === "message_too_large") return json({ error: "Message too large" }, 413)
-    if (message === "body_timeout") return json({ error: "Message body read timed out" }, 408)
-    if (message === "missing_body") return json({ error: "Missing message body" }, 400)
-    if (message === "Invalid email message") return json({ error: message }, 422)
+    if (message === "message_too_large") return json(apiErrorBody("MESSAGE_TOO_LARGE"), 413)
+    if (message === "body_timeout") return json(apiErrorBody("MESSAGE_BODY_TIMEOUT"), 408)
+    if (message === "missing_body") return json(apiErrorBody("MESSAGE_BODY_MISSING"), 400)
+    if (error instanceof InboundIngestionError) {
+      return json(
+        apiErrorBody(error.code),
+        error.code === "INVALID_ENVELOPE_RECIPIENT" ? 400 : 422,
+      )
+    }
     console.error("ingest.worker.failed", { error: message.slice(0, 500) })
-    return json({ error: "Failed to store email" }, 503)
+    return json(apiErrorBody("EMAIL_STORE_FAILED"), 503)
   }
 }

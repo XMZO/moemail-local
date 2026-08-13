@@ -1,0 +1,101 @@
+{
+  "title": "도메인 메일 정책",
+  "description": "수신과 발신은 도메인마다 독립적으로 구성합니다. 비밀값은 구성 권한이 있는 관리자에게만 반환됩니다.",
+  "add": "추가",
+  "save": "저장",
+  "saving": "저장 중",
+  "errors": {
+    "load": "도메인 설정을 불러오지 못했습니다",
+    "save": "도메인 설정을 저장하지 못했습니다",
+    "imapTest": "IMAP 연결 테스트에 실패했습니다",
+    "smtpTest": "SMTP 연결 테스트에 실패했습니다"
+  },
+  "success": {
+    "saved": "도메인 메일 정책을 저장했습니다",
+    "imapTitle": "IMAP 연결에 성공했습니다",
+    "imapDescription": "{mailbox}: 메일 {messages}개",
+    "smtpTitle": "SMTP 연결 및 인증에 성공했습니다"
+  },
+  "summary": "수신: {inbound} · 발신: {outbound}",
+  "domainInbound": "도메인 및 수신",
+  "deleteDomain": "현재 도메인 삭제",
+  "domain": "메일 도메인",
+  "inboundMode": "수신 방식",
+  "inboundModes": {
+    "worker": "Cloudflare Email Worker",
+    "imap": "외부 메일함 IMAP",
+    "disabled": "수신 비활성화"
+  },
+  "outbound": "발신",
+  "outboundDescription": "Resend API Key 및 SMTP 자격 증명은 도메인별로 저장됩니다.",
+  "outboundMode": "발신 방식",
+  "outboundModes": {
+    "resend": "Resend",
+    "smtp": "외부 SMTP",
+    "disabled": "발신 비활성화"
+  },
+  "common": {
+    "port": "포트",
+    "security": "보안 모드",
+    "username": "사용자 이름",
+    "strictCertificate": "인증서 엄격 검증",
+    "securityOptions": {
+      "tls993": "TLS(일반적으로 993)",
+      "starttls143": "STARTTLS(일반적으로 143)",
+      "tls": "TLS",
+      "starttls": "STARTTLS",
+      "plain": "평문"
+    }
+  },
+  "imap": {
+    "host": "IMAP 호스트",
+    "mailbox": "메일함 폴더",
+    "password": "비밀번호 또는 앱 비밀번호",
+    "recipientHeader": "로컬 주소 Header",
+    "recipientHeaders": {
+      "auto": "전달 추적 헤더 자동 감지(권장)",
+      "xOriginalTo": "X-Original-To",
+      "deliveredTo": "Delivered-To",
+      "envelopeTo": "Envelope-To",
+      "xEnvelopeTo": "X-Envelope-To"
+    },
+    "initialSync": "최초 동기화",
+    "initialSyncOptions": {
+      "new": "저장 후 도착하는 새 메일만(권장)",
+      "unseen": "읽지 않은 메일도 가져오기"
+    },
+    "pollInterval": "폴링 간격(초)",
+    "maxMessages": "폴링당 최대 메일 수",
+    "certificateHelp": "공용 메일 제공업체에서는 활성화 상태를 유지하세요.",
+    "test": "IMAP 연결 테스트",
+    "testing": "연결 중",
+    "readOnlyHelp": "폴링은 메일함을 읽기 전용으로 이용하며 읽음 표시, 이동 또는 삭제를 하지 않습니다. 별칭이나 전체 주소 전달은 원래 수신자를 식별할 수 있는 Header를 보존해야 합니다."
+  },
+  "smtp": {
+    "host": "SMTP 호스트",
+    "authMethod": "인증 방식",
+    "authMethods": {
+      "auto": "자동 협상(권장)",
+      "plain": "PLAIN 강제",
+      "login": "LOGIN 강제(Microsoft/Outlook 등)"
+    },
+    "fromName": "발신자 이름(선택)",
+    "username": "사용자 이름(선택)",
+    "password": "비밀번호(선택)",
+    "certificateHelp": "프로덕션에서는 활성화 상태 유지를 권장합니다.",
+    "test": "SMTP 연결 테스트",
+    "testing": "연결 중"
+  },
+  "resendApiKey": "Resend API 키",
+  "resetDomain": "현재 도메인 초기화",
+  "secrets": {
+    "show": "비밀 값 표시",
+    "hide": "비밀 값 숨기기"
+  },
+  "deleteConfirm": {
+    "title": "이 도메인을 제거하시겠습니까?",
+    "description": "현재 초안에서 {domain}을(를) 제거하시겠습니까? 저장하면 이 도메인의 수신 및 발신 설정이 비활성화됩니다.",
+    "cancel": "도메인 유지",
+    "confirm": "제거"
+  }
+}

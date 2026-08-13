@@ -4,6 +4,7 @@ import { CONFIG_KEYS, getConfigValues, setConfigValues } from "@/lib/config-stor
 import { authorizeRequest } from "@/lib/request-auth"
 import { normalizeMailboxDomain } from "@/lib/email-address"
 import { getDomainPolicies, saveDomainPolicies } from "@/lib/domain-policies"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -23,11 +24,16 @@ export async function GET(request: Request) {
     ]),
     getDomainPolicies(),
   ])
+  const availableDomainPolicies = authorization.principal.access.allowedDomains === null
+    ? domainPolicies
+    : domainPolicies.filter(policy => (
+      authorization.principal.access.allowedDomains?.includes(policy.domain)
+    ))
 
   return Response.json({
     defaultRole: config.DEFAULT_ROLE || ROLES.CIVILIAN,
-    emailDomains: domainPolicies.map(policy => policy.domain).join(","),
-    domains: domainPolicies.map(policy => ({
+    emailDomains: availableDomainPolicies.map(policy => policy.domain).join(","),
+    domains: availableDomainPolicies.map(policy => ({
       domain: policy.domain,
       inboundMode: policy.inbound.mode,
       outboundMode: policy.outbound.mode,
@@ -67,7 +73,7 @@ export async function POST(request: Request) {
   }
   
   if (![ROLES.DUKE, ROLES.KNIGHT, ROLES.CIVILIAN].includes(defaultRole)) {
-    return Response.json({ error: "无效的角色" }, { status: 400 })
+    return apiError("INVALID_ROLE", 400)
   }
 
   let configuredDomains: string[] | null = null
@@ -80,10 +86,7 @@ export async function POST(request: Request) {
       || normalizedDomains.some(domain => !domain)
       || new Set(normalizedDomains).size !== normalizedDomains.length
     ) {
-      return Response.json(
-        { error: "邮箱域名必须是唯一、有效的 ASCII 域名" },
-        { status: 400 },
-      )
+      return apiError("INVALID_MAIL_DOMAINS", 400)
     }
     configuredDomains = normalizedDomains as string[]
   }
@@ -92,10 +95,7 @@ export async function POST(request: Request) {
   if (maxEmails !== undefined) {
     parsedMaxEmails = Number(maxEmails)
     if (!Number.isSafeInteger(parsedMaxEmails) || parsedMaxEmails < 1 || parsedMaxEmails > 100_000) {
-      return Response.json(
-        { error: "最大邮箱数量必须是 1-100000 的整数" },
-        { status: 400 },
-      )
+      return apiError("INVALID_MAX_EMAILS", 400)
     }
   }
 
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
   }
 
   if (turnstileConfig.enabled && (!turnstileConfig.siteKey || !turnstileConfig.secretKey)) {
-    return Response.json({ error: "Turnstile 启用时需要提供 Site Key 和 Secret Key" }, { status: 400 })
+    return apiError("TURNSTILE_KEYS_REQUIRED", 400)
   }
 
   await setConfigValues({

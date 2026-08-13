@@ -96,6 +96,11 @@
       "subject": "Email Subject",
       "content": "Email text content",
       "html": "Email HTML content"
+    },
+    "testPayload": {
+      "subject": "MoeMail webhook test",
+      "content": "This is a localized MoeMail webhook test message.",
+      "html": "<p>This is a localized <strong>MoeMail webhook test</strong> message.</p>"
     }
   },
   "website": {

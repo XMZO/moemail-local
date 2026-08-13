@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 import { PERMISSIONS } from "@/lib/permissions"
 import { desc, eq } from "drizzle-orm"
 import { authorizeRequest } from "@/lib/request-auth"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -28,11 +29,8 @@ export async function GET(request: Request) {
       }))
     })
   } catch (error) {
-    console.error("Failed to fetch API keys:", error)
-    return NextResponse.json(
-      { error: "获取 API Keys 失败" },
-      { status: 500 }
-    )
+    console.error("api_key.read_failed", error)
+    return apiError("API_KEYS_READ_FAILED", 500)
   }
 }
 
@@ -45,10 +43,7 @@ export async function POST(request: Request) {
   try {
     const { name } = await request.json() as { name: string }
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: "名称不能为空" },
-        { status: 400 }
-      )
+      return apiError("API_KEY_NAME_REQUIRED", 400)
     }
 
     const key = `mk_${nanoid(32)}`
@@ -63,10 +58,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ key })
   } catch (error) {
-    console.error("Failed to create API key:", error)
-    return NextResponse.json(
-      { error: "创建 API Key 失败" },
-      { status: 500 }
-    )
+    console.error("api_key.create_failed", error)
+    return apiError("API_KEY_CREATE_FAILED", 500)
   }
 }

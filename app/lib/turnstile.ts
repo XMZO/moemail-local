@@ -58,7 +58,7 @@ export async function verifyTurnstileToken(token?: string | null): Promise<Turns
 
     return { success: true }
   } catch (error) {
-    console.error("Turnstile verification error:", error)
+    console.error("turnstile.verification_failed", error)
     return { success: false, reason: "verification-failed" }
   }
 }

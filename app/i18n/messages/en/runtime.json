@@ -1,0 +1,145 @@
+{
+  "title": "Runtime configuration",
+  "description": "The visual form and YAML editor use the same configuration, validation, and fingerprint-based compare-and-swap.",
+  "reload": "Reload",
+  "secretWarningTitle": "This panel contains plaintext secrets",
+  "secretWarningDescription": "Do not screenshot it or share it with unauthorized people. A configuration is not applied when its database probe fails.",
+  "file": "File",
+  "revision": "Runtime revision",
+  "status": "Status",
+  "statusLoaded": "Loaded",
+  "statusPending": "Not applied",
+  "statusMissing": "Missing",
+  "loading": "Loading…",
+  "lastError": "The most recent hot reload failed; the last valid configuration remains active:",
+  "conflict": "Another window or file editor changed the configuration. Reload it and merge your changes.",
+  "validationIssues": "Validation issues",
+  "requiredSecrets": "Required secrets cannot be empty: {fields}",
+  "visual": "Visual configuration",
+  "yaml": "Raw YAML",
+  "yamlAria": "Complete YAML runtime configuration",
+  "externalEditHint": "External edits are still validated and hot-reloaded automatically. A database driver change takes effect after the supervisor restarts the process.",
+  "save": "Save and apply",
+  "saving": "Validating and saving",
+  "required": "Required; cannot be empty",
+  "actions": {
+    "generate": "Generate a new random secret",
+    "generateFor": "Generate a new random secret for {label}",
+    "restoreDefault": "Restore the code default",
+    "show": "Show {label}",
+    "hide": "Hide {label}"
+  },
+  "errors": {
+    "load": "Failed to load runtime configuration",
+    "save": "Configuration was not applied",
+    "notObject": "The top level of the configuration must be a mapping",
+    "yamlSwitch": "Cannot switch to visual configuration yet: {reason}",
+    "syntax": "Syntax error"
+  },
+  "success": {
+    "applied": "Configuration saved and applied",
+    "restart": "Configuration saved; {reason}",
+    "driverRestart": "a database driver change requires a restart"
+  },
+  "groups": {
+    "root": "Format version",
+    "setup": "Setup state",
+    "server": "Web service",
+    "database": "Database",
+    "auth": "Sign-in and authentication",
+    "email": "Inbound email",
+    "cleanup": "Data cleanup",
+    "scheduler": "Maintenance scheduler",
+    "monitor": "Monitoring and alerts",
+    "offsite": "Offsite backup"
+  },
+  "fields": {
+    "version": { "label": "Schema version", "description": "Only version 1 is currently supported." },
+    "setup": {
+      "completed": { "label": "Setup completed", "description": "Maintained by the first-run wizard. Disabling it re-enables the setup gate." },
+      "completedAt": { "label": "Setup completion time", "description": "ISO timestamp; empty means unknown." }
+    },
+    "server": {
+      "baseUrl": { "label": "Site base URL", "description": "Used for metadata and absolute links, for example https://mail.example.com." },
+      "trustProxyHeaders": { "label": "Trust reverse-proxy headers", "description": "Enable only behind a controlled Caddy or reverse proxy." },
+      "autoRestartOnDriverChange": { "label": "Exit automatically on driver change", "description": "In production, Docker or systemd starts the replacement process." },
+      "emailPollIntervalMs": { "label": "Mailbox polling interval (ms)", "description": "How often browsers refresh message lists." }
+    },
+    "database": {
+      "driver": { "label": "Database driver", "description": "A cross-driver switch validates the target database and requires a process restart." },
+      "sqlite": {
+        "path": { "label": "SQLite file", "description": "Must be inside the data/ directory." },
+        "backupDir": { "label": "SQLite backup directory", "description": "Must be inside data/ and must not conflict with database sidecar files." },
+        "backupRetentionDays": { "label": "SQLite backup retention (days)", "description": "Maintenance removes only archives with a strict configuration pair." }
+      },
+      "postgres": {
+        "url": { "label": "PostgreSQL URL", "description": "Query parameters are forbidden. Credentials are stored in the local mode-0600 configuration." },
+        "poolMax": { "label": "Maximum pool size", "description": "Maximum database connections used by the Web process." },
+        "idleTimeoutMs": { "label": "Idle connection timeout (ms)", "description": "How long the pool retains an idle connection." },
+        "connectTimeoutMs": { "label": "Connection timeout (ms)", "description": "Timeout for configuration probes and runtime connections." },
+        "ssl": { "label": "Enable PostgreSQL TLS", "description": "Applied consistently to the Web app and maintenance tools." },
+        "sslRejectUnauthorized": { "label": "Strict certificate verification", "description": "Recommended for an external production PostgreSQL server." },
+        "applicationName": { "label": "Connection application name", "description": "Shown in PostgreSQL activity views." },
+        "backupDir": { "label": "PostgreSQL backup directory", "description": "Must be inside data/postgres-backups." },
+        "backupRetentionDays": { "label": "PostgreSQL backup retention (days)", "description": "Shared by the Node and tools-container maintenance paths." }
+      }
+    },
+    "auth": {
+      "secret": { "label": "Session signing secret", "description": "Required after setup. Regenerating it invalidates existing sign-in sessions." },
+      "passwordPepper": { "label": "Password pepper", "description": "Required after setup and cannot be rotated directly without invalidating existing passwords." },
+      "emperorBootstrapSecret": { "label": "Emperor bootstrap secret", "description": "Used by the compatibility promotion endpoint. Empty disables it; use a random value when enabled." },
+      "github": {
+        "clientId": { "label": "GitHub Client ID", "description": "Configure together with the client secret." },
+        "clientSecret": { "label": "GitHub Client Secret", "description": "OAuth client credential." }
+      },
+      "google": {
+        "clientId": { "label": "Google Client ID", "description": "Configure together with the client secret." },
+        "clientSecret": { "label": "Google Client Secret", "description": "OAuth client credential." }
+      },
+      "rateLimit": {
+        "windowSeconds": { "label": "Rate-limit window (seconds)", "description": "Counting window for sign-in and registration attempts." },
+        "loginPerClient": { "label": "Per-client sign-in limit", "description": "Allowed attempts per window." },
+        "loginGlobal": { "label": "Global sign-in limit", "description": "Total allowed attempts per window." },
+        "registerPerClient": { "label": "Per-client registration limit", "description": "Allowed attempts per window." },
+        "registerGlobal": { "label": "Global registration limit", "description": "Total allowed attempts per window." },
+        "maxClients": { "label": "Rate-limit client capacity", "description": "Maximum clients retained in the in-memory limiter." },
+        "scryptMaxConcurrency": { "label": "Maximum Scrypt concurrency", "description": "Limits concurrent expensive password operations." }
+      }
+    },
+    "email": {
+      "ingestSecret": { "label": "Worker ingest secret", "description": "Required after setup. After regeneration, update the Cloudflare Worker Secret to match." }
+    },
+    "cleanup": {
+      "batchSize": { "label": "Cleanup batch size", "description": "Rows processed in each delete loop." },
+      "maxRows": { "label": "Maximum rows per cleanup", "description": "Prevents a maintenance task from running for too long." },
+      "lockStaleMinutes": { "label": "Cleanup lock age (minutes)", "description": "Used only to determine whether a maintenance lock is abandoned." },
+      "permanentMessageRetentionDays": { "label": "Permanent-mailbox retention (days)", "description": "0 keeps messages in permanent mailboxes regardless of age." }
+    },
+    "scheduler": {
+      "cleanupIntervalSeconds": { "label": "Cleanup interval (seconds)", "description": "Read dynamically by the scheduler profile." },
+      "backupIntervalSeconds": { "label": "Backup interval (seconds)", "description": "Read dynamically by the scheduler profile." },
+      "backupOnStart": { "label": "Back up on startup", "description": "Create a recovery point when the scheduler starts." }
+    },
+    "monitor": {
+      "intervalSeconds": { "label": "Monitoring interval (seconds)", "description": "Check interval for the monitoring profile." },
+      "healthcheckUrl": { "label": "Health-check URL", "description": "Empty uses the current service's default endpoint." },
+      "diskPath": { "label": "Disk monitoring path", "description": "Empty selects the default data path for the active database driver." },
+      "accessLog": { "label": "Access log path", "description": "Optional source for HTTP 5xx and ingest-failure counts." },
+      "minFreePercent": { "label": "Minimum free space (percent)", "description": "Alert below this threshold; 0 disables it." },
+      "minFreeGb": { "label": "Minimum free space (GiB)", "description": "Alert below this threshold; 0 disables it." },
+      "maxWalMb": { "label": "Maximum WAL size (MiB)", "description": "Alert above this threshold; 0 disables it." },
+      "maxPostgresDatabaseGb": { "label": "Maximum PostgreSQL database size (GiB)", "description": "Alert above this threshold; 0 disables it." },
+      "windowMinutes": { "label": "Log analysis window (minutes)", "description": "Counting window for HTTP and ingest failures." },
+      "maxHttp5xx": { "label": "Maximum HTTP 5xx per window", "description": "Alert above this count; 0 disables it." },
+      "maxIngestFailures": { "label": "Maximum ingest failures per window", "description": "Alert above this count; 0 disables it." },
+      "alertWebhookUrl": { "label": "Alert webhook URL", "description": "Optional external alert destination." },
+      "alertBearerToken": { "label": "Alert bearer token", "description": "Secret attached when sending alerts." }
+    },
+    "offsite": {
+      "remote": { "label": "Rclone remote", "description": "For example remote:moemail. Empty disables offsite synchronization." },
+      "intervalSeconds": { "label": "Offsite sync interval (seconds)", "description": "Read dynamically by the offsite profile." },
+      "rcloneBin": { "label": "Rclone executable", "description": "Defaults to rclone in containers." },
+      "rcloneConfigContent": { "label": "Rclone configuration content", "description": "Complete sensitive configuration written to a private temporary file at runtime." }
+    }
+  }
+}

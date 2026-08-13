@@ -1,0 +1,145 @@
+{
+  "title": "執行設定",
+  "description": "視覺化表單與 YAML 編輯器共用同一份設定、驗證及以指紋為基礎的比較交換。",
+  "reload": "重新載入",
+  "secretWarningTitle": "此面板包含明文密鑰",
+  "secretWarningDescription": "請勿截圖或分享給無關人員。資料庫探測失敗時，新設定不會生效。",
+  "file": "檔案",
+  "revision": "執行修訂號",
+  "status": "狀態",
+  "statusLoaded": "已載入",
+  "statusPending": "尚未套用",
+  "statusMissing": "不存在",
+  "loading": "載入中…",
+  "lastError": "最近一次熱重載失敗，仍使用上一份有效設定：",
+  "conflict": "設定已被其他視窗或檔案編輯器更新，請重新載入後合併變更。",
+  "validationIssues": "驗證問題",
+  "requiredSecrets": "必填密鑰不可為空：{fields}",
+  "visual": "視覺化設定",
+  "yaml": "原始 YAML",
+  "yamlAria": "完整 YAML 執行設定",
+  "externalEditHint": "外部編輯仍會自動驗證並熱重載；資料庫驅動程式變更會在監督程序重新啟動行程後生效。",
+  "save": "儲存並套用",
+  "saving": "驗證並儲存中",
+  "required": "必填，不可為空",
+  "actions": {
+    "generate": "產生新的隨機密鑰",
+    "generateFor": "為{label}產生新的隨機密鑰",
+    "restoreDefault": "恢復程式碼預設值",
+    "show": "顯示{label}",
+    "hide": "隱藏{label}"
+  },
+  "errors": {
+    "load": "載入執行設定失敗",
+    "save": "設定未套用",
+    "notObject": "設定最上層必須是鍵值對映",
+    "yamlSwitch": "YAML 尚無法切換到視覺化設定：{reason}",
+    "syntax": "語法錯誤"
+  },
+  "success": {
+    "applied": "設定已儲存並套用",
+    "restart": "設定已儲存；{reason}",
+    "driverRestart": "資料庫驅動程式變更需要重新啟動"
+  },
+  "groups": {
+    "root": "格式版本",
+    "setup": "初始化狀態",
+    "server": "Web 服務",
+    "database": "資料庫",
+    "auth": "登入與驗證",
+    "email": "收件入口",
+    "cleanup": "資料清理",
+    "scheduler": "維護排程",
+    "monitor": "監控與警示",
+    "offsite": "異地備份"
+  },
+  "fields": {
+    "version": { "label": "Schema 版本", "description": "目前僅支援版本 1。" },
+    "setup": {
+      "completed": { "label": "初始化完成", "description": "由首次執行精靈維護；停用後會重新開啟初始化閘道。" },
+      "completedAt": { "label": "初始化完成時間", "description": "ISO 時間戳記；留空表示未知。" }
+    },
+    "server": {
+      "baseUrl": { "label": "站台基準 URL", "description": "用於中繼資料與絕對連結，例如 https://mail.example.com。" },
+      "trustProxyHeaders": { "label": "信任反向代理標頭", "description": "僅在受控的 Caddy 或反向代理後方啟用。" },
+      "autoRestartOnDriverChange": { "label": "驅動程式變更時自動結束", "description": "正式環境由 Docker 或 systemd 監督程序啟動替代行程。" },
+      "emailPollIntervalMs": { "label": "信箱輪詢間隔（毫秒）", "description": "瀏覽器重新整理郵件清單的間隔。" }
+    },
+    "database": {
+      "driver": { "label": "資料庫驅動程式", "description": "跨驅動程式切換會驗證目標資料庫並要求重新啟動行程。" },
+      "sqlite": {
+        "path": { "label": "SQLite 檔案", "description": "必須位於 data/ 目錄內。" },
+        "backupDir": { "label": "SQLite 備份目錄", "description": "必須位於 data/ 內，且不得與資料庫輔助檔案衝突。" },
+        "backupRetentionDays": { "label": "SQLite 備份保留天數", "description": "維護工作只會清理具有嚴格設定配對檔的封存。" }
+      },
+      "postgres": {
+        "url": { "label": "PostgreSQL 連線網址", "description": "禁止查詢參數；憑據儲存在本機權限為 0600 的設定中。" },
+        "poolMax": { "label": "連線池上限", "description": "Web 行程使用的最大資料庫連線數。" },
+        "idleTimeoutMs": { "label": "閒置連線逾時（毫秒）", "description": "連線池保留閒置連線的時間。" },
+        "connectTimeoutMs": { "label": "連線逾時（毫秒）", "description": "設定探測與執行階段連線的逾時時間。" },
+        "ssl": { "label": "啟用 PostgreSQL TLS", "description": "一致套用於 Web 應用程式與維護工具。" },
+        "sslRejectUnauthorized": { "label": "嚴格驗證憑證", "description": "正式環境的外部 PostgreSQL 建議啟用。" },
+        "applicationName": { "label": "連線應用程式名稱", "description": "顯示在 PostgreSQL 活動連線檢視中。" },
+        "backupDir": { "label": "PostgreSQL 備份目錄", "description": "必須位於 data/postgres-backups 內。" },
+        "backupRetentionDays": { "label": "PostgreSQL 備份保留天數", "description": "Node 與工具容器的維護路徑共同使用。" }
+      }
+    },
+    "auth": {
+      "secret": { "label": "工作階段簽署密鑰", "description": "初始化後必填；重新產生會讓現有登入工作階段失效。" },
+      "passwordPepper": { "label": "密碼 Pepper", "description": "初始化後必填，且不可直接輪替，否則現有密碼會失效。" },
+      "emperorBootstrapSecret": { "label": "皇帝引導密鑰", "description": "供相容的晉升端點使用；留空表示停用，啟用時應使用隨機值。" },
+      "github": {
+        "clientId": { "label": "GitHub 用戶端 ID", "description": "必須與用戶端密鑰同時設定。" },
+        "clientSecret": { "label": "GitHub 用戶端密鑰", "description": "OAuth 用戶端憑據。" }
+      },
+      "google": {
+        "clientId": { "label": "Google 用戶端 ID", "description": "必須與用戶端密鑰同時設定。" },
+        "clientSecret": { "label": "Google 用戶端密鑰", "description": "OAuth 用戶端憑據。" }
+      },
+      "rateLimit": {
+        "windowSeconds": { "label": "限流視窗（秒）", "description": "登入與註冊嘗試的計數視窗。" },
+        "loginPerClient": { "label": "單一用戶端登入上限", "description": "每個視窗允許的嘗試次數。" },
+        "loginGlobal": { "label": "全域登入上限", "description": "每個視窗允許的總嘗試次數。" },
+        "registerPerClient": { "label": "單一用戶端註冊上限", "description": "每個視窗允許的嘗試次數。" },
+        "registerGlobal": { "label": "全域註冊上限", "description": "每個視窗允許的總嘗試次數。" },
+        "maxClients": { "label": "限流用戶端容量", "description": "記憶體限流器最多保留的用戶端數量。" },
+        "scryptMaxConcurrency": { "label": "Scrypt 最大並行數", "description": "限制高成本密碼運算的並行數。" }
+      }
+    },
+    "email": {
+      "ingestSecret": { "label": "Worker 投遞密鑰", "description": "初始化後必填；重新產生後必須同步更新 Cloudflare Worker Secret。" }
+    },
+    "cleanup": {
+      "batchSize": { "label": "清理批次大小", "description": "每次刪除迴圈處理的資料列數。" },
+      "maxRows": { "label": "單次清理上限", "description": "防止單一維護工作執行過久。" },
+      "lockStaleMinutes": { "label": "清理鎖期限（分鐘）", "description": "僅用於判斷維護鎖是否已被遺棄。" },
+      "permanentMessageRetentionDays": { "label": "永久信箱郵件保留天數", "description": "0 表示永久信箱中的郵件不依年齡清理。" }
+    },
+    "scheduler": {
+      "cleanupIntervalSeconds": { "label": "清理間隔（秒）", "description": "由 scheduler profile 動態讀取。" },
+      "backupIntervalSeconds": { "label": "備份間隔（秒）", "description": "由 scheduler profile 動態讀取。" },
+      "backupOnStart": { "label": "啟動時立即備份", "description": "排程器啟動時建立一個復原點。" }
+    },
+    "monitor": {
+      "intervalSeconds": { "label": "監控間隔（秒）", "description": "monitoring profile 的檢查週期。" },
+      "healthcheckUrl": { "label": "健康檢查 URL", "description": "留空時使用目前服務的預設端點。" },
+      "diskPath": { "label": "磁碟監控路徑", "description": "留空時依目前資料庫驅動程式選擇預設資料路徑。" },
+      "accessLog": { "label": "存取日誌路徑", "description": "選用，用於統計 HTTP 5xx 與投遞失敗。" },
+      "minFreePercent": { "label": "最小剩餘百分比", "description": "低於門檻時警示；0 表示停用。" },
+      "minFreeGb": { "label": "最小剩餘空間（GiB）", "description": "低於門檻時警示；0 表示停用。" },
+      "maxWalMb": { "label": "最大 WAL（MiB）", "description": "超過門檻時警示；0 表示停用。" },
+      "maxPostgresDatabaseGb": { "label": "最大 PostgreSQL 資料庫大小（GiB）", "description": "超過門檻時警示；0 表示停用。" },
+      "windowMinutes": { "label": "日誌統計視窗（分鐘）", "description": "HTTP 與投遞失敗的計數視窗。" },
+      "maxHttp5xx": { "label": "視窗內最大 HTTP 5xx 數", "description": "超過此數量時警示；0 表示停用。" },
+      "maxIngestFailures": { "label": "視窗內最大投遞失敗數", "description": "超過此數量時警示；0 表示停用。" },
+      "alertWebhookUrl": { "label": "警示 Webhook URL", "description": "選用的外部警示目標。" },
+      "alertBearerToken": { "label": "警示 Bearer Token", "description": "傳送警示時附加的密鑰。" }
+    },
+    "offsite": {
+      "remote": { "label": "Rclone 遠端", "description": "例如 remote:moemail；留空時停用異地同步。" },
+      "intervalSeconds": { "label": "異地同步間隔（秒）", "description": "由 offsite profile 動態讀取。" },
+      "rcloneBin": { "label": "Rclone 可執行檔", "description": "容器內預設為 rclone。" },
+      "rcloneConfigContent": { "label": "Rclone 設定內容", "description": "完整的敏感設定，執行階段會寫入私有暫存檔。" }
+    }
+  }
+}

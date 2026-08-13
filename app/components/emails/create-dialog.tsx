@@ -14,35 +14,56 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EXPIRY_OPTIONS } from "@/types/email"
 import { useCopy } from "@/hooks/use-copy"
 import { useConfig } from "@/hooks/use-config"
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { normalizeMailboxCreationName } from "@/lib/email-address"
 
 interface CreateDialogProps {
   onEmailCreated: () => void
 }
 
 export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
-  const { config } = useConfig()
+  const { config, fetch: refreshConfig } = useConfig()
   const t = useTranslations("emails.create")
   const tList = useTranslations("emails.list")
   const tCommon = useTranslations("common.actions")
+  const tFormat = useTranslations("common.format")
+  const tApi = useTranslations("api")
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [emailName, setEmailName] = useState("")
+  const [discardedDomain, setDiscardedDomain] = useState(false)
   const [currentDomain, setCurrentDomain] = useState("")
   const [expiryTime, setExpiryTime] = useState(EXPIRY_OPTIONS[1].value.toString())
   const { toast } = useToast()
   const { copyToClipboard } = useCopy()
 
-  const generateRandomName = () => setEmailName(nanoid(8))
+  const normalizedEmailName = normalizeMailboxCreationName(emailName) ?? ""
+  const invalidEmailName = emailName.length > 0 && !normalizedEmailName
+
+  const generateRandomName = () => {
+    setEmailName(nanoid(8))
+    setDiscardedDomain(false)
+  }
 
   const copyEmailAddress = () => {
-    copyToClipboard(`${emailName}@${currentDomain}`)
+    if (normalizedEmailName && currentDomain) {
+      copyToClipboard(`${normalizedEmailName}@${currentDomain}`)
+    }
   }
 
   const createEmail = async () => {
-    if (!emailName.trim()) {
+    if (!currentDomain) {
       toast({
         title: tList("error"),
-        description: t("namePlaceholder"),
+        description: t("noAvailableDomains"),
+        variant: "destructive",
+      })
+      return
+    }
+    if (invalidEmailName) {
+      toast({
+        title: tList("error"),
+        description: t("invalidName"),
         variant: "destructive"
       })
       return
@@ -54,17 +75,17 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: emailName,
+          ...(normalizedEmailName ? { name: normalizedEmailName } : {}),
           domain: currentDomain,
           expiryTime: parseInt(expiryTime)
         })
       })
 
       if (!response.ok) {
-        const data = await response.json()
+        const code = await readApiErrorCode(response, "MAILBOX_CREATE_FAILED")
         toast({
           title: tList("error"),
-          description: (data as { error: string }).error,
+          description: tApi.has(code as never) ? tApi(code as never) : t("failed"),
           variant: "destructive"
         })
         return
@@ -77,6 +98,7 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
       onEmailCreated()
       setOpen(false)
       setEmailName("")
+      setDiscardedDomain(false)
     } catch {
       toast({
         title: tList("error"),
@@ -89,15 +111,19 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
   }
 
   useEffect(() => {
-    if ((config?.emailDomainsArray?.length ?? 0) > 0) {
-      setCurrentDomain(config?.emailDomainsArray[0] ?? "")
-    }
+    const availableDomains = config?.emailDomainsArray ?? []
+    setCurrentDomain(current => (
+      availableDomains.includes(current) ? current : availableDomains[0] ?? ""
+    ))
   }, [config])
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={nextOpen => {
+      setOpen(nextOpen)
+      if (nextOpen) void refreshConfig()
+    }}>
       <DialogTrigger asChild>
-        <Button className="gap-2">
+        <Button className="gap-2" disabled={(config?.emailDomainsArray.length ?? 0) === 0} title={(config?.emailDomainsArray.length ?? 0) === 0 ? t("noAvailableDomains") : undefined}>
           <Plus className="w-4 h-4" />
           {t("title")}
         </Button>
@@ -110,7 +136,11 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
           <div className="flex gap-2">
             <Input
               value={emailName}
-              onChange={(e) => setEmailName(e.target.value)}
+              onChange={event => {
+                const value = event.target.value
+                setDiscardedDomain(value.includes("@"))
+                setEmailName(value.split("@", 1)[0].slice(0, 64))
+              }}
               placeholder={t("namePlaceholder")}
               maxLength={64}
               pattern="[A-Za-z0-9._+-]+"
@@ -136,10 +166,18 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
               size="icon"
               onClick={generateRandomName}
               type="button"
+              aria-label={t("randomName")}
+              title={t("randomName")}
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
           </div>
+
+          {(discardedDomain || invalidEmailName) && (
+            <p className={invalidEmailName ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+              {invalidEmailName ? t("invalidName") : t("domainDiscarded")}
+            </p>
+          )}
 
           <div className="flex items-center gap-4">
             <Label className="shrink-0 text-muted-foreground">{t("expiryTime")}</Label>
@@ -148,13 +186,12 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
               onValueChange={setExpiryTime}
               className="flex gap-6"
             >
-              {EXPIRY_OPTIONS.map((option, index) => {
-                const labels = [t("oneHour"), t("oneDay"), t("threeDays"), t("permanent")]
+              {EXPIRY_OPTIONS.map(option => {
                 return (
                   <div key={option.value} className="flex items-center gap-2">
                     <RadioGroupItem value={option.value.toString()} id={option.value.toString()} />
                     <Label htmlFor={option.value.toString()} className="cursor-pointer text-sm">
-                      {labels[index]}
+                      {t(option.key)}
                     </Label>
                   </div>
                 )
@@ -163,16 +200,19 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
           </div>
 
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="shrink-0">{t("domain")}:</span>
-            {emailName ? (
+            <span className="shrink-0">{tFormat("label", { label: t("domain") })}</span>
+            {normalizedEmailName ? (
               <div className="flex items-center gap-2 min-w-0">
-                <span className="truncate">{`${emailName}@${currentDomain}`}</span>
-                <div
-                  className="shrink-0 cursor-pointer hover:text-primary transition-colors"
+                <span className="truncate">{`${normalizedEmailName}@${currentDomain}`}</span>
+                <button
+                  type="button"
+                  className="shrink-0 cursor-pointer transition-colors hover:text-primary"
                   onClick={copyEmailAddress}
+                  aria-label={tCommon("copy")}
+                  title={tCommon("copy")}
                 >
                   <Copy className="size-4" />
-                </div>
+                </button>
               </div>
             ) : (
               <span className="text-gray-400">...</span>
@@ -183,7 +223,7 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
           <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
             {tCommon("cancel")}
           </Button>
-          <Button onClick={createEmail} disabled={loading}>
+          <Button onClick={createEmail} disabled={loading || invalidEmailName || !currentDomain}>
             {loading ? t("creating") : t("create")}
           </Button>
         </div>

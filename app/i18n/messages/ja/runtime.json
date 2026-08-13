@@ -1,0 +1,145 @@
+{
+  "title": "実行時設定",
+  "description": "ビジュアルフォームと YAML エディターは、同じ設定、検証、フィンガープリントによる比較交換を使用します。",
+  "reload": "再読み込み",
+  "secretWarningTitle": "このパネルには平文のシークレットが含まれます",
+  "secretWarningDescription": "スクリーンショットを撮ったり、権限のない人と共有したりしないでください。データベースのプローブに失敗した設定は適用されません。",
+  "file": "ファイル",
+  "revision": "実行時リビジョン",
+  "status": "状態",
+  "statusLoaded": "読み込み済み",
+  "statusPending": "未適用",
+  "statusMissing": "存在しません",
+  "loading": "読み込み中…",
+  "lastError": "直近のホットリロードに失敗したため、最後の有効な設定を引き続き使用しています：",
+  "conflict": "別のウィンドウまたはファイルエディターが設定を変更しました。再読み込みして変更を統合してください。",
+  "validationIssues": "検証上の問題",
+  "requiredSecrets": "必須シークレットを空にできません：{fields}",
+  "visual": "ビジュアル設定",
+  "yaml": "元の YAML",
+  "yamlAria": "完全な YAML 実行時設定",
+  "externalEditHint": "外部編集も自動的に検証され、ホットリロードされます。データベースドライバーの変更は、監視プロセスによる再起動後に有効になります。",
+  "save": "保存して適用",
+  "saving": "検証して保存中",
+  "required": "必須項目のため空にできません",
+  "actions": {
+    "generate": "新しいランダムシークレットを生成",
+    "generateFor": "{label}用の新しいランダムシークレットを生成",
+    "restoreDefault": "コードの既定値に戻す",
+    "show": "{label}を表示",
+    "hide": "{label}を非表示"
+  },
+  "errors": {
+    "load": "実行時設定を読み込めませんでした",
+    "save": "設定は適用されませんでした",
+    "notObject": "設定の最上位はキーと値のマッピングである必要があります",
+    "yamlSwitch": "まだビジュアル設定に切り替えられません：{reason}",
+    "syntax": "構文エラー"
+  },
+  "success": {
+    "applied": "設定を保存して適用しました",
+    "restart": "設定を保存しました；{reason}",
+    "driverRestart": "データベースドライバーの変更には再起動が必要です"
+  },
+  "groups": {
+    "root": "形式バージョン",
+    "setup": "セットアップ状態",
+    "server": "Web サービス",
+    "database": "データベース",
+    "auth": "ログインと認証",
+    "email": "受信メール",
+    "cleanup": "データ整理",
+    "scheduler": "メンテナンススケジューラー",
+    "monitor": "監視とアラート",
+    "offsite": "オフサイトバックアップ"
+  },
+  "fields": {
+    "version": { "label": "Schema バージョン", "description": "現在サポートされているのはバージョン 1 だけです。" },
+    "setup": {
+      "completed": { "label": "セットアップ完了", "description": "初回セットアップウィザードが管理します。無効にするとセットアップゲートが再び有効になります。" },
+      "completedAt": { "label": "セットアップ完了日時", "description": "ISO タイムスタンプです。空の場合は不明を意味します。" }
+    },
+    "server": {
+      "baseUrl": { "label": "サイトのベース URL", "description": "メタデータと絶対リンクに使用します。例：https://mail.example.com。" },
+      "trustProxyHeaders": { "label": "リバースプロキシヘッダーを信頼", "description": "管理下の Caddy またはリバースプロキシの背後でのみ有効にしてください。" },
+      "autoRestartOnDriverChange": { "label": "ドライバー変更時に自動終了", "description": "本番環境では Docker または systemd が新しいプロセスを起動します。" },
+      "emailPollIntervalMs": { "label": "メールボックスのポーリング間隔（ミリ秒）", "description": "ブラウザーがメール一覧を更新する間隔です。" }
+    },
+    "database": {
+      "driver": { "label": "データベースドライバー", "description": "異なるドライバーへの切り替えでは対象データベースを検証し、プロセスの再起動が必要です。" },
+      "sqlite": {
+        "path": { "label": "SQLite ファイル", "description": "data/ ディレクトリ内に置く必要があります。" },
+        "backupDir": { "label": "SQLite バックアップディレクトリ", "description": "data/ 内に置き、データベースの補助ファイルと競合しないようにしてください。" },
+        "backupRetentionDays": { "label": "SQLite バックアップ保持日数", "description": "メンテナンスは厳密な設定ペアを持つアーカイブだけを削除します。" }
+      },
+      "postgres": {
+        "url": { "label": "PostgreSQL 接続 URL", "description": "クエリパラメーターは禁止です。認証情報は権限 0600 のローカル設定に保存されます。" },
+        "poolMax": { "label": "接続プールの上限", "description": "Web プロセスが使用するデータベース接続の最大数です。" },
+        "idleTimeoutMs": { "label": "アイドル接続タイムアウト（ミリ秒）", "description": "プールがアイドル接続を保持する時間です。" },
+        "connectTimeoutMs": { "label": "接続タイムアウト（ミリ秒）", "description": "設定プローブと実行時接続のタイムアウトです。" },
+        "ssl": { "label": "PostgreSQL TLS を有効化", "description": "Web アプリとメンテナンスツールの両方に同じ設定を適用します。" },
+        "sslRejectUnauthorized": { "label": "証明書を厳密に検証", "description": "外部の本番 PostgreSQL サーバーでは有効化を推奨します。" },
+        "applicationName": { "label": "接続アプリケーション名", "description": "PostgreSQL のアクティビティービューに表示されます。" },
+        "backupDir": { "label": "PostgreSQL バックアップディレクトリ", "description": "data/postgres-backups 内に置く必要があります。" },
+        "backupRetentionDays": { "label": "PostgreSQL バックアップ保持日数", "description": "Node とツールコンテナのメンテナンス経路で共有されます。" }
+      }
+    },
+    "auth": {
+      "secret": { "label": "セッション署名シークレット", "description": "セットアップ後は必須です。再生成すると既存のログインセッションが無効になります。" },
+      "passwordPepper": { "label": "パスワード Pepper", "description": "セットアップ後は必須です。既存パスワードを無効にせず直接ローテーションすることはできません。" },
+      "emperorBootstrapSecret": { "label": "皇帝ブートストラップシークレット", "description": "互換用の昇格エンドポイントで使用します。空の場合は無効になり、有効にする場合はランダム値を使用してください。" },
+      "github": {
+        "clientId": { "label": "GitHub クライアント ID", "description": "クライアントシークレットと同時に設定してください。" },
+        "clientSecret": { "label": "GitHub クライアントシークレット", "description": "OAuth クライアント認証情報です。" }
+      },
+      "google": {
+        "clientId": { "label": "Google クライアント ID", "description": "クライアントシークレットと同時に設定してください。" },
+        "clientSecret": { "label": "Google クライアントシークレット", "description": "OAuth クライアント認証情報です。" }
+      },
+      "rateLimit": {
+        "windowSeconds": { "label": "レート制限ウィンドウ（秒）", "description": "ログインと登録試行を数える時間枠です。" },
+        "loginPerClient": { "label": "クライアント別ログイン上限", "description": "ウィンドウごとに許可する試行回数です。" },
+        "loginGlobal": { "label": "全体ログイン上限", "description": "ウィンドウごとに許可する総試行回数です。" },
+        "registerPerClient": { "label": "クライアント別登録上限", "description": "ウィンドウごとに許可する試行回数です。" },
+        "registerGlobal": { "label": "全体登録上限", "description": "ウィンドウごとに許可する総試行回数です。" },
+        "maxClients": { "label": "レート制限クライアント容量", "description": "メモリー内の制限器が保持するクライアントの最大数です。" },
+        "scryptMaxConcurrency": { "label": "Scrypt 最大並行数", "description": "高コストなパスワード処理の同時実行数を制限します。" }
+      }
+    },
+    "email": {
+      "ingestSecret": { "label": "Worker 配信シークレット", "description": "セットアップ後は必須です。再生成後は Cloudflare Worker Secret も同じ値に更新してください。" }
+    },
+    "cleanup": {
+      "batchSize": { "label": "整理バッチサイズ", "description": "各削除ループで処理する行数です。" },
+      "maxRows": { "label": "1 回の整理で処理する最大行数", "description": "メンテナンスタスクが長時間実行されることを防ぎます。" },
+      "lockStaleMinutes": { "label": "整理ロック期限（分）", "description": "メンテナンスロックが放棄されたかの判定にだけ使用します。" },
+      "permanentMessageRetentionDays": { "label": "永続メールボックスの保持日数", "description": "0 の場合、永続メールボックスのメールを経過日数では削除しません。" }
+    },
+    "scheduler": {
+      "cleanupIntervalSeconds": { "label": "整理間隔（秒）", "description": "scheduler profile が動的に読み取ります。" },
+      "backupIntervalSeconds": { "label": "バックアップ間隔（秒）", "description": "scheduler profile が動的に読み取ります。" },
+      "backupOnStart": { "label": "起動時にバックアップ", "description": "スケジューラー起動時に復旧ポイントを作成します。" }
+    },
+    "monitor": {
+      "intervalSeconds": { "label": "監視間隔（秒）", "description": "monitoring profile の確認周期です。" },
+      "healthcheckUrl": { "label": "ヘルスチェック URL", "description": "空の場合は現在のサービスの既定エンドポイントを使用します。" },
+      "diskPath": { "label": "ディスク監視パス", "description": "空の場合は現在のデータベースドライバーに対応する既定データパスを選びます。" },
+      "accessLog": { "label": "アクセスログパス", "description": "任意。HTTP 5xx と配信失敗の集計に使用します。" },
+      "minFreePercent": { "label": "最小空き容量（パーセント）", "description": "しきい値を下回ると警告します。0 で無効になります。" },
+      "minFreeGb": { "label": "最小空き容量（GiB）", "description": "しきい値を下回ると警告します。0 で無効になります。" },
+      "maxWalMb": { "label": "WAL の最大サイズ（MiB）", "description": "しきい値を上回ると警告します。0 で無効になります。" },
+      "maxPostgresDatabaseGb": { "label": "PostgreSQL データベースの最大サイズ（GiB）", "description": "しきい値を上回ると警告します。0 で無効になります。" },
+      "windowMinutes": { "label": "ログ集計ウィンドウ（分）", "description": "HTTP エラーと配信失敗を数える時間枠です。" },
+      "maxHttp5xx": { "label": "ウィンドウ内の HTTP 5xx 上限", "description": "この件数を超えると警告します。0 で無効になります。" },
+      "maxIngestFailures": { "label": "ウィンドウ内の配信失敗上限", "description": "この件数を超えると警告します。0 で無効になります。" },
+      "alertWebhookUrl": { "label": "アラート Webhook URL", "description": "任意の外部アラート送信先です。" },
+      "alertBearerToken": { "label": "アラート Bearer Token", "description": "アラート送信時に付加するシークレットです。" }
+    },
+    "offsite": {
+      "remote": { "label": "Rclone リモート", "description": "例：remote:moemail。空の場合はオフサイト同期を無効にします。" },
+      "intervalSeconds": { "label": "オフサイト同期間隔（秒）", "description": "offsite profile が動的に読み取ります。" },
+      "rcloneBin": { "label": "Rclone 実行ファイル", "description": "コンテナでは既定で rclone を使用します。" },
+      "rcloneConfigContent": { "label": "Rclone 設定内容", "description": "機密情報を含む完全な設定です。実行時に非公開の一時ファイルへ書き込みます。" }
+    }
+  }
+}

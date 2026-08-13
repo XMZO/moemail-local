@@ -55,7 +55,7 @@ for (const file of [
   }
   assert.doesNotMatch(withoutExecutionMode, /process\.env|dotenv\/config/,
     `${file} reads local application configuration from the environment`)
-  assert.doesNotMatch(source, /NEXT_PUBLIC_|DATABASE_(?:URL|DRIVER)/,
+  assert.doesNotMatch(source, /NEXT_PUBLIC_[A-Z0-9_]*|\bDATABASE_(?:URL|DRIVER)\b/,
     `${file} contains a legacy local environment key`)
 }
 

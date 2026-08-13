@@ -9,6 +9,7 @@ import {
   authorizeSetupRequest,
   completeSetup,
 } from "@/lib/setup-service"
+import { apiError, apiIssues } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -50,7 +51,9 @@ export async function GET(request: Request) {
     setupCompleted: status.setupCompleted,
     configPath: status.path,
     restartRequired: status.restartRequired?.reason ?? null,
-    configError: status.fatal ?? null,
+    configError: status.fatal
+      ? status.fatal.map(issue => ({ path: issue.path, code: "CONFIG_INVALID" }))
+      : null,
     defaults,
   }, { headers: noStore })
 }
@@ -60,23 +63,17 @@ export async function POST(request: Request) {
   if (denied) return denied
 
   if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") {
-    return Response.json({ error: "请求必须使用 application/json" }, {
-      status: 415,
-      headers: noStore,
-    })
+    return apiError("JSON_CONTENT_TYPE_REQUIRED", 415, { headers: noStore })
   }
 
   const release = acquireSetupOperation()
   if (!release) {
-    return Response.json({ error: "另一个初始化操作正在进行，请稍后重试" }, {
-      status: 409,
-      headers: noStore,
-    })
+    return apiError("SETUP_IN_PROGRESS", 409, { headers: noStore })
   }
 
   try {
-    // 等待跨进程 setup lock 后重新从共享磁盘确认状态。另一 Web 进程
-    // 可能已在我们排队期间完成初始化并删除一次性 token。
+    // Recheck shared state after acquiring the cross-process lock because
+    // another Web process may have completed setup while this request waited.
     await reloadConfig()
     const deniedAfterLock = authorizeSetupRequest(request, { consumeBudget: false })
     if (deniedAfterLock) return deniedAfterLock
@@ -85,15 +82,15 @@ export async function POST(request: Request) {
     try {
       payload = await request.json()
     } catch {
-      return Response.json({ error: "请求格式无效" }, { status: 400, headers: noStore })
+      return apiError("INVALID_JSON", 400, { headers: noStore })
     }
 
     const outcome = await completeSetup(payload)
     if (!outcome.ok) {
-      return Response.json(
-        { error: outcome.error, issues: outcome.issues ?? [] },
-        { status: outcome.status, headers: noStore },
-      )
+      return apiError(outcome.error, outcome.status, {
+        headers: noStore,
+        details: { issues: apiIssues(outcome.issues ?? []) },
+      })
     }
 
     return Response.json({

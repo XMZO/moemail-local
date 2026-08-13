@@ -1,7 +1,6 @@
 "use client"
 
 import { useLocaleSwitcher } from "@/hooks/use-locale-switcher"
-import { LOCALE_LABELS } from "@/i18n/config"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,15 +9,18 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Languages } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 export function LanguageSwitcher() {
-  const { locale, locales, switchLocale } = useLocaleSwitcher()
+  const { locale, locales, switchLocale, isPending } = useLocaleSwitcher()
+  const t = useTranslations("common.actions")
+  const tLocales = useTranslations("common.locales")
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Switch language">
-          <Languages className="h-5 w-5" />
+        <Button variant="ghost" size="icon" aria-label={isPending ? t("switchingLanguage") : t("switchLanguage")} aria-busy={isPending}>
+          <Languages className={`h-5 w-5 ${isPending ? "animate-pulse" : ""}`} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -26,9 +28,10 @@ export function LanguageSwitcher() {
           <DropdownMenuItem
             key={loc}
             onClick={() => switchLocale(loc)}
+            disabled={isPending}
             className={locale === loc ? "bg-accent" : ""}
           >
-            {LOCALE_LABELS[loc]}
+            {tLocales(loc)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

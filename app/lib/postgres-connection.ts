@@ -20,25 +20,23 @@ export function discardInheritedPostgresEnvironment() {
  */
 export function parsePostgresConnectionUrl(url: string): PostgresConnectionTarget {
   if (/[\u0000-\u0020\u007f]/.test(url)) {
-    throw new Error("PostgreSQL URL must percent-encode whitespace and control characters")
+    throw new Error("POSTGRES_URL_WHITESPACE_FORBIDDEN")
   }
   const databaseUrl = new URL(url)
   if (databaseUrl.protocol !== "postgres:" && databaseUrl.protocol !== "postgresql:") {
-    throw new Error("database.postgres.url must use the postgres or postgresql protocol")
+    throw new Error("POSTGRES_URL_PROTOCOL_INVALID")
   }
   if (databaseUrl.searchParams.size > 0) {
-    throw new Error(
-      "PostgreSQL URL query parameters are not allowed; use the corresponding YAML fields",
-    )
+    throw new Error("POSTGRES_URL_QUERY_FORBIDDEN")
   }
   if (databaseUrl.hash) {
-    throw new Error("PostgreSQL URL fragments are not allowed")
+    throw new Error("POSTGRES_URL_FRAGMENT_FORBIDDEN")
   }
 
   const encodedDatabase = databaseUrl.pathname.slice(1)
   // 数据库名中的斜线必须写成 %2F；裸斜线会让 URI parser 产生歧义。
   if (encodedDatabase.includes("/")) {
-    throw new Error("PostgreSQL database name slashes must be percent-encoded")
+    throw new Error("POSTGRES_DATABASE_SLASH_UNENCODED")
   }
 
   const target = {
@@ -49,15 +47,13 @@ export function parsePostgresConnectionUrl(url: string): PostgresConnectionTarge
     password: decodeURIComponent(databaseUrl.password),
   }
   if (target.host.includes("%")) {
-    throw new Error("PostgreSQL host must not contain percent-encoding")
+    throw new Error("POSTGRES_HOST_PERCENT_ENCODING_FORBIDDEN")
   }
   if (!target.host || !target.database || !target.user) {
-    throw new Error(
-      "database.postgres.url must explicitly include a PostgreSQL host, database, and user",
-    )
+    throw new Error("POSTGRES_TARGET_INCOMPLETE")
   }
   if (Object.values(target).some(value => value.includes("\0"))) {
-    throw new Error("PostgreSQL connection fields cannot contain NUL bytes")
+    throw new Error("POSTGRES_CONNECTION_NUL_FORBIDDEN")
   }
   return target
 }

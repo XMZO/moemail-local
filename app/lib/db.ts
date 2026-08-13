@@ -51,7 +51,7 @@ function postgresSsl(config: AppConfig): PoolConfig["ssl"] {
 export function postgresPoolConfig(config: AppConfig): PoolConfig {
   const { postgres } = config.database
   if (!postgres.url) {
-    throw new Error("数据库类型为 postgres 时必须配置 database.postgres.url")
+    throw new Error("POSTGRES_URL_REQUIRED")
   }
   const target = parsePostgresConnectionUrl(postgres.url)
   discardInheritedPostgresEnvironment()
@@ -79,7 +79,7 @@ export function postgresPoolConfig(config: AppConfig): PoolConfig {
 export function createPostgresPool(config: AppConfig) {
   const pool = new Pool(postgresPoolConfig(config))
   pool.on("error", error => {
-    console.error("Unexpected PostgreSQL pool error", error)
+    console.error("database.postgres_pool_error", error)
   })
   return pool
 }
@@ -125,7 +125,7 @@ export function checkDriverBinding() {
   const bound = getBoundDriver()
   const configured = getConfiguredDriver()
   if (configured !== bound) {
-    markRestartRequired(`数据库类型由 ${bound} 改为 ${configured}，需要重启进程后生效`)
+    markRestartRequired("DATABASE_DRIVER_CHANGED")
   }
   return { bound, configured, matches: bound === configured }
 }
@@ -161,7 +161,7 @@ async function closeConnection(connection: Connection) {
 function drainConnection(connection: Connection) {
   setTimeout(() => {
     void closeConnection(connection).catch(error => {
-      console.error("Failed to close the previous database connection", error)
+      console.error("database.previous_connection_close_failed", error)
     })
   }, CONNECTION_DRAIN_MS).unref?.()
 }
@@ -183,12 +183,12 @@ export type DatabaseConfigPreparation =
   }
   | { ok: false; issues: ConfigIssue[] }
 
-function migrationIssue(config: AppConfig, error: unknown): ConfigIssue[] {
+function migrationIssue(config: AppConfig): ConfigIssue[] {
   return [{
     path: config.database.driver === "sqlite"
       ? "database.sqlite.path"
       : "database.postgres.url",
-    message: `数据库迁移或验证失败：${error instanceof Error ? error.message : String(error)}`,
+    message: "DATABASE_MIGRATION_OR_VALIDATION_FAILED",
   }]
 }
 
@@ -222,8 +222,8 @@ export async function prepareDatabaseConfigChange(
               ? "database.sqlite.path"
               : "database.postgres.url",
             message: candidateOwners.length === 0
-              ? "候选数据库没有站主账号，不能把 setup.completed 应用为 true"
-              : "候选数据库存在多个站主账号，不能安全应用 setup.completed=true",
+              ? "CANDIDATE_EMPEROR_MISSING"
+              : "CANDIDATE_EMPEROR_NOT_UNIQUE",
           }],
         }
       }
@@ -243,7 +243,7 @@ export async function prepareDatabaseConfigChange(
             ok: false,
             issues: [{
               path: "database",
-              message: "当前数据库没有站主账号，无法安全验证数据库切换",
+              message: "CURRENT_EMPEROR_MISSING",
             }],
           }
         }
@@ -254,7 +254,7 @@ export async function prepareDatabaseConfigChange(
               path: next.database.driver === "sqlite"
                 ? "database.sqlite.path"
                 : "database.postgres.url",
-              message: "候选数据库的站主身份或密码记录与当前数据库不一致；请先完整迁移数据再切换",
+              message: "CANDIDATE_EMPEROR_MISMATCH",
             }],
           }
         }
@@ -264,8 +264,8 @@ export async function prepareDatabaseConfigChange(
     const issues = await probeDatabase(next)
     if (issues.length > 0) return { ok: false, issues }
     await runMigrations(next)
-  } catch (error) {
-    return { ok: false, issues: migrationIssue(next, error) }
+  } catch {
+    return { ok: false, issues: migrationIssue(next) }
   }
 
   // Cold-start validation cannot call getBoundDriver(): its fallback path reads
@@ -297,9 +297,9 @@ export async function prepareDatabaseConfigChange(
   try {
     candidate = openConnection(next, boundDriver)
     await verifyOpenConnection(candidate)
-  } catch (error) {
+  } catch {
     if (candidate) await closeConnection(candidate).catch(() => undefined)
-    return { ok: false, issues: migrationIssue(next, error) }
+    return { ok: false, issues: migrationIssue(next) }
   }
 
   const preparedConnection = candidate
@@ -362,7 +362,7 @@ export const getDatabaseDriver = () => getBoundDriver()
 export function getSqlite() {
   const connection = ensureConnection()
   if (!connection.sqlite) {
-    throw new Error("当前数据库类型为 postgres，无法获取 SQLite 句柄")
+    throw new Error("SQLITE_HANDLE_UNAVAILABLE")
   }
   return connection.sqlite
 }
@@ -370,7 +370,7 @@ export function getSqlite() {
 export function getDatabasePath() {
   const connection = ensureConnection()
   if (!connection.databasePath) {
-    throw new Error("当前数据库类型为 postgres，没有 SQLite 文件路径")
+    throw new Error("SQLITE_PATH_UNAVAILABLE")
   }
   return connection.databasePath
 }
@@ -378,7 +378,7 @@ export function getDatabasePath() {
 export function getPostgresPool() {
   const connection = ensureConnection()
   if (!connection.pool) {
-    throw new Error("当前数据库类型为 sqlite，无法获取 PostgreSQL 连接池")
+    throw new Error("POSTGRES_POOL_UNAVAILABLE")
   }
   return connection.pool
 }

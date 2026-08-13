@@ -17,7 +17,7 @@
     "create": "建立 API Key",
     "name": "金鑰名稱",
     "namePlaceholder": "輸入金鑰名稱",
-    "key": "API Key",
+    "key": "介面金鑰",
     "createdAt": "建立時間",
     "copy": "複製",
     "delete": "刪除",
@@ -62,7 +62,7 @@
     "emperorLimit": "皇帝可以無限發件，不受任何限制",
     "civilianLimit": "永遠不能發件",
     "enableDescription": "開啟後將使用 Resend 發送郵件",
-    "apiKey": "Resend API Key",
+    "apiKey": "Resend 介面金鑰",
     "apiKeyPlaceholder": "輸入 Resend API Key",
     "dailyLimit": "每日限額",
     "roleLimits": "允許使用發件功能的角色",
@@ -80,7 +80,7 @@
     "description2": "我們會向此 URL 發送 POST 請求，包含新郵件的相關資訊",
     "description3": "查看資料格式說明",
     "enable": "啟用 Webhook",
-    "url": "Webhook URL",
+    "url": "Webhook 網址",
     "urlPlaceholder": "輸入 webhook URL",
     "test": "測試",
     "testing": "測試中...",
@@ -96,6 +96,11 @@
       "subject": "郵件主旨",
       "content": "郵件文字內容",
       "html": "郵件 HTML 內容"
+    },
+    "testPayload": {
+      "subject": "MoeMail Webhook 測試",
+      "content": "這是一封由 MoeMail 傳送的本地化 Webhook 測試郵件。",
+      "html": "<p>這是一封由 MoeMail 傳送的本地化 <strong>Webhook 測試</strong>郵件。</p>"
     }
   },
   "website": {
@@ -110,9 +115,9 @@
     "turnstile": {
       "enable": "啟用 Cloudflare Turnstile",
       "enableDescription": "啟用後，使用者名稱與密碼的登入／註冊需要通過 Turnstile 驗證",
-      "siteKey": "Site Key",
+      "siteKey": "站台金鑰",
       "siteKeyPlaceholder": "輸入 Turnstile Site Key",
-      "secretKey": "Secret Key",
+      "secretKey": "私密金鑰",
       "secretKeyPlaceholder": "輸入 Turnstile Secret Key",
       "secretKeyDescription": "請先在 Cloudflare 建立 Turnstile 並填寫上述必填參數後再啟用"
     },

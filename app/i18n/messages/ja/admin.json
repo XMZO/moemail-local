@@ -1,0 +1,299 @@
+{
+  "navigation": {
+    "account": "アカウント",
+    "domains": "メールドメイン",
+    "access": "権限とクォータ",
+    "users": "ユーザー",
+    "site": "サイト",
+    "appearance": "外観",
+    "runtime": "実行時設定",
+    "webhook": "Webhook 設定",
+    "apiKey": "API キー"
+  },
+  "access": {
+    "title": "権限とクォータ",
+    "description": "機能アクセス、4段階のドメイン権限、独立した送受信クォータを設定します。一般クォータの0は無制限、メールクォータの-1は無制限、0は禁止です。",
+    "tabs": {
+      "roles": "ロールの既定値",
+      "users": "ユーザー別オーバーライド",
+      "blocks": "メールボックス名のブロック"
+    },
+    "sections": {
+      "permissions": "機能権限",
+      "quotas": "クォータ",
+      "domains": "利用可能なドメイン",
+      "permissionOverrides": "権限のオーバーライド",
+      "quotaOverrides": "クォータのオーバーライド",
+      "domainOverrides": "ドメインのオーバーライド"
+    },
+    "actions": {
+      "resetRole": "このロールをリセット",
+      "save": "保存",
+      "inheritAll": "すべて継承",
+      "saveUser": "ユーザー設定を保存"
+    },
+    "searchPlaceholder": "ユーザー名またはメールアドレスを検索",
+    "selectUser": "ユーザーを選択",
+    "selectUserHint": "オーバーライドを設定するユーザーを選択してください",
+    "emperorLocked": "皇帝の権限は編集できません",
+    "emperorLockedHint": "これはアプリケーションと API の両方で強制されるシステム不変条件であり、皇帝本人も変更できません。",
+    "emperorQuotaEditableHint": "皇帝の機能、一般クォータ、ドメイン権限は固定です。送信・受信クォータは設定できます。",
+    "overrideHint": "未指定の項目はユーザーのロールから継承されます。権限は明示的に許可または拒否でき、クォータは有効にした項目だけ上書きされます。",
+    "inherit": "継承",
+    "allow": "許可",
+    "deny": "拒否",
+    "domains": {
+      "roleHelp": "このロールがメールボックスの作成とメールの送受信に使用できるドメインを制御します。既存のメールボックスは引き続き表示されます。",
+      "userHelp": "このユーザーについてロールのドメイン一覧を上書きします。カスタム一覧を空にすると、既存のメールボックスを非表示にせず、すべてのドメインを拒否します。",
+      "allowAll": "現在および今後追加されるすべてのドメインを許可",
+      "noneConfigured": "メールドメインが設定されていません",
+      "inherit": "ロールの既定値を継承",
+      "all": "すべてのドメインを許可",
+      "custom": "ドメインを選択",
+      "default": "未指定および今後追加されるドメインの既定権限",
+      "modes": {
+        "allow": "送受信を許可",
+        "receive": "受信のみ",
+        "send": "送信のみ",
+        "deny": "両方を禁止"
+      }
+    },
+    "errors": {
+      "loadPolicies": "アクセス規則を読み込めませんでした",
+      "loadUsers": "ユーザーを読み込めませんでした",
+      "savePolicies": "アクセス規則を保存できませんでした",
+      "saveUser": "ユーザー設定を保存できませんでした",
+      "resetUser": "ユーザー設定をリセットできませんでした",
+      "loadBlocks": "メールボックス名のブロック一覧を読み込めませんでした"
+    },
+    "success": {
+      "savePolicies": "ロールの権限とクォータを保存しました",
+      "saveUser": "ユーザーのオーバーライドを保存しました",
+      "resetUser": "ユーザーはすべてのロール既定値を継承する状態に戻りました",
+      "resetUsage": "クォータ使用量をリセットしました",
+      "createBlock": "メールボックス名をブロックしました",
+      "deleteBlock": "ブロックを解除しました",
+      "resetMailboxUsage": "メールボックスのクォータ使用量をリセットしました"
+    },
+    "permissions": {
+      "view_email": "メールを表示",
+      "create_email": "メールボックスを作成",
+      "delete_email": "メールボックスとメールを削除",
+      "receive_email": "メールを受信",
+      "send_email": "メールを送信",
+      "share_email": "共有リンクを作成",
+      "manage_webhook": "Webhook を管理",
+      "promote_user": "ユーザーロールを管理",
+      "manage_config": "サイトとドメイン設定を管理",
+      "manage_api_key": "API Key を管理"
+    },
+    "quotas": {
+      "maxActiveMailboxes": {
+        "label": "有効なメールボックス数の上限",
+        "help": "0 = 無制限"
+      },
+      "maxMailboxLifetimeDays": {
+        "label": "メールボックスの最長有効期間（日）",
+        "help": "0 = 無制限"
+      },
+      "dailyReceiveLimit": {
+        "label": "1 日の受信上限",
+        "help": "0 = 無制限"
+      },
+      "maxMessageBytes": {
+        "label": "受信メール 1 通の上限（バイト）",
+        "help": "0 = システム上限の 25 MiB のみ"
+      }
+    },
+    "sendQuota": {
+      "title": "送信クォータ",
+      "userTitle": "ユーザー別送信クォータの上書き",
+      "help": "合計クォータとドメイン別クォータは同時に適用され、どちらか一方でも上限に達すると送信できません。ローリング時間枠を使用し、1 か月は 30 日として計算します。",
+      "userHelp": "未選択の値はロールから継承します。送信クォータを一つでも上書きすると、そのユーザーはロール共有クォータを消費せず、独立して集計されます。",
+      "limit": "通数",
+      "every": "期間",
+      "unit": "単位",
+      "total": "全ドメイン合計クォータ",
+      "domains": "ドメイン別クォータ（未設定は無制限）",
+      "customize": "個別制限",
+      "overrideTotal": "合計クォータを上書き",
+      "overrideDomain": "ドメインを上書き",
+      "noneConfigured": "メールドメインが設定されていません",
+      "unlimited": "無制限",
+      "scope": {
+        "user": "ユーザーごとに個別集計",
+        "role": "ロール全体で一つのクォータを共有"
+      },
+      "units": {
+        "second": "秒",
+        "minute": "分",
+        "hour": "時間",
+        "day": "日",
+        "week": "週",
+        "month": "か月（30 日）"
+      },
+      "usage": {
+        "title": "実際の送信統計",
+        "aggregate": "ユーザー別クォータの合計",
+        "shared": "ロール共有クォータ",
+        "individual": "独立ユーザークォータ",
+        "allTime": "累計送信数",
+        "window": "現在の時間枠",
+        "pending": "送信中の予約",
+        "domainLine": "累計 {allTime} · 時間枠 {sent} / {limit}"
+      }
+    },
+    "mailQuota": {
+      "send": {
+        "title": "送信クォータ",
+        "help": "合計、ドメイン、メールボックスごとのローリング上限と生涯上限が同時に適用されます。",
+        "userTitle": "ユーザー別送信クォータの上書き"
+      },
+      "receive": {
+        "title": "受信クォータ",
+        "help": "合計、ドメイン、メールボックスのローリング上限または生涯上限のいずれかに達すると受信を拒否します。",
+        "userTitle": "ユーザー別受信クォータの上書き"
+      },
+      "userHelp": "未選択の値はロールから継承されます。上書きを設定すると、このユーザーについて個別に集計されます。",
+      "limit": "通数",
+      "every": "期間",
+      "unit": "単位",
+      "lifetime": "生涯上限",
+      "total": "全ドメインの合計",
+      "mailboxDefault": "メールボックスごとの既定値",
+      "domains": "ドメイン別上限",
+      "domainTotal": "ドメイン合計を制限",
+      "domainMailbox": "このドメインの各メールボックスを上書き",
+      "overrideTotal": "合計クォータを上書き",
+      "overrideMailbox": "メールボックス既定値を上書き",
+      "overrideDomain": "ドメイン合計を上書き",
+      "overrideDomainMailbox": "ドメイン内メールボックスを上書き",
+      "unlimited": "無制限",
+      "scope": {
+        "user": "ユーザーごとに集計",
+        "role": "ロール全体で合計クォータを共有"
+      },
+      "units": {
+        "second": "秒",
+        "minute": "分",
+        "hour": "時間",
+        "day": "日",
+        "week": "週",
+        "month": "月（30日）"
+      },
+      "exact": {
+        "title": "特定メールボックスの上書き",
+        "help": "任意：完全なメールアドレスに個別のローリング上限と生涯上限を設定します。",
+        "localPart": "メールボックス名",
+        "invalidLocalPart": "1～64文字の英数字、ドット、アンダースコア、プラス記号、ハイフンを使用してください",
+        "domain": "ドメイン",
+        "add": "上書きを追加",
+        "remove": "削除",
+        "reset": "使用量をリセット"
+      },
+      "usage": {
+        "title": "実使用量",
+        "aggregate": "ユーザー別クォータの合計",
+        "shared": "ロール共有クォータ",
+        "individual": "ユーザー個別クォータ",
+        "allTime": "累計完了",
+        "window": "現在の期間",
+        "pending": "処理中の予約",
+        "domainLine": "累計 {allTime}・期間内 {completed} / {limit}"
+      },
+      "reset": {
+        "action": "使用量をリセット",
+        "title": "この使用量をリセットしますか？",
+        "description": "選択した方向と対象のローリング期間および生涯カウンターを完全に消去します。クォータ設定は変更しません。",
+        "cancel": "キャンセル",
+        "confirm": "カウンターをリセット",
+        "mailboxTitle": "このメールボックスの使用量をリセットしますか？",
+        "mailboxDescription": "{address} の選択した方向におけるローリング期間と生涯カウンターを完全に消去します。他のメールボックスには影響しません。"
+      }
+    },
+    "directions": {
+      "send": "送信",
+      "receive": "受信"
+    },
+    "blocks": {
+      "title": "メールボックス名のブロック",
+      "help": "ローカル名を全ユーザー、または指定ユーザーだけに対して禁止します。既存メールボックスは削除せず、解除するまで新規作成を拒否します。",
+      "localPart": "メールボックス名",
+      "invalidLocalPart": "1～64文字の英数字、ドット、アンダースコア、プラス記号、ハイフンを使用してください",
+      "domain": "ドメイン",
+      "global": "全ユーザー",
+      "user": "1ユーザー",
+      "selectUser": "ユーザーを選択",
+      "add": "ブロック",
+      "empty": "ブロック中のメールボックス名はありません。",
+      "globalScope": "全ユーザーに対して禁止",
+      "userScope": "{user} のみ禁止",
+      "deleteTitle": "このブロックを解除しますか？",
+      "deleteDescription": "解除後、対象ユーザーは {address} を再び作成できます。",
+      "cancel": "キャンセル",
+      "delete": "ブロックを解除"
+    }
+  },
+  "appearance": {
+    "errors": {
+      "load": "外観設定を読み込めませんでした",
+      "saveFont": "フォント設定を保存できませんでした",
+      "saveAdvanced": "高度な外観設定を保存できませんでした"
+    },
+    "success": {
+      "fontTitle": "サイト全体のフォントを保存しました",
+      "fontDescription": "ページを再読み込みすると、すべてのサーバーレンダリングページに適用されます。",
+      "advancedSavedTitle": "高度な外観設定を保存しました",
+      "advancedSavedDescription": "再読み込み後に適用されます。ページが操作不能になった場合は安全外観モードを使用してください。",
+      "advancedClearedTitle": "高度な外観設定を消去しました",
+      "advancedClearedDescription": "すべての挿入を無効にしました。"
+    },
+    "font": {
+      "title": "サイト全体のフォント",
+      "description": "CSS の font-family を入力します。安全なフォント名とフォールバック一覧のみ受け付けます。",
+      "family": "フォントファミリー",
+      "preview": "プレビュー",
+      "previewPrimary": "MoeMail メールボックス Aa 123",
+      "previewSecondary": "シンプルで信頼性が高く、セルフホスト可能。",
+      "restoreDefault": "既定値に戻す",
+      "save": "フォントを保存",
+      "presets": {
+        "pixel": "既定のピクセルフォント",
+        "sans": "システムのサンセリフ",
+        "mono": "システムの等幅",
+        "serif": "システムのセリフ"
+      }
+    },
+    "advanced": {
+      "title": "高リスクな高度な外観設定",
+      "subtitle": "CSS、Head HTML、Body 末尾 HTML、JavaScript を直接挿入",
+      "emperorOnly": "高度な外観設定を変更できるのは皇帝アカウントだけです。",
+      "warningTitle": "挿入内容は現在ログイン中のユーザーと同じページ権限で動作します",
+      "warningDescription": "悪意ある HTML や JavaScript はメールの読み取り、API の呼び出し、ページデータの窃取が可能です。自分で作成し、完全に確認したコードだけを使用してください。信頼できないコードを貼り付けないでください。",
+      "enabled": "高度な外観挿入を有効にする",
+      "enabledDescription": "無効にしても保存済みの内容は保持されますが、サイトでは高度な挿入を一切実行しません。",
+      "customCss": "カスタム CSS",
+      "customCssPlaceholder": "/* <style> タグは不要です */\n@import url(\"https://fonts.example/font.css\");\n:root { --radius: 0.75rem; }",
+      "customCssHelp": "ページスタイルの末尾に追加されます。@font-face、@import、既存セレクターの上書きを利用できます。",
+      "headHtml": "ヘッダー HTML",
+      "headHtmlPlaceholder": "<!-- document.head の末尾に追加 -->\n<link rel=\"preconnect\" href=\"https://fonts.example\">",
+      "bodyEndHtml": "Body 末尾 HTML",
+      "bodyEndHtmlPlaceholder": "<!-- document.body の末尾に追加 -->\n<div class=\"custom-footer\">...</div>",
+      "customJs": "カスタム JavaScript",
+      "customJsHelp": "<script> タグは不要です。実行は別のスイッチでも有効にする必要があります。",
+      "allowExecution": "実行を許可",
+      "customJsPlaceholder": "// ブラウザーで実行\nconsole.log(\"MoeMail custom appearance\")",
+      "safeMode": "カスタム内容によってページを操作できなくなった場合は、任意のページ URL に ?safe-appearance=1 を追加してください（既にクエリがある場合は &safe-appearance=1）。そのリクエストでは高度な挿入をすべて省略し、ここで消去または修正できます。",
+      "limits": "各入力は最大 128 KiB、合計は最大 256 KiB です。内容は現在のデータベースに保存され、データベースのバックアップにも含まれます。",
+      "clear": "消去して無効化",
+      "save": "高度な外観を保存",
+      "clearTitle": "高度な外観設定をすべて消去しますか？",
+      "saveTitle": "高リスクな挿入内容を保存しますか？",
+      "clearDescription": "保存済みの CSS、HTML、JavaScript を完全に削除し、高度な挿入を直ちに無効にします。",
+      "saveDescription": "この内容はすべての訪問者のブラウザーで読み込まれます。自分で作成したか完全に確認したコードであることを確認し、保存後にページを再読み込みして検証してください。",
+      "cancel": "キャンセル",
+      "saving": "保存中",
+      "confirm": "理解して続行"
+    }
+  }
+}

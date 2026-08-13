@@ -1,0 +1,101 @@
+{
+  "title": "ドメイン別メールポリシー",
+  "description": "受信と送信はドメインごとに独立して設定します。シークレットは設定権限を持つ管理者にだけ返されます。",
+  "add": "追加",
+  "save": "保存",
+  "saving": "保存中",
+  "errors": {
+    "load": "ドメイン設定を読み込めませんでした",
+    "save": "ドメイン設定を保存できませんでした",
+    "imapTest": "IMAP 接続テストに失敗しました",
+    "smtpTest": "SMTP 接続テストに失敗しました"
+  },
+  "success": {
+    "saved": "ドメイン別メールポリシーを保存しました",
+    "imapTitle": "IMAP 接続に成功しました",
+    "imapDescription": "{mailbox}：{messages} 件のメール",
+    "smtpTitle": "SMTP 接続と認証に成功しました"
+  },
+  "summary": "受信：{inbound} · 送信：{outbound}",
+  "domainInbound": "ドメインと受信",
+  "deleteDomain": "現在のドメインを削除",
+  "domain": "メールドメイン",
+  "inboundMode": "受信方法",
+  "inboundModes": {
+    "worker": "Cloudflare Email Worker",
+    "imap": "外部メールボックス（IMAP）",
+    "disabled": "受信を無効化"
+  },
+  "outbound": "送信",
+  "outboundDescription": "Resend API Key と SMTP 認証情報はドメインごとに保存されます。",
+  "outboundMode": "送信方法",
+  "outboundModes": {
+    "resend": "Resend",
+    "smtp": "外部 SMTP",
+    "disabled": "送信を無効化"
+  },
+  "common": {
+    "port": "ポート",
+    "security": "セキュリティーモード",
+    "username": "ユーザー名",
+    "strictCertificate": "証明書を厳密に検証",
+    "securityOptions": {
+      "tls993": "TLS（通常 993）",
+      "starttls143": "STARTTLS（通常 143）",
+      "tls": "TLS",
+      "starttls": "STARTTLS",
+      "plain": "平文"
+    }
+  },
+  "imap": {
+    "host": "IMAP ホスト",
+    "mailbox": "メールボックスフォルダー",
+    "password": "パスワードまたはアプリパスワード",
+    "recipientHeader": "ローカルアドレス Header",
+    "recipientHeaders": {
+      "auto": "配信追跡ヘッダーを自動検出（推奨）",
+      "xOriginalTo": "X-Original-To",
+      "deliveredTo": "Delivered-To",
+      "envelopeTo": "Envelope-To",
+      "xEnvelopeTo": "X-Envelope-To"
+    },
+    "initialSync": "初回同期",
+    "initialSyncOptions": {
+      "new": "保存後に届く新着メールのみ（推奨）",
+      "unseen": "未読メールも取り込む"
+    },
+    "pollInterval": "ポーリング間隔（秒）",
+    "maxMessages": "1 回の最大メール数",
+    "certificateHelp": "一般のメールプロバイダーでは有効のままにしてください。",
+    "test": "IMAP 接続をテスト",
+    "testing": "接続中",
+    "readOnlyHelp": "ポーリングはメールボックスを読み取り専用で利用し、既読化、移動、削除を行いません。エイリアスまたはキャッチオール転送では、元の受信者を識別できる Header を保持する必要があります。"
+  },
+  "smtp": {
+    "host": "SMTP ホスト",
+    "authMethod": "認証方式",
+    "authMethods": {
+      "auto": "自動ネゴシエーション（推奨）",
+      "plain": "PLAIN を強制",
+      "login": "LOGIN を強制（Microsoft/Outlook など）"
+    },
+    "fromName": "送信者名（任意）",
+    "username": "ユーザー名（任意）",
+    "password": "パスワード（任意）",
+    "certificateHelp": "本番環境では有効のままにすることを推奨します。",
+    "test": "SMTP 接続をテスト",
+    "testing": "接続中"
+  },
+  "resendApiKey": "Resend API キー",
+  "resetDomain": "現在のドメインをリセット",
+  "secrets": {
+    "show": "シークレットを表示",
+    "hide": "シークレットを隠す"
+  },
+  "deleteConfirm": {
+    "title": "このドメインを削除しますか？",
+    "description": "現在の下書きから {domain} を削除しますか？保存すると、このドメインの受信・送信設定が無効になります。",
+    "cancel": "ドメインを残す",
+    "confirm": "削除"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "title": "Domain mail policies",
+  "description": "Inbound and outbound delivery are configured independently for each domain. Secrets are returned only to administrators with configuration permission.",
+  "add": "Add",
+  "save": "Save",
+  "saving": "Saving",
+  "errors": {
+    "load": "Failed to load domain settings",
+    "save": "Failed to save domain settings",
+    "imapTest": "IMAP connection test failed",
+    "smtpTest": "SMTP connection test failed"
+  },
+  "success": {
+    "saved": "Domain mail policies saved",
+    "imapTitle": "IMAP connection succeeded",
+    "imapDescription": "{mailbox}: {messages, plural, one {# message} other {# messages}}",
+    "smtpTitle": "SMTP connection and authentication succeeded"
+  },
+  "summary": "Inbound: {inbound} · Outbound: {outbound}",
+  "domainInbound": "Domain and inbound mail",
+  "deleteDomain": "Delete this domain",
+  "domain": "Mail domain",
+  "inboundMode": "Inbound method",
+  "inboundModes": {
+    "worker": "Cloudflare Email Worker",
+    "imap": "External mailbox via IMAP",
+    "disabled": "Disable inbound mail"
+  },
+  "outbound": "Outbound mail",
+  "outboundDescription": "Resend API keys and SMTP credentials are stored per domain.",
+  "outboundMode": "Outbound method",
+  "outboundModes": {
+    "resend": "Resend",
+    "smtp": "External SMTP",
+    "disabled": "Disable outbound mail"
+  },
+  "common": {
+    "port": "Port",
+    "security": "Security mode",
+    "username": "Username",
+    "strictCertificate": "Strict certificate verification",
+    "securityOptions": {
+      "tls993": "TLS (usually 993)",
+      "starttls143": "STARTTLS (usually 143)",
+      "tls": "TLS",
+      "starttls": "STARTTLS",
+      "plain": "Plaintext"
+    }
+  },
+  "imap": {
+    "host": "IMAP host",
+    "mailbox": "Mailbox folder",
+    "password": "Password or app password",
+    "recipientHeader": "Local-address header",
+    "recipientHeaders": {
+      "auto": "Detect delivery trace headers automatically (recommended)",
+      "xOriginalTo": "X-Original-To",
+      "deliveredTo": "Delivered-To",
+      "envelopeTo": "Envelope-To",
+      "xEnvelopeTo": "X-Envelope-To"
+    },
+    "initialSync": "Initial synchronization",
+    "initialSyncOptions": {
+      "new": "Only messages arriving after save (recommended)",
+      "unseen": "Also import unread messages"
+    },
+    "pollInterval": "Polling interval (seconds)",
+    "maxMessages": "Maximum messages per poll",
+    "certificateHelp": "Keep this enabled for public email providers.",
+    "test": "Test IMAP connection",
+    "testing": "Connecting",
+    "readOnlyHelp": "Polling accesses the mailbox read-only: it does not mark messages as read, move them, or delete them. Alias or catch-all forwarding must preserve a header that identifies the original recipient."
+  },
+  "smtp": {
+    "host": "SMTP host",
+    "authMethod": "Authentication method",
+    "authMethods": {
+      "auto": "Negotiate automatically (recommended)",
+      "plain": "Force PLAIN",
+      "login": "Force LOGIN (Microsoft/Outlook, etc.)"
+    },
+    "fromName": "Sender name (optional)",
+    "username": "Username (optional)",
+    "password": "Password (optional)",
+    "certificateHelp": "Keep this enabled in production.",
+    "test": "Test SMTP connection",
+    "testing": "Connecting"
+  },
+  "resendApiKey": "Resend API Key",
+  "resetDomain": "Reset this domain",
+  "secrets": {
+    "show": "Show secret",
+    "hide": "Hide secret"
+  },
+  "deleteConfirm": {
+    "title": "Remove this domain?",
+    "description": "Remove {domain} from this draft? Saving will disable its inbound and outbound configuration.",
+    "cancel": "Keep domain",
+    "confirm": "Remove"
+  }
+}

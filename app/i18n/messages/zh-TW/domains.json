@@ -1,0 +1,101 @@
+{
+  "title": "網域收發策略",
+  "description": "每個網域的收件與寄件互相獨立；密鑰僅回傳給具有設定權限的管理員。",
+  "add": "新增",
+  "save": "儲存",
+  "saving": "儲存中",
+  "errors": {
+    "load": "讀取網域設定失敗",
+    "save": "儲存網域設定失敗",
+    "imapTest": "IMAP 連線測試失敗",
+    "smtpTest": "SMTP 連線測試失敗"
+  },
+  "success": {
+    "saved": "網域收發策略已儲存",
+    "imapTitle": "IMAP 連線成功",
+    "imapDescription": "{mailbox}：{messages} 封郵件",
+    "smtpTitle": "SMTP 連線與驗證成功"
+  },
+  "summary": "收件：{inbound} · 寄件：{outbound}",
+  "domainInbound": "網域與收件",
+  "deleteDomain": "刪除目前網域",
+  "domain": "信箱網域",
+  "inboundMode": "收件方式",
+  "inboundModes": {
+    "worker": "Cloudflare Email Worker",
+    "imap": "外部信箱 IMAP",
+    "disabled": "關閉收件"
+  },
+  "outbound": "寄件",
+  "outboundDescription": "Resend API Key 與 SMTP 憑據會依網域儲存。",
+  "outboundMode": "寄件方式",
+  "outboundModes": {
+    "resend": "Resend",
+    "smtp": "外部 SMTP",
+    "disabled": "關閉寄件"
+  },
+  "common": {
+    "port": "連接埠",
+    "security": "安全模式",
+    "username": "使用者名稱",
+    "strictCertificate": "嚴格驗證憑證",
+    "securityOptions": {
+      "tls993": "TLS（通常 993）",
+      "starttls143": "STARTTLS（通常 143）",
+      "tls": "TLS",
+      "starttls": "STARTTLS",
+      "plain": "明文"
+    }
+  },
+  "imap": {
+    "host": "IMAP 主機",
+    "mailbox": "信箱資料夾",
+    "password": "密碼或應用程式專用密碼",
+    "recipientHeader": "本機地址 Header",
+    "recipientHeaders": {
+      "auto": "自動偵測投遞追蹤標頭（建議）",
+      "xOriginalTo": "X-Original-To",
+      "deliveredTo": "Delivered-To",
+      "envelopeTo": "Envelope-To",
+      "xEnvelopeTo": "X-Envelope-To"
+    },
+    "initialSync": "首次同步",
+    "initialSyncOptions": {
+      "new": "僅儲存後到達的新郵件（建議）",
+      "unseen": "同時匯入未讀郵件"
+    },
+    "pollInterval": "輪詢間隔（秒）",
+    "maxMessages": "每輪最多郵件數",
+    "certificateHelp": "使用公共信箱服務商時請保持開啟。",
+    "test": "測試 IMAP 連線",
+    "testing": "連線中",
+    "readOnlyHelp": "輪詢以唯讀方式存取信箱，不會標示為已讀、移動或刪除郵件。別名或全域轉寄必須保留可識別原始收件人的 Header。"
+  },
+  "smtp": {
+    "host": "SMTP 主機",
+    "authMethod": "驗證方式",
+    "authMethods": {
+      "auto": "自動協商（建議）",
+      "plain": "強制 PLAIN",
+      "login": "強制 LOGIN（Microsoft/Outlook 等）"
+    },
+    "fromName": "寄件者名稱（選用）",
+    "username": "使用者名稱（選用）",
+    "password": "密碼（選用）",
+    "certificateHelp": "正式環境建議保持開啟。",
+    "test": "測試 SMTP 連線",
+    "testing": "連線中"
+  },
+  "resendApiKey": "Resend 介面金鑰",
+  "resetDomain": "重設目前網域",
+  "secrets": {
+    "show": "顯示密鑰",
+    "hide": "隱藏密鑰"
+  },
+  "deleteConfirm": {
+    "title": "移除此網域？",
+    "description": "從目前草稿中移除 {domain}？儲存後，該網域的收件和寄件設定將停用。",
+    "cancel": "保留網域",
+    "confirm": "移除"
+  }
+}

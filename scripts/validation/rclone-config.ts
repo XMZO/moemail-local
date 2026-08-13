@@ -227,14 +227,14 @@ try {
       ...config.database.postgres,
       url: "postgresql://moemail@%31%32%37.0.0.1/moemail",
     }),
-    /host must not contain percent-encoding/,
+    /POSTGRES_HOST_PERCENT_ENCODING_FORBIDDEN/,
   )
   assert.throws(
     () => resolvePostgresTarget({
       ...config.database.postgres,
       url: " postgresql://moemail@postgres/moemail ",
     }),
-    /percent-encode whitespace/,
+    /POSTGRES_URL_WHITESPACE_FORBIDDEN/,
   )
   const ipv6Config = {
     ...config,
@@ -262,7 +262,7 @@ try {
   }
   assert.throws(
     () => resolveLibpqSslMode(queryOverrideConfig.database.postgres),
-    /query parameters are not allowed/,
+    /POSTGRES_URL_QUERY_FORBIDDEN/,
   )
 
   const dockerConfigPath = join(validationRoot, "docker-config.yaml.lkg")

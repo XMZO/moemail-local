@@ -1,4 +1,7 @@
-import { useCallback, useState, useEffect } from 'react'
+"use client"
+
+import { useCallback, useState, useEffect } from "react"
+import { useTranslations } from "next-intl"
 
 interface SendPermissionResponse {
   canSend: boolean
@@ -7,6 +10,8 @@ interface SendPermissionResponse {
 }
 
 export function useSendPermission(emailId?: string) {
+  const t = useTranslations("emails.send")
+  const tApi = useTranslations("api")
   const [canSend, setCanSend] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,23 +32,25 @@ export function useSendPermission(emailId?: string) {
       const response = await fetch(`/api/emails/send-permission?emailId=${encodeURIComponent(emailId)}`)
       
       if (!response.ok) {
-        throw new Error('权限检查失败')
+        setCanSend(false)
+        setError(t("permissionCheckFailed"))
+        return
       }
 
       const data = await response.json() as SendPermissionResponse
       setCanSend(data.canSend)
       setRemainingEmails(data.remainingEmails)
       
-      if (!data.canSend && data.error) {
-        setError(data.error)
-      }
-    } catch (err) {
+      setError(data.canSend ? null : tApi.has(data.error as never)
+        ? tApi(data.error as never)
+        : t("permissionDenied"))
+    } catch {
       setCanSend(false)
-      setError(err instanceof Error ? err.message : '权限检查失败')
+      setError(t("permissionCheckFailed"))
     } finally {
       setLoading(false)
     }
-  }, [emailId])
+  }, [emailId, t, tApi])
 
   useEffect(() => {
     void checkPermission()

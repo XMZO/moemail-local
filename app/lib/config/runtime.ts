@@ -7,6 +7,7 @@ import {
   rmSync,
   utimesSync,
   watchFile,
+  unwatchFile,
   writeFileSync,
 } from "node:fs"
 import { createHash, randomBytes } from "node:crypto"
@@ -26,14 +27,13 @@ import {
   type AppConfig,
   type ConfigIssue,
   createDefaultConfig,
-  formatIssues,
   parseConfig,
   requiresProcessRestart,
 } from "./schema"
 
 export class ConfigError extends Error {
   constructor(readonly issues: ConfigIssue[], context: string) {
-    super(`${context}: ${formatIssues(issues)}`)
+    super(context)
     this.name = "ConfigError"
   }
 }
@@ -187,7 +187,7 @@ function applyConfig(
     if (prepared.restartRequired === false) clearRestartRequired()
     else {
       markRestartRequired(
-        `数据库类型由 ${previous.database.driver} 改为 ${next.database.driver}，需要重启进程后生效`,
+        "DATABASE_DRIVER_CHANGED",
         { defer: options.deferRestart },
       )
     }
@@ -370,7 +370,7 @@ async function prepareConfigChange(
       ok: false,
       issues: [{
         path: "auth.passwordPepper",
-        message: "初始化完成后不能直接轮换密码 pepper，否则现有账号将无法登录",
+        message: "PASSWORD_PEPPER_ROTATION_FORBIDDEN",
       }],
     }
   }
@@ -558,7 +558,7 @@ export function markRestartRequired(
 
   if (!state.config.server.autoRestartOnDriverChange) return state.restartRequired
   if (process.env.NODE_ENV !== "production") {
-    log("config.restart.manual", { reason, hint: "开发模式不会自动退出，请手动重启" })
+    log("config.restart.manual", { reason, hint: "MANUAL_RESTART_REQUIRED" })
     return state.restartRequired
   }
 
@@ -583,13 +583,13 @@ function clearRestartRequired() {
 export function getConfig(): AppConfig {
   const state = ensureState()
   if (state.fatal) {
-    throw new ConfigError(state.fatal, `配置文件 ${state.path} 无法加载`)
+    throw new ConfigError(state.fatal, "CONFIG_NOT_LOADED")
   }
   if (state.bootCandidatePending) {
     throw new ConfigError([{
       path: "(boot)",
-      message: "磁盘候选配置仍在完成数据库与站主校验",
-    }], `配置文件 ${state.path} 尚未验证`)
+      message: "BOOT_CONFIG_VALIDATION_PENDING",
+    }], "CONFIG_NOT_VALIDATED")
   }
   return state.config
 }
@@ -700,10 +700,10 @@ export interface SaveOptions {
   deferRestart?: boolean
 }
 
-function revisionIssue(expected: number, actual: number): ConfigIssue[] {
+function revisionIssue(): ConfigIssue[] {
   return [{
     path: "(revision)",
-    message: `配置已被其他修改更新（期望版本 ${expected}，当前版本 ${actual}）`,
+    message: "CONFIG_REVISION_CONFLICT",
   }]
 }
 
@@ -771,7 +771,7 @@ async function acquireConfigSaveLock(path: string): Promise<ConfigSaveLock> {
       const assertOwned = () => {
         const current = JSON.parse(readFileSync(lockPath, "utf8")) as Partial<SaveLockRecord>
         if (current.nonce !== nonce) {
-          throw new Error("配置保存锁已失效；拒绝提交未受保护的候选配置")
+          throw new Error("CONFIG_SAVE_LOCK_LOST")
         }
       }
       const release = () => {
@@ -831,7 +831,7 @@ async function acquireConfigSaveLock(path: string): Promise<ConfigSaveLock> {
       }
 
       if (Date.now() >= deadline) {
-        throw new Error("另一个 MoeMail 进程正在保存配置，请稍后重试")
+        throw new Error("CONFIG_SAVE_LOCK_BUSY")
       }
       await new Promise(resolve => setTimeout(resolve, 50))
     }
@@ -848,7 +848,7 @@ async function saveConfigUnlocked(
     options.expectedRevision !== undefined
     && options.expectedRevision !== state.revision
   ) {
-    return { ok: false, issues: revisionIssue(options.expectedRevision, state.revision) }
+    return { ok: false, issues: revisionIssue() }
   }
   if (
     options.expectedFingerprint !== undefined
@@ -860,7 +860,7 @@ async function saveConfigUnlocked(
       ok: false,
       issues: [{
         path: "(fingerprint)",
-        message: "配置文件已被其他进程或文件编辑器更新，请重新加载后再保存",
+        message: "CONFIG_FINGERPRINT_CONFLICT",
       }],
     }
   }
@@ -888,7 +888,7 @@ async function saveConfigUnlocked(
       ok: false,
       issues: state.lastError?.issues ?? [{
         path: "(revision)",
-        message: "配置文件在保存期间被其他修改更新，请刷新后重试",
+        message: "CONFIG_CHANGED_DURING_SAVE",
       }],
     }
   }
@@ -971,4 +971,17 @@ export function saveConfigPatch(patch: unknown, options: SaveOptions = {}) {
       lock?.release()
     }
   })
+}
+
+/** Release the non-persistent watcher used by isolated validators and tests. */
+export async function closeConfigRuntime() {
+  const state = configGlobals.__moemailConfigState
+  if (!state) return
+  unwatchFile(state.path)
+  state.watching = false
+  if (state.restartTimer) {
+    clearTimeout(state.restartTimer)
+    state.restartTimer = null
+  }
+  await state.operationQueue.catch(() => undefined)
 }

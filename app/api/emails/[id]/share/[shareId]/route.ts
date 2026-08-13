@@ -4,10 +4,10 @@ import { eq, and } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
-// 删除分享链接
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string; shareId: string }> }
@@ -23,27 +23,22 @@ export async function DELETE(
   const db = createDb()
 
   try {
-    // 验证邮箱所有权
     const email = await db.query.emails.findFirst({
       where: and(eq(emails.id, emailId), eq(emails.userId, userId))
     })
 
     if (!email) {
-      return NextResponse.json({ error: "Email not found" }, { status: 404 })
+      return apiError("MAILBOX_NOT_FOUND", 404)
     }
 
-    // 删除分享记录
     await db.delete(emailShares).where(
       and(eq(emailShares.id, shareId), eq(emailShares.emailId, emailId))
     )
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Failed to delete email share:", error)
-    return NextResponse.json(
-      { error: "Failed to delete share" },
-      { status: 500 }
-    )
+    console.error("mailbox_share.delete_failed", error)
+    return apiError("SHARE_DELETE_FAILED", 500)
   }
 }
 

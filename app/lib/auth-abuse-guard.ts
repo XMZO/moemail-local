@@ -171,7 +171,7 @@ export class AuthWorkloadOverloadedError extends Error {
   readonly retryAfterSeconds = 1
 
   constructor() {
-    super("Authentication password workload is temporarily at capacity")
+    super("AUTH_WORKLOAD_OVERLOADED")
     this.name = "AuthWorkloadOverloadedError"
   }
 }
@@ -186,7 +186,7 @@ export class ScryptConcurrencyGate {
 
   private static validate(maximum: number) {
     if (!Number.isSafeInteger(maximum) || maximum < 1) {
-      throw new Error("Scrypt concurrency maximum must be a positive integer")
+      throw new Error("SCRYPT_CONCURRENCY_MAX_INVALID")
     }
     return maximum
   }

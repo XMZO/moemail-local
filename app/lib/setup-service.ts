@@ -35,11 +35,13 @@ import {
 import { checkDriverBinding } from "./db"
 import { hashPassword, verifyPassword } from "./password"
 import { authSchema } from "./validation"
+import type { ApiErrorCode } from "./api-codes"
 import {
   ensureSetupToken,
   generateSecret,
   removeSetupToken,
 } from "./setup-token"
+import { apiError } from "./api-response"
 
 export {
   ensureSetupToken,
@@ -91,16 +93,14 @@ export function consumeSetupBudget() {
 
 export function setupClosedResponse() {
   if (isSetupCompleted()) {
-    return Response.json(
-      { error: "MoeMail 已完成初始化，请通过「运行配置」面板或配置文件修改" },
-      { status: 409, headers: { "Cache-Control": "no-store" } },
-    )
+    return apiError("SETUP_ALREADY_COMPLETED", 409, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
   if (!consumeSetupBudget()) {
-    return Response.json(
-      { error: "初始化请求过于频繁，请稍后再试" },
-      { status: 429, headers: { "Cache-Control": "no-store" } },
-    )
+    return apiError("SETUP_RATE_LIMITED", 429, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
   return null
 }
@@ -111,42 +111,38 @@ export function authorizeSetupRequest(
 ) {
   if (isSetupCompleted()) {
     removeSetupToken({ log: false })
-    return Response.json(
-      { error: "MoeMail 已完成初始化，请通过「运行配置」面板或配置文件修改" },
-      { status: 409, headers: { "Cache-Control": "no-store" } },
-    )
+    return apiError("SETUP_ALREADY_COMPLETED", 409, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
 
   if (options.consumeBudget !== false && !consumeSetupBudget()) {
-    return Response.json(
-      { error: "初始化请求过于频繁，请稍后再试" },
-      { status: 429, headers: { "Cache-Control": "no-store" } },
-    )
+    return apiError("SETUP_RATE_LIMITED", 429, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
 
   if (!isSameOriginRequest(request)) {
-    return Response.json(
-      { error: "拒绝跨站初始化请求" },
-      { status: 403, headers: { "Cache-Control": "no-store" } },
-    )
+    return apiError("SETUP_CROSS_SITE_FORBIDDEN", 403, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
 
   let expected: string
   try {
     expected = ensureSetupToken() ?? ""
   } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "初始化令牌不可用" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    )
+    console.error("setup.token_prepare_failed", error)
+    return apiError("SETUP_TOKEN_UNAVAILABLE", 503, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
 
   const supplied = request.headers.get("x-moemail-setup-token") ?? ""
   if (!expected || !setupTokenMatches(supplied, expected)) {
-    return Response.json(
-      { error: "初始化令牌无效" },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
-    )
+    return apiError("SETUP_TOKEN_INVALID", 401, {
+      headers: { "Cache-Control": "no-store" },
+    })
   }
 
   return null
@@ -282,7 +278,7 @@ export function buildCandidateConfig(patch: unknown, options: { completed: boole
   if (!isPlainObject(patch)) {
     return {
       ok: false as const,
-      issues: [{ path: "config", message: "必须是键值对象" }],
+      issues: [{ path: "config", message: "OBJECT_REQUIRED" }],
     }
   }
 
@@ -324,7 +320,7 @@ export function buildSetupConfigPatch(input: Record<string, unknown>): SetupConf
     if (typeof input.advancedYaml !== "string") {
       return {
         ok: false,
-        issues: [{ path: "advancedYaml", message: "必须是 YAML 字符串" }],
+        issues: [{ path: "advancedYaml", message: "YAML_STRING_REQUIRED" }],
       }
     }
     try {
@@ -343,7 +339,7 @@ export function buildSetupConfigPatch(input: Record<string, unknown>): SetupConf
   if (input.config !== undefined && !isPlainObject(input.config)) {
     return {
       ok: false,
-      issues: [{ path: "config", message: "必须是键值对象" }],
+      issues: [{ path: "config", message: "OBJECT_REQUIRED" }],
     }
   }
 
@@ -351,7 +347,7 @@ export function buildSetupConfigPatch(input: Record<string, unknown>): SetupConf
 }
 
 export type SetupOutcome =
-  | { ok: false; status: number; error: string; issues?: ConfigIssue[] }
+  | { ok: false; status: number; error: ApiErrorCode; issues?: ConfigIssue[] }
   | {
     ok: true
     config: AppConfig
@@ -382,7 +378,7 @@ async function inspectExistingEmperor(
 
 export async function completeSetup(input: unknown): Promise<SetupOutcome> {
   if (!isPlainObject(input)) {
-    return { ok: false, status: 400, error: "请求格式无效" }
+    return { ok: false, status: 400, error: "INVALID_REQUEST" }
   }
 
   const admin = authSchema
@@ -392,33 +388,34 @@ export async function completeSetup(input: unknown): Promise<SetupOutcome> {
     return {
       ok: false,
       status: 400,
-      error: admin.error.issues[0]?.message ?? "管理员账号信息无效",
+      error: "INVALID_ADMIN_INPUT",
     }
   }
 
   const patch = buildSetupConfigPatch(input)
   if (!patch.ok) {
-    return { ok: false, status: 400, error: "高级 YAML 解析失败", issues: patch.issues }
+    return { ok: false, status: 400, error: "ADVANCED_YAML_INVALID", issues: patch.issues }
   }
 
   const candidate = buildCandidateConfig(patch.patch, { completed: true })
   if (!candidate.ok) {
-    return { ok: false, status: 400, error: "配置校验未通过", issues: candidate.issues }
+    return { ok: false, status: 400, error: "CONFIG_VALIDATION_FAILED", issues: candidate.issues }
   }
 
   const config = candidate.config
   const probeIssues = await probeDatabase(config)
   if (probeIssues.length > 0) {
-    return { ok: false, status: 400, error: "数据库连接失败", issues: probeIssues }
+    return { ok: false, status: 400, error: "DATABASE_PROBE_FAILED", issues: probeIssues }
   }
 
   try {
     await runMigrations(config)
   } catch (error) {
+    console.error("setup.database_initialization_failed", error)
     return {
       ok: false,
       status: 500,
-      error: `数据库初始化失败：${error instanceof Error ? error.message : String(error)}`,
+      error: "DATABASE_INITIALIZATION_FAILED",
     }
   }
 
@@ -426,17 +423,18 @@ export async function completeSetup(input: unknown): Promise<SetupOutcome> {
   try {
     existingEmperor = await inspectExistingEmperor(config, admin.data)
   } catch (error) {
+    console.error("setup.emperor_inspection_failed", error)
     return {
       ok: false,
       status: 500,
-      error: `检查站主账号失败：${error instanceof Error ? error.message : String(error)}`,
+      error: "EMPEROR_INSPECTION_FAILED",
     }
   }
   if (existingEmperor === "conflict") {
     return {
       ok: false,
       status: 409,
-      error: "目标数据库已有不同的站主账号或密码；为避免锁死实例，未完成初始化",
+      error: "EMPEROR_CONFLICT",
     }
   }
 
@@ -448,7 +446,7 @@ export async function completeSetup(input: unknown): Promise<SetupOutcome> {
   }
   const staged = await saveConfig(stagedConfig, { deferRestart: true })
   if (!staged.ok) {
-    return { ok: false, status: 500, error: "配置预写入失败", issues: staged.issues }
+    return { ok: false, status: 500, error: "CONFIG_STAGE_FAILED", issues: staged.issues }
   }
 
   let adminCreated = existingEmperor === "none"
@@ -463,7 +461,7 @@ export async function completeSetup(input: unknown): Promise<SetupOutcome> {
         passwordHash,
       })
       if (result === "username_taken") {
-        return { ok: false, status: 409, error: "该用户名已存在，请更换后重试" }
+        return { ok: false, status: 409, error: "USERNAME_ALREADY_EXISTS" }
       }
       if (result === "emperor_exists") {
         const raced = await inspectExistingEmperor(config, admin.data)
@@ -471,23 +469,24 @@ export async function completeSetup(input: unknown): Promise<SetupOutcome> {
           return {
             ok: false,
             status: 409,
-            error: "初始化期间出现了不同的站主账号，未完成初始化",
+            error: "EMPEROR_CONFLICT",
           }
         }
         adminCreated = false
       }
     }
   } catch (error) {
+    console.error("setup.emperor_creation_failed", error)
     return {
       ok: false,
       status: 500,
-      error: `创建站主账号失败：${error instanceof Error ? error.message : String(error)}`,
+      error: "EMPEROR_CREATE_FAILED",
     }
   }
 
   const saved = await saveConfig(config)
   if (!saved.ok) {
-    return { ok: false, status: 500, error: "配置写入失败", issues: saved.issues }
+    return { ok: false, status: 500, error: "CONFIG_SAVE_FAILED", issues: saved.issues }
   }
 
   removeSetupToken()

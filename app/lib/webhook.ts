@@ -64,10 +64,10 @@ function parseWebhookUrl(value: string) {
   const url = new URL(value)
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Webhook URL must use HTTP or HTTPS")
+    throw new Error("WEBHOOK_URL_PROTOCOL_INVALID")
   }
   if (url.username || url.password) {
-    throw new Error("Webhook URL must not contain credentials")
+    throw new Error("WEBHOOK_URL_CREDENTIALS_FORBIDDEN")
   }
 
   const hostname = normalizeHostname(url.hostname)
@@ -77,7 +77,7 @@ function parseWebhookUrl(value: string) {
     hostname.endsWith(".local") ||
     hostname.endsWith(".internal")
   ) {
-    throw new Error("Webhook URL resolves to a non-public host")
+    throw new Error("WEBHOOK_HOST_NON_PUBLIC")
   }
 
   return { url, hostname }
@@ -90,7 +90,7 @@ async function resolvePublicAddresses(hostname: string) {
     : await lookup(hostname, { all: true, verbatim: true })
 
   if (addresses.length === 0) {
-    throw new Error("Webhook host did not resolve")
+    throw new Error("WEBHOOK_HOST_UNRESOLVED")
   }
 
   for (const address of addresses) {
@@ -99,7 +99,7 @@ async function resolvePublicAddresses(hostname: string) {
       (family === "ipv6" && ipv4MappedAddresses.check(address.address, "ipv6")) ||
       blockedAddresses.check(address.address, family)
     ) {
-      throw new Error("Webhook URL resolves to a non-public address")
+      throw new Error("WEBHOOK_ADDRESS_NON_PUBLIC")
     }
   }
 
@@ -150,7 +150,7 @@ async function sendWebhookRequest(url: URL, hostname: string, payload: WebhookPa
         }, handleResponse)
 
     const timeoutId = setTimeout(() => {
-      request.destroy(new Error("Webhook request timed out"))
+      request.destroy(new Error("WEBHOOK_REQUEST_TIMEOUT"))
     }, WEBHOOK_CONFIG.TIMEOUT)
 
     request.once("error", (error) => {
@@ -172,7 +172,7 @@ export async function callWebhook(urlValue: string, payload: WebhookPayload) {
         return true
       }
 
-      lastError = new Error(`HTTP error! status: ${statusCode}`)
+      lastError = new Error(`WEBHOOK_HTTP_STATUS:${statusCode}`)
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
     }
@@ -182,5 +182,5 @@ export async function callWebhook(urlValue: string, payload: WebhookPayload) {
     }
   }
 
-  throw lastError ?? new Error("Webhook request failed")
+  throw lastError ?? new Error("WEBHOOK_REQUEST_FAILED")
 }

@@ -5,6 +5,7 @@ import { z } from "zod"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
 import { validateWebhookUrl } from "@/lib/webhook"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -68,10 +69,7 @@ export async function POST(request: Request) {
 
     return Response.json({ success: true })
   } catch (error) {
-    console.error("Failed to save webhook:", error)
-    return Response.json(
-      { error: "Invalid request" },
-      { status: 400 }
-    )
+    console.error("webhook.save_failed", error)
+    return apiError("WEBHOOK_CONFIG_INVALID", 400)
   }
 }

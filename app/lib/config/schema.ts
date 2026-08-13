@@ -32,11 +32,11 @@ const nullableText = z
 
 function secretProblems(value: string) {
   const problems: string[] = []
-  if (/\s/.test(value)) problems.push("不能包含空白字符")
+  if (/\s/.test(value)) problems.push("SECRET_WHITESPACE_FORBIDDEN")
   if (Buffer.byteLength(value, "utf8") < MINIMUM_SECRET_BYTES) {
-    problems.push(`长度至少需要 ${MINIMUM_SECRET_BYTES} 字节`)
+    problems.push("SECRET_TOO_SHORT")
   }
-  if (PLACEHOLDER_PATTERN.test(value)) problems.push("仍然是文档中的占位符")
+  if (PLACEHOLDER_PATTERN.test(value)) problems.push("SECRET_PLACEHOLDER_FORBIDDEN")
   return problems
 }
 
@@ -79,7 +79,7 @@ function httpUrl(defaultValue: string) {
     z
       .string()
       .trim()
-      .refine(value => /^https?:\/\/\S+$/i.test(value), "必须是 http:// 或 https:// 开头的地址")
+      .refine(value => /^https?:\/\/\S+$/i.test(value), "HTTP_URL_REQUIRED")
       .transform(value => value.replace(/\/+$/, "")),
   )
 }
@@ -89,7 +89,7 @@ const nullableHttpUrl = nullableText.superRefine((value, ctx) => {
   if (!/^https?:\/\/\S+$/i.test(value)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "必须是 http:// 或 https:// 开头的地址",
+      message: "HTTP_URL_REQUIRED",
     })
   }
 })
@@ -249,35 +249,32 @@ export const configSchema = baseConfigSchema.superRefine((config, ctx) => {
   if (config.database.driver === "postgres") {
     const url = config.database.postgres.url
     if (!url) {
-      issue(["database", "postgres", "url"], "选择 PostgreSQL 时必须填写连接串")
+      issue(["database", "postgres", "url"], "POSTGRES_URL_REQUIRED")
     } else {
       try {
         parsePostgresConnectionUrl(url)
-      } catch (error) {
-        issue(
-          ["database", "postgres", "url"],
-          error instanceof Error ? error.message : "连接串不是有效的 PostgreSQL URL",
-        )
+      } catch {
+        issue(["database", "postgres", "url"], "POSTGRES_URL_INVALID")
       }
     }
   }
 
   if (config.setup.completed) {
     if (!config.auth.secret) {
-      issue(["auth", "secret"], "初始化完成后必须配置会话密钥")
+      issue(["auth", "secret"], "AUTH_SECRET_REQUIRED")
     }
     if (!config.auth.passwordPepper) {
-      issue(["auth", "passwordPepper"], "初始化完成后必须配置密码 pepper")
+      issue(["auth", "passwordPepper"], "PASSWORD_PEPPER_REQUIRED")
     }
     if (!config.email.ingestSecret) {
-      issue(["email", "ingestSecret"], "初始化完成后必须配置邮件投递密钥")
+      issue(["email", "ingestSecret"], "EMAIL_INGEST_SECRET_REQUIRED")
     }
   }
 
   for (const provider of ["github", "google"] as const) {
     const { clientId, clientSecret } = config.auth[provider]
     if (Boolean(clientId) !== Boolean(clientSecret)) {
-      issue(["auth", provider], "Client ID 与 Client Secret 必须同时填写或同时留空")
+      issue(["auth", provider], "OAUTH_CREDENTIAL_PAIR_REQUIRED")
     }
   }
 
@@ -291,16 +288,13 @@ export const configSchema = baseConfigSchema.superRefine((config, ctx) => {
   for (let left = 0; left < configured.length; left += 1) {
     for (let right = left + 1; right < configured.length; right += 1) {
       if (configured[left][1] === configured[right][1]) {
-        issue(
-          configured[right][0].split("."),
-          `不能与 ${configured[left][0]} 使用相同的值`,
-        )
+        issue(configured[right][0].split("."), "SECRET_VALUE_REUSED")
       }
     }
   }
 
   if (config.database.driver === "sqlite" && config.database.sqlite.path === ":memory:") {
-    issue(["database", "sqlite", "path"], "内存数据库无法持久化，请填写文件路径")
+    issue(["database", "sqlite", "path"], "SQLITE_MEMORY_DATABASE_FORBIDDEN")
   }
 
   const pathWithinData = (value: string, allowDataRoot: boolean) => {
@@ -324,23 +318,23 @@ export const configSchema = baseConfigSchema.superRefine((config, ctx) => {
   if (!pathWithinData(config.database.sqlite.path, false)) {
     issue(
       ["database", "sqlite", "path"],
-      "必须是 data/ 目录内的相对文件路径，确保所有容器共享并持久化数据库",
+      "SQLITE_PATH_OUTSIDE_DATA",
     )
   } else if (conflictsWithConfigControlPath(normalizedSqlitePath)) {
     issue(
       ["database", "sqlite", "path"],
-      "不能占用 config.yaml、LKG、setup token 或配置锁使用的控制路径",
+      "CONFIG_CONTROL_PATH_CONFLICT",
     )
   }
   if (!pathWithinData(config.database.sqlite.backupDir, true)) {
     issue(
       ["database", "sqlite", "backupDir"],
-      "必须位于 data/ 目录内，确保备份卷持久化并可供异地同步读取",
+      "SQLITE_BACKUP_DIR_OUTSIDE_DATA",
     )
   } else if (conflictsWithConfigControlPath(normalizedSqliteBackupDir)) {
     issue(
       ["database", "sqlite", "backupDir"],
-      "不能占用 config.yaml、LKG、setup token 或配置锁使用的控制路径",
+      "CONFIG_CONTROL_PATH_CONFLICT",
     )
   }
   if (
@@ -349,7 +343,7 @@ export const configSchema = baseConfigSchema.superRefine((config, ctx) => {
   ) {
     issue(
       ["database", "sqlite", "backupDir"],
-      "备份目录不能等于 SQLite 数据库文件，也不能位于该文件路径之下",
+      "SQLITE_BACKUP_EQUALS_DATABASE_PATH",
     )
   }
   const sqliteAuxiliaryFiles = [
@@ -364,7 +358,7 @@ export const configSchema = baseConfigSchema.superRefine((config, ctx) => {
   ))) {
     issue(
       ["database", "sqlite", "backupDir"],
-      "备份目录不能占用 SQLite WAL、SHM、journal 或 cleanup lock 路径",
+      "SQLITE_BACKUP_AUXILIARY_PATH_CONFLICT",
     )
   }
 
@@ -380,7 +374,7 @@ export const configSchema = baseConfigSchema.superRefine((config, ctx) => {
   ) {
     issue(
       ["database", "postgres", "backupDir"],
-      "必须位于 data/postgres-backups 目录内，确保备份卷持久化并可供异地同步读取",
+      "POSTGRES_BACKUP_DIR_OUTSIDE_DATA",
     )
   }
 })
@@ -412,7 +406,7 @@ export function formatIssues(issues: ConfigIssue[]) {
 export function createDefaultConfig(): AppConfig {
   const result = parseConfig({})
   if (!result.ok) {
-    throw new Error(`默认配置无法通过校验: ${formatIssues(result.issues)}`)
+    throw new Error(`DEFAULT_CONFIG_INVALID:${formatIssues(result.issues)}`)
   }
   return result.config
 }

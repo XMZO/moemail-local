@@ -190,7 +190,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.16.6 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.17.0 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -309,7 +309,7 @@ docker compose --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.16.6 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.17.0 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -320,8 +320,11 @@ pnpm validate:deployment
 pnpm validate:maintenance-bundle
 pnpm validate:email-worker
 pnpm validate:mail-policies
+pnpm validate:send-quota
+pnpm validate:policy-migrations
 pnpm validate:imap-inbound
 pnpm validate:runtime-fields
+pnpm validate:i18n
 ```
 
 开发服务器使用 `pnpm dev`。本地运行也必须完成首次初始化，之后应用路由才可正常使用。
@@ -330,6 +333,7 @@ pnpm validate:runtime-fields
 
 - [本地部署、Email Worker、备份恢复、迁移与 systemd 完整指南](docs/local-deployment.zh-CN.md)
 - [验证记录与仍需在部署环境执行的验收项](docs/local-validation.zh-CN.md)
+- [以后可逐步实现的管理员可配置功能清单](docs/configurability-roadmap.zh-CN.md)
 - [CLI 包](packages/cli/README.md)
 - [MCP 包](packages/mcp/README.md)
 

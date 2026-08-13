@@ -6,30 +6,25 @@ import {
   buildCandidateConfig,
   buildSetupConfigPatch,
 } from "@/lib/setup-service"
+import { apiError, apiIssues } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const noStore = { "Cache-Control": "no-store" }
 
-/** 初始化向导中的「测试连接」：只做连通性验证，不写配置文件。 */
+/** Probe connectivity for the setup wizard without writing configuration. */
 export async function POST(request: Request) {
   const denied = authorizeSetupRequest(request)
   if (denied) return denied
 
   if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") {
-    return Response.json({ error: "请求必须使用 application/json" }, {
-      status: 415,
-      headers: noStore,
-    })
+    return apiError("JSON_CONTENT_TYPE_REQUIRED", 415, { headers: noStore })
   }
 
   const release = acquireSetupOperation()
   if (!release) {
-    return Response.json({ error: "另一个初始化操作正在进行，请稍后重试" }, {
-      status: 409,
-      headers: noStore,
-    })
+    return apiError("SETUP_IN_PROGRESS", 409, { headers: noStore })
   }
 
   try {
@@ -41,35 +36,35 @@ export async function POST(request: Request) {
     try {
       payload = await request.json()
     } catch {
-      return Response.json({ error: "请求格式无效" }, { status: 400, headers: noStore })
+      return apiError("INVALID_JSON", 400, { headers: noStore })
     }
 
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-      return Response.json({ error: "请求格式无效" }, { status: 400, headers: noStore })
+      return apiError("INVALID_REQUEST", 400, { headers: noStore })
     }
 
     const patch = buildSetupConfigPatch(payload as Record<string, unknown>)
     if (!patch.ok) {
-      return Response.json(
-        { ok: false, error: "高级 YAML 解析失败", issues: patch.issues },
-        { status: 400, headers: noStore },
-      )
+      return apiError("ADVANCED_YAML_INVALID", 400, {
+        headers: noStore,
+        details: { ok: false, issues: apiIssues(patch.issues) },
+      })
     }
 
     const candidate = buildCandidateConfig(patch.patch, { completed: false })
     if (!candidate.ok) {
-      return Response.json(
-        { ok: false, error: "配置校验未通过", issues: candidate.issues },
-        { status: 400, headers: noStore },
-      )
+      return apiError("CONFIG_VALIDATION_FAILED", 400, {
+        headers: noStore,
+        details: { ok: false, issues: apiIssues(candidate.issues) },
+      })
     }
 
     const issues = await probeDatabase(candidate.config)
     if (issues.length > 0) {
-      return Response.json(
-        { ok: false, error: "数据库连接失败", issues },
-        { status: 400, headers: noStore },
-      )
+      return apiError("DATABASE_PROBE_FAILED", 400, {
+        headers: noStore,
+        details: { ok: false, issues: apiIssues(issues) },
+      })
     }
 
     return Response.json({

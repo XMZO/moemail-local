@@ -1,0 +1,299 @@
+{
+  "navigation": {
+    "account": "帳戶",
+    "domains": "網域收發",
+    "access": "權限配額",
+    "users": "使用者",
+    "site": "站台",
+    "appearance": "外觀",
+    "runtime": "執行設定",
+    "webhook": "Webhook 設定",
+    "apiKey": "介面金鑰"
+  },
+  "access": {
+    "title": "權限與配額",
+    "description": "設定功能權限、四態網域權限以及獨立的收發額度。一般額度 0 代表不限；收發額度 -1 代表不限、0 代表禁止。",
+    "tabs": {
+      "roles": "角色預設值",
+      "users": "單一使用者覆寫",
+      "blocks": "信箱名稱封鎖"
+    },
+    "sections": {
+      "permissions": "功能權限",
+      "quotas": "配額",
+      "domains": "可用網域",
+      "permissionOverrides": "權限覆寫",
+      "quotaOverrides": "配額覆寫",
+      "domainOverrides": "網域覆寫"
+    },
+    "actions": {
+      "resetRole": "重設此角色",
+      "save": "儲存",
+      "inheritAll": "全部繼承",
+      "saveUser": "儲存使用者覆寫"
+    },
+    "searchPlaceholder": "搜尋使用者名稱或電子郵件",
+    "selectUser": "選擇使用者",
+    "selectUserHint": "選擇使用者後設定覆寫值",
+    "emperorLocked": "皇帝權限無法編輯",
+    "emperorLockedHint": "這是應用程式與後端 API 共同強制的系統不變條件，皇帝本人也無法修改。",
+    "emperorQuotaEditableHint": "皇帝的功能權限、一般額度與網域權限由系統鎖定；收件與寄件額度仍可設定。",
+    "overrideHint": "未覆寫的項目會繼承使用者角色。權限可明確允許或拒絕；配額僅在啟用後覆寫。",
+    "inherit": "繼承",
+    "allow": "允許",
+    "deny": "拒絕",
+    "domains": {
+      "roleHelp": "控制此角色可在哪些網域建立信箱以及收發郵件；現有信箱仍然可見。",
+      "userHelp": "為此使用者覆寫角色的網域清單。自訂清單為空表示停用全部網域，但不會隱藏現有信箱。",
+      "allowAll": "允許所有目前及日後新增的網域",
+      "noneConfigured": "尚未設定郵件網域",
+      "inherit": "繼承角色預設值",
+      "all": "允許全部網域",
+      "custom": "自訂網域",
+      "default": "未單獨設定及未來新增網域的預設權限",
+      "modes": {
+        "allow": "允許收發",
+        "receive": "僅允許收件",
+        "send": "僅允許寄件",
+        "deny": "全部禁止"
+      }
+    },
+    "errors": {
+      "loadPolicies": "讀取權限原則失敗",
+      "loadUsers": "讀取使用者失敗",
+      "savePolicies": "儲存權限原則失敗",
+      "saveUser": "儲存使用者覆寫失敗",
+      "resetUser": "重設使用者覆寫失敗",
+      "loadBlocks": "讀取信箱名稱封鎖失敗"
+    },
+    "success": {
+      "savePolicies": "角色權限與配額已儲存",
+      "saveUser": "使用者權限覆寫已儲存",
+      "resetUser": "使用者已恢復繼承角色預設值",
+      "resetUsage": "額度用量已重設",
+      "createBlock": "信箱名稱已封鎖",
+      "deleteBlock": "信箱名稱封鎖已移除",
+      "resetMailboxUsage": "此信箱的額度用量已重設"
+    },
+    "permissions": {
+      "view_email": "檢視郵件",
+      "create_email": "建立信箱",
+      "delete_email": "刪除信箱與郵件",
+      "receive_email": "接收郵件",
+      "send_email": "傳送郵件",
+      "share_email": "建立分享連結",
+      "manage_webhook": "管理 Webhook",
+      "promote_user": "管理使用者角色",
+      "manage_config": "管理站台與網域設定",
+      "manage_api_key": "管理 API Key"
+    },
+    "quotas": {
+      "maxActiveMailboxes": {
+        "label": "作用中信箱上限",
+        "help": "0 = 無限制"
+      },
+      "maxMailboxLifetimeDays": {
+        "label": "信箱最長有效期（天）",
+        "help": "0 = 無限制"
+      },
+      "dailyReceiveLimit": {
+        "label": "每日收件上限",
+        "help": "0 = 無限制"
+      },
+      "maxMessageBytes": {
+        "label": "單封收件大小上限（位元組）",
+        "help": "0 = 僅受系統 25 MiB 硬性上限"
+      }
+    },
+    "sendQuota": {
+      "title": "寄件配額",
+      "userTitle": "使用者寄件配額覆寫",
+      "help": "總配額與網域配額同時生效；任一配額用盡都會阻止寄件。採用滾動時間視窗，1 個月按 30 天計算。",
+      "userHelp": "未勾選的項目會繼承角色。使用者只要覆寫任一寄件配額，其配額就會獨立計算，不再占用角色共享配額。",
+      "limit": "封數",
+      "every": "每",
+      "unit": "單位",
+      "total": "所有寄件的總配額",
+      "domains": "單一網域配額（未啟用即無限制）",
+      "customize": "單獨限制",
+      "overrideTotal": "覆寫總配額",
+      "overrideDomain": "覆寫網域",
+      "noneConfigured": "尚未設定郵件網域",
+      "unlimited": "無限制",
+      "scope": {
+        "user": "每位使用者分別計算",
+        "role": "整個角色共享配額"
+      },
+      "units": {
+        "second": "秒",
+        "minute": "分鐘",
+        "hour": "小時",
+        "day": "天",
+        "week": "週",
+        "month": "月（30 天）"
+      },
+      "usage": {
+        "title": "實際寄件統計",
+        "aggregate": "按使用者配額彙總",
+        "shared": "共享角色配額",
+        "individual": "獨立使用者配額",
+        "allTime": "歷史已寄",
+        "window": "目前視窗",
+        "pending": "寄送中預留",
+        "domainLine": "歷史 {allTime} · 視窗 {sent} / {limit}"
+      }
+    },
+    "mailQuota": {
+      "send": {
+        "title": "寄件額度",
+        "help": "總額度、網域額度、單一信箱滾動額度與生命週期額度會同時生效。",
+        "userTitle": "使用者寄件額度覆寫"
+      },
+      "receive": {
+        "title": "收件額度",
+        "help": "總額度、網域額度、單一信箱滾動額度或生命週期額度任一用盡時，入站投遞都會被拒絕。",
+        "userTitle": "使用者收件額度覆寫"
+      },
+      "userHelp": "未勾選的值繼承角色；設定任一覆寫後，該方向額度會為此使用者獨立計算。",
+      "limit": "封數",
+      "every": "每",
+      "unit": "單位",
+      "lifetime": "生命週期上限",
+      "total": "所有網域的總額度",
+      "mailboxDefault": "每個信箱的預設額度",
+      "domains": "單一網域額度",
+      "domainTotal": "限制此網域總量",
+      "domainMailbox": "覆寫此網域下每個信箱",
+      "overrideTotal": "覆寫總額度",
+      "overrideMailbox": "覆寫單一信箱預設額度",
+      "overrideDomain": "覆寫網域總額度",
+      "overrideDomainMailbox": "覆寫此網域下的信箱額度",
+      "unlimited": "不限",
+      "scope": {
+        "user": "每個使用者分別計算",
+        "role": "角色成員共用彙總額度"
+      },
+      "units": {
+        "second": "秒",
+        "minute": "分鐘",
+        "hour": "小時",
+        "day": "天",
+        "week": "週",
+        "month": "月（30 天）"
+      },
+      "exact": {
+        "title": "精確信箱覆寫",
+        "help": "選用：為某個完整信箱地址單獨設定滾動上限與生命週期上限。",
+        "localPart": "信箱名稱",
+        "invalidLocalPart": "請輸入 1–64 位字母、數字、點、底線、加號或連字號",
+        "domain": "網域",
+        "add": "新增覆寫",
+        "remove": "移除",
+        "reset": "重設用量"
+      },
+      "usage": {
+        "title": "實際用量",
+        "aggregate": "依使用者額度彙總",
+        "shared": "角色共用額度",
+        "individual": "使用者獨立額度",
+        "allTime": "歷史已完成",
+        "window": "目前視窗",
+        "pending": "進行中保留",
+        "domainLine": "歷史 {allTime} · 視窗 {completed} / {limit}"
+      },
+      "reset": {
+        "action": "重設用量",
+        "title": "重設此額度用量？",
+        "description": "這會永久清除所選收發方向與目標的滾動視窗和生命週期計數，但不會修改額度規則。",
+        "cancel": "取消",
+        "confirm": "重設計數",
+        "mailboxTitle": "重設此信箱的用量？",
+        "mailboxDescription": "這會永久清除 {address} 在所選收發方向上的滾動與生命週期計數，其他信箱不受影響。"
+      }
+    },
+    "directions": {
+      "send": "寄件",
+      "receive": "收件"
+    },
+    "blocks": {
+      "title": "信箱名稱封鎖",
+      "help": "可在全站封鎖某個信箱名稱，或只禁止指定使用者使用。不會刪除既有信箱；移除規則前無法再次建立。",
+      "localPart": "信箱名稱",
+      "invalidLocalPart": "請輸入 1–64 位字母、數字、點、底線、加號或連字號",
+      "domain": "網域",
+      "global": "所有使用者",
+      "user": "單一使用者",
+      "selectUser": "選擇使用者",
+      "add": "封鎖",
+      "empty": "目前沒有被封鎖的信箱名稱。",
+      "globalScope": "所有使用者均禁止",
+      "userScope": "僅禁止 {user}",
+      "deleteTitle": "移除此信箱名稱封鎖？",
+      "deleteDescription": "移除後，受影響的使用者可再次建立 {address}。",
+      "cancel": "取消",
+      "delete": "移除規則"
+    }
+  },
+  "appearance": {
+    "errors": {
+      "load": "讀取外觀設定失敗",
+      "saveFont": "儲存字型設定失敗",
+      "saveAdvanced": "儲存進階外觀失敗"
+    },
+    "success": {
+      "fontTitle": "全站字型已儲存",
+      "fontDescription": "重新整理頁面後，所有伺服器端算繪頁面都會使用新字型。",
+      "advancedSavedTitle": "進階外觀已儲存",
+      "advancedSavedDescription": "重新整理頁面後生效；若頁面異常，可使用安全外觀模式。",
+      "advancedClearedTitle": "進階外觀已清除",
+      "advancedClearedDescription": "所有注入均已停用。"
+    },
+    "font": {
+      "title": "全站字型",
+      "description": "填寫 CSS font-family；僅接受安全的字型名稱與後備清單。",
+      "family": "字型家族",
+      "preview": "預覽",
+      "previewPrimary": "MoeMail 信箱 Aa 123",
+      "previewSecondary": "簡潔、可靠、可自行託管。",
+      "restoreDefault": "恢復預設值",
+      "save": "儲存字型",
+      "presets": {
+        "pixel": "預設像素字型",
+        "sans": "系統無襯線",
+        "mono": "系統等寬",
+        "serif": "系統襯線"
+      }
+    },
+    "advanced": {
+      "title": "高風險進階外觀",
+      "subtitle": "直接注入 CSS、Head HTML、Body 尾端 HTML 與 JavaScript",
+      "emperorOnly": "進階外觀僅允許皇帝帳戶修改。",
+      "warningTitle": "注入內容具有目前登入使用者的頁面權限",
+      "warningDescription": "惡意 HTML 或 JavaScript 可以讀取郵件、呼叫 API 或竊取頁面資料。僅使用自行撰寫且已完整審查的內容；請勿貼上陌生程式碼。",
+      "enabled": "啟用進階外觀注入",
+      "enabledDescription": "關閉時會保留已填內容，但全站不會執行任何進階注入。",
+      "customCss": "自訂 CSS",
+      "customCssPlaceholder": "/* 不需要 <style> 標籤 */\n@import url(\"https://fonts.example/font.css\");\n:root { --radius: 0.75rem; }",
+      "customCssHelp": "附加至頁面樣式末尾，可使用 @font-face、@import 或覆寫現有選擇器。",
+      "headHtml": "頁首 HTML",
+      "headHtmlPlaceholder": "<!-- 插入 document.head 末尾 -->\n<link rel=\"preconnect\" href=\"https://fonts.example\">",
+      "bodyEndHtml": "Body 尾端 HTML",
+      "bodyEndHtmlPlaceholder": "<!-- 插入 document.body 末尾 -->\n<div class=\"custom-footer\">...</div>",
+      "customJs": "自訂 JavaScript",
+      "customJsHelp": "不需要 <script> 標籤；還必須另外開啟執行開關。",
+      "allowExecution": "允許執行",
+      "customJsPlaceholder": "// 在瀏覽器中執行\nconsole.log(\"MoeMail custom appearance\")",
+      "safeMode": "若自訂內容導致頁面無法操作，請在任意頁面 URL 後附加 ?safe-appearance=1（已有參數時使用 &safe-appearance=1）。該次要求會跳過全部進階注入，讓你回到此處清除或修正。",
+      "limits": "每個輸入最多 128 KiB，合計最多 256 KiB。內容儲存在目前資料庫中，備份資料庫時也會一併儲存。",
+      "clear": "清除並停用",
+      "save": "儲存進階外觀",
+      "clearTitle": "清除全部進階外觀？",
+      "saveTitle": "確認儲存高風險注入內容？",
+      "clearDescription": "這會永久刪除已儲存的 CSS、HTML 與 JavaScript，並立即停用進階注入。",
+      "saveDescription": "這些內容會在所有訪客的瀏覽器中載入。請確認程式碼由你撰寫或已完整審查；儲存後請重新整理頁面驗證。",
+      "cancel": "取消",
+      "saving": "儲存中",
+      "confirm": "我已瞭解並繼續"
+    }
+  }
+}

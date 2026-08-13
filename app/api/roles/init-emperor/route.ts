@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto"
 import { claimEmperor } from "@/lib/emperor"
 import { authorizeRequest } from "@/lib/request-auth"
 import { getConfig } from "@/lib/config/runtime"
+import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
 
@@ -17,10 +18,7 @@ export async function POST(request: Request) {
 
   const expectedSecret = getConfig().auth.emperorBootstrapSecret
   if (!expectedSecret) {
-    return Response.json(
-      { error: "兼容登基接口已禁用；首次站主请使用初始化/恢复向导创建" },
-      { status: 503 },
-    )
+    return apiError("EMPEROR_BOOTSTRAP_DISABLED", 503)
   }
 
   let suppliedSecret = ""
@@ -28,25 +26,24 @@ export async function POST(request: Request) {
     const body = await request.json() as { secret?: unknown }
     suppliedSecret = typeof body.secret === "string" ? body.secret : ""
   } catch {
-    return Response.json({ error: "请求格式无效" }, { status: 400 })
+    return apiError("INVALID_JSON", 400)
   }
 
   if (!secretMatches(suppliedSecret, expectedSecret)) {
-    return Response.json({ error: "初始化密钥无效" }, { status: 401 })
+    return apiError("EMPEROR_BOOTSTRAP_SECRET_INVALID", 401)
   }
 
   try {
     const result = await claimEmperor(authorization.principal.userId)
     if (result === "emperor_exists") {
-      return Response.json({ error: "已存在皇帝, 谋反将被处死" }, { status: 409 })
+      return apiError("EMPEROR_ALREADY_EXISTS", 409)
     }
     return Response.json({
-      message: result === "already_emperor"
-        ? "你已经是皇帝了"
-        : "登基成功，你已成为皇帝",
+      success: true,
+      code: result === "already_emperor" ? "ALREADY_EMPEROR" : "EMPEROR_CLAIMED",
     })
   } catch (error) {
-    console.error("Failed to initialize emperor:", error)
-    return Response.json({ error: "登基称帝失败" }, { status: 500 })
+    console.error("role.emperor_claim_failed", error)
+    return apiError("EMPEROR_CLAIM_FAILED", 500)
   }
 }

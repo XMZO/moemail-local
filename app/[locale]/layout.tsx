@@ -1,9 +1,12 @@
-import { NextIntlClientProvider } from "next-intl"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { i18n, type Locale } from "@/i18n/config"
+import { emptyMessages, loadMessages } from "@/i18n/messages"
+import { InstantLocaleProvider } from "@/i18n/locale-provider"
 import type { Metadata, Viewport } from "next"
+import { headers } from "next/headers"
 import { FloatMenu } from "@/components/float-menu"
+import { CustomAppearanceInjector } from "@/components/custom-appearance-injector"
 import { ThemeProvider } from "@/components/theme/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { cn } from "@/lib/utils"
@@ -15,7 +18,7 @@ import {
   getPublicRuntimeConfig,
 } from "@/lib/config/runtime"
 import { DEFAULT_PUBLIC_RUNTIME_CONFIG } from "@/lib/config/public"
-import { DEFAULT_UI_FONT_FAMILY } from "@/lib/appearance-values"
+import { DEFAULT_APPEARANCE_CONFIG } from "@/lib/appearance-values"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -30,16 +33,10 @@ export const viewport: Viewport = {
 
 async function getMessages(locale: Locale) {
   try {
-    const common = (await import(`@/i18n/messages/${locale}/common.json`)).default
-    const home = (await import(`@/i18n/messages/${locale}/home.json`)).default
-    const auth = (await import(`@/i18n/messages/${locale}/auth.json`)).default
-    const metadata = (await import(`@/i18n/messages/${locale}/metadata.json`)).default
-    const emails = (await import(`@/i18n/messages/${locale}/emails.json`)).default
-    const profile = (await import(`@/i18n/messages/${locale}/profile.json`)).default
-    return { common, home, auth, metadata, emails, profile }
+    return await loadMessages(locale)
   } catch (error) {
-    console.error(`Failed to load messages for locale ${locale}:`, error)
-    return { common: {}, home: {}, auth: {}, metadata: {}, emails: {}, profile: {} }
+    console.error("i18n.catalog_load_failed", { locale, error })
+    return emptyMessages()
   }
 }
 
@@ -117,15 +114,18 @@ export default async function LocaleLayout({
     notFound()
   }
 
-  const messages = await getMessages(locale)
+  const catalogs = Object.fromEntries(await Promise.all(i18n.locales.map(async catalogLocale => (
+    [catalogLocale, await getMessages(catalogLocale)] as const
+  )))) as Record<Locale, Awaited<ReturnType<typeof getMessages>>>
   const configStatus = getConfigStatus()
   let runtimeConfig = DEFAULT_PUBLIC_RUNTIME_CONFIG
-  let uiFontFamily = DEFAULT_UI_FONT_FAMILY
+  let appearance = DEFAULT_APPEARANCE_CONFIG
+  const safeAppearance = (await headers()).get("x-moemail-safe-appearance") === "1"
   try {
     runtimeConfig = getPublicRuntimeConfig()
     if (configStatus.setupCompleted) {
-      const { getUiFontFamily } = await import("@/lib/appearance")
-      uiFontFamily = await getUiFontFamily()
+      const { getAppearanceConfig } = await import("@/lib/appearance")
+      appearance = await getAppearanceConfig()
     }
   } catch {
     // 初始化向导仍应可渲染，不能被坏配置挡在 WebUI 外。
@@ -142,7 +142,7 @@ export default async function LocaleLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body 
-        style={{ fontFamily: uiFontFamily }}
+        style={{ fontFamily: appearance.fontFamily }}
         className={cn(
           zpix.variable,
           "font-zpix min-h-screen antialiased",
@@ -162,12 +162,19 @@ export default async function LocaleLayout({
             sessionEnabled={configStatus.setupCompleted}
             runtimeRefreshEnabled={configStatus.setupCompleted}
           >
-            <NextIntlClientProvider locale={locale} messages={messages}>
+            <InstantLocaleProvider initialLocale={locale} catalogs={catalogs}>
               {children}
               <FloatMenu />
-            </NextIntlClientProvider>
+            </InstantLocaleProvider>
           </Providers>
           <Toaster />
+          {appearance.advancedEnabled && !safeAppearance && <CustomAppearanceInjector
+            customCss={appearance.customCss}
+            headHtml={appearance.headHtml}
+            bodyEndHtml={appearance.bodyEndHtml}
+            customJs={appearance.customJs}
+            customJsEnabled={appearance.customJsEnabled}
+          />}
         </ThemeProvider>
       </body>
     </html>

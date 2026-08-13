@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
-import { useTranslations } from "next-intl"
+import { useFormatter, useTranslations } from "next-intl"
 import { CreateDialog } from "./create-dialog"
 import { ShareDialog } from "./share-dialog"
 import { Mail, RefreshCw, Trash2 } from "lucide-react"
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { PERMISSIONS } from "@/lib/permissions"
 import { useRolePermission } from "@/hooks/use-role-permission"
+import { readApiErrorCode } from "@/lib/api-error-client"
 
 interface Email {
   id: string
@@ -42,6 +43,7 @@ interface EmailResponse {
 }
 
 export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
+  const format = useFormatter()
   const { data: session } = useSession()
   const { checkPermission } = useRolePermission()
   const canCreate = checkPermission(PERMISSIONS.CREATE_EMAIL)
@@ -49,6 +51,8 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
   const canShare = checkPermission(PERMISSIONS.SHARE_EMAIL)
   const t = useTranslations("emails.list")
   const tCommon = useTranslations("common.actions")
+  const tFormat = useTranslations("common.format")
+  const tApi = useTranslations("api")
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -58,7 +62,7 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
   const [emailToDelete, setEmailToDelete] = useState<Email | null>(null)
   const { toast } = useToast()
 
-  const fetchEmails = async (cursor?: string) => {
+  const fetchEmails = useCallback(async (cursor?: string) => {
     try {
       const url = new URL("/api/emails", window.location.origin)
       if (cursor) {
@@ -69,20 +73,16 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
       
       if (!cursor) {
         const newEmails = data.emails
-        const oldEmails = emails
-
-        const lastDuplicateIndex = newEmails.findIndex(
-          newEmail => oldEmails.some(oldEmail => oldEmail.id === newEmail.id)
-        )
-
-        if (lastDuplicateIndex === -1) {
-          setEmails(newEmails)
-          setNextCursor(data.nextCursor)
-          setTotal(data.total)
-          return
-        }
-        const uniqueNewEmails = newEmails.slice(0, lastDuplicateIndex)
-        setEmails([...uniqueNewEmails, ...oldEmails])
+        setEmails(oldEmails => {
+          const firstDuplicateIndex = newEmails.findIndex(
+            newEmail => oldEmails.some(oldEmail => oldEmail.id === newEmail.id),
+          )
+          if (firstDuplicateIndex === -1) {
+            setNextCursor(data.nextCursor)
+            return newEmails
+          }
+          return [...newEmails.slice(0, firstDuplicateIndex), ...oldEmails]
+        })
         setTotal(data.total)
         return
       }
@@ -90,13 +90,13 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
       setNextCursor(data.nextCursor)
       setTotal(data.total)
     } catch (error) {
-      console.error("Failed to fetch emails:", error)
+      console.error("mailbox.list_fetch_failed", error)
     } finally {
       setLoading(false)
       setRefreshing(false)
       setLoadingMore(false)
     }
-  }
+  }, [])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -118,7 +118,7 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
 
   useEffect(() => {
     if (session) fetchEmails()
-  }, [session])
+  }, [session, fetchEmails])
 
   const handleDelete = async (email: Email) => {
     try {
@@ -127,10 +127,10 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
       })
 
       if (!response.ok) {
-        const data = await response.json()
+        const code = await readApiErrorCode(response, "MAILBOX_DELETE_FAILED")
         toast({
           title: t("error"),
-          description: (data as { error: string }).error,
+          description: tApi.has(code as never) ? tApi(code as never) : t("deleteFailed"),
           variant: "destructive"
         })
         return
@@ -206,11 +206,14 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
                       {new Date(email.expiresAt).getFullYear() === 9999 ? (
                         t("permanent")
                       ) : (
-                        `${t("expiresAt")}: ${new Date(email.expiresAt).toLocaleString()}`
+                        tFormat("labelValue", {
+                          label: t("expiresAt"),
+                          value: format.dateTime(new Date(email.expiresAt)),
+                        })
                       )}
                     </div>
                   </div>
-                  {(canShare || canDelete) && <div className="opacity-0 group-hover:opacity-100 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  {(canShare || canDelete) && <div className="flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
                     {canShare && <ShareDialog emailId={email.id} emailAddress={email.address} />}
                     {canDelete && <Button
                       variant="ghost"

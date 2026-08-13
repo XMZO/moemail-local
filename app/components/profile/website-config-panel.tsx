@@ -17,10 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { readApiErrorCode } from "@/lib/api-error-client"
+import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 
 export function WebsiteConfigPanel() {
   const t = useTranslations("profile.website")
   const tCard = useTranslations("profile.card")
+  const tFormat = useTranslations("common.format")
+  const tApi = useTranslations("api")
   const [defaultRole, setDefaultRole] = useState<string>("")
   const [adminContact, setAdminContact] = useState<string>("")
   const [turnstileEnabled, setTurnstileEnabled] = useState(false)
@@ -72,16 +76,17 @@ export function WebsiteConfigPanel() {
         }),
       })
 
-      if (!res.ok) throw new Error(t("saveFailed"))
+      if (!res.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(res, "CONFIG_SAVE_FAILED") as never))
 
       toast({
         title: t("saveSuccess"),
         description: t("saveSuccess"),
       })
     } catch (error) {
+      console.error("website_config.save_failed", error)
       toast({
         title: t("saveFailed"),
-        description: error instanceof Error ? error.message : t("saveFailed"),
+        description: localizedUiErrorMessage(error, t("saveFailed")),
         variant: "destructive",
       })
     } finally {
@@ -98,7 +103,7 @@ export function WebsiteConfigPanel() {
 
       <div className="space-y-4">
         <div className="flex items-center gap-4">
-          <span className="text-sm">{t("defaultRole")}:</span>
+          <span className="text-sm">{tFormat("label", { label: t("defaultRole") })}</span>
           <Select value={defaultRole} onValueChange={setDefaultRole}>
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -112,7 +117,7 @@ export function WebsiteConfigPanel() {
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-sm">{t("adminContact")}:</span>
+          <span className="text-sm">{tFormat("label", { label: t("adminContact") })}</span>
           <div className="flex-1">
             <Input 
               value={adminContact}

@@ -23,6 +23,7 @@ import { Github, Loader2, KeyRound, User2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Turnstile } from "@/components/auth/turnstile"
 import { useRuntimeConfig } from "@/providers"
+import { readApiErrorCode } from "@/lib/api-error-client"
 
 interface TurnstileConfigProps {
   enabled: boolean
@@ -50,6 +51,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login")
   const { toast } = useToast()
   const t = useTranslations("auth.loginForm")
+  const tApi = useTranslations("api")
   const { oauth } = useRuntimeConfig()
 
   const turnstileSiteKey = turnstile?.siteKey ?? ""
@@ -122,7 +124,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
       if (result?.error) {
         toast({
           title: t("toast.loginFailed"),
-          description: result.error,
+          description: t("toast.loginFailedDesc"),
           variant: "destructive",
         })
         setLoading(false)
@@ -132,9 +134,10 @@ export function LoginForm({ turnstile }: LoginFormProps) {
 
       window.location.href = "/"
     } catch (error) {
+      console.error("auth.login_request_failed", error)
       toast({
         title: t("toast.loginFailed"),
-        description: error instanceof Error ? error.message : t("toast.registerFailedDesc"),
+        description: t("toast.registerFailedDesc"),
         variant: "destructive",
       })
       setLoading(false)
@@ -154,12 +157,11 @@ export function LoginForm({ turnstile }: LoginFormProps) {
         body: JSON.stringify({ username, password, turnstileToken }),
       })
 
-      const data = await response.json() as { error?: string }
-
       if (!response.ok) {
+        const code = await readApiErrorCode(response, "REGISTRATION_FAILED")
         toast({
           title: t("toast.registerFailed"),
-          description: data.error || t("toast.registerFailedDesc"),
+          description: tApi.has(code as never) ? tApi(code as never) : t("toast.registerFailedDesc"),
           variant: "destructive",
         })
         setLoading(false)
@@ -178,7 +180,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
       if (result?.error) {
         toast({
           title: t("toast.loginFailed"),
-          description: result.error || t("toast.autoLoginFailed"),
+          description: t("toast.autoLoginFailed"),
           variant: "destructive",
         })
         setLoading(false)
@@ -188,9 +190,10 @@ export function LoginForm({ turnstile }: LoginFormProps) {
 
       window.location.href = "/"
     } catch (error) {
+      console.error("auth.registration_request_failed", error)
       toast({
         title: t("toast.registerFailed"),
-        description: error instanceof Error ? error.message : t("toast.registerFailedDesc"),
+        description: t("toast.registerFailedDesc"),
         variant: "destructive",
       })
       setLoading(false)

@@ -1,14 +1,16 @@
 import { createDb } from "@/lib/db"
-import { messageShares, messages, emails } from "@/lib/schema"
+import { messageShares, messages } from "@/lib/schema"
 import { eq, and } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { nanoid } from "nanoid"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
+import { apiError } from "@/lib/api-response"
+import { parseShareExpiry, shareExpiresAt } from "@/lib/share-expiry"
+import { findOwnedActiveMailbox, ownedMailboxState } from "@/lib/mailbox-access"
 
 export const runtime = "nodejs"
 
-// 获取消息的所有分享链接
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string; messageId: string }> }
@@ -24,25 +26,21 @@ export async function GET(
   const db = createDb()
 
   try {
-    // 验证邮箱所有权
-    const email = await db.query.emails.findFirst({
-      where: and(eq(emails.id, emailId), eq(emails.userId, userId))
-    })
-
+    const email = await findOwnedActiveMailbox(userId, emailId)
     if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+      const state = await ownedMailboxState(userId, emailId)
+      if (state === "expired") return apiError("MAILBOX_EXPIRED", 410)
+      return apiError(state === "not_found" ? "MAILBOX_NOT_FOUND" : "MAILBOX_FORBIDDEN", state === "not_found" ? 404 : 403)
     }
 
-    // 获取消息
     const message = await db.query.messages.findFirst({
       where: and(eq(messages.id, messageId), eq(messages.emailId, emailId))
     })
 
     if (!message) {
-      return NextResponse.json({ error: "Message not found" }, { status: 404 })
+      return apiError("MESSAGE_NOT_FOUND", 404)
     }
 
-    // 获取该消息的所有分享链接
     const shares = await db.query.messageShares.findMany({
       where: eq(messageShares.messageId, messageId),
       orderBy: (messageShares, { desc }) => [desc(messageShares.createdAt)]
@@ -50,15 +48,11 @@ export async function GET(
 
     return NextResponse.json({ shares, total: shares.length })
   } catch (error) {
-    console.error("Failed to fetch message shares:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch shares" },
-      { status: 500 }
-    )
+    console.error("message_share.read_failed", error)
+    return apiError("SHARES_READ_FAILED", 500)
   }
 }
 
-// 创建新的消息分享链接
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; messageId: string }> }
@@ -74,38 +68,29 @@ export async function POST(
   const db = createDb()
 
   try {
-    // 验证邮箱所有权
-    const email = await db.query.emails.findFirst({
-      where: and(eq(emails.id, emailId), eq(emails.userId, userId))
-    })
-
+    const email = await findOwnedActiveMailbox(userId, emailId)
     if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+      const state = await ownedMailboxState(userId, emailId)
+      if (state === "expired") return apiError("MAILBOX_EXPIRED", 410)
+      return apiError(state === "not_found" ? "MAILBOX_NOT_FOUND" : "MAILBOX_FORBIDDEN", state === "not_found" ? 404 : 403)
     }
 
-    // 获取消息并验证
     const message = await db.query.messages.findFirst({
       where: and(eq(messages.id, messageId), eq(messages.emailId, emailId))
     })
 
     if (!message) {
-      return NextResponse.json({ error: "Message not found" }, { status: 404 })
+      return apiError("MESSAGE_NOT_FOUND", 404)
     }
 
-    // 解析请求体
-    const body = await request.json() as { expiresIn: number }
-    const { expiresIn } = body // expiresIn 单位为毫秒，0表示永久
+    const body = await request.json().catch(() => null) as { expiresIn?: unknown } | null
+    const expiresIn = parseShareExpiry(body?.expiresIn)
+    if (expiresIn === null) return apiError("INVALID_SHARE_EXPIRY", 400)
 
-    // 生成简短的分享token (16个字符)
     const token = nanoid(16)
 
-    // 计算过期时间
-    let expiresAt = null
-    if (expiresIn && expiresIn > 0) {
-      expiresAt = new Date(Date.now() + expiresIn)
-    }
+    const expiresAt = shareExpiresAt(expiresIn)
 
-    // 创建分享记录
     const [share] = await db.insert(messageShares).values({
       messageId,
       token,
@@ -114,11 +99,8 @@ export async function POST(
 
     return NextResponse.json(share, { status: 201 })
   } catch (error) {
-    console.error("Failed to create message share:", error)
-    return NextResponse.json(
-      { error: "Failed to create share" },
-      { status: 500 }
-    )
+    console.error("message_share.create_failed", error)
+    return apiError("SHARE_CREATE_FAILED", 500)
   }
 }
 

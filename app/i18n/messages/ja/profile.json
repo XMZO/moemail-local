@@ -17,7 +17,7 @@
     "create": "API Key を作成",
     "name": "キー名",
     "namePlaceholder": "キー名を入力",
-    "key": "API Key",
+    "key": "API キー",
     "createdAt": "作成日時",
     "copy": "コピー",
     "delete": "削除",
@@ -62,7 +62,7 @@
     "emperorLimit": "皇帝は制限なく無制限に送信できます",
     "civilianLimit": "市民は送信できません",
     "enableDescription": "有効にすると Resend を利用してメールを送信します",
-    "apiKey": "Resend API Key",
+    "apiKey": "Resend API キー",
     "apiKeyPlaceholder": "Resend API Key を入力",
     "dailyLimit": "1日の上限",
     "roleLimits": "送信機能を許可するロール",
@@ -80,7 +80,7 @@
     "description2": "この URL に新しいメール情報を含む POST リクエストを送信します",
     "description3": "データ形式を見る",
     "enable": "Webhook を有効化",
-    "url": "Webhook URL",
+    "url": "Webhook の URL",
     "urlPlaceholder": "Webhook URL を入力",
     "test": "テスト",
     "testing": "テスト中...",
@@ -96,6 +96,11 @@
       "subject": "メール件名",
       "content": "メールテキスト内容",
       "html": "メール HTML 内容"
+    },
+    "testPayload": {
+      "subject": "MoeMail Webhook テスト",
+      "content": "これは MoeMail が送信したローカライズ済みの Webhook テストメールです。",
+      "html": "<p>これは MoeMail が送信したローカライズ済みの <strong>Webhook テスト</strong>メールです。</p>"
     }
   },
   "website": {
@@ -110,9 +115,9 @@
     "turnstile": {
       "enable": "Cloudflare Turnstile を有効化",
       "enableDescription": "有効にすると、ユーザー名とパスワードでのログイン・登録に Turnstile 認証が必要になります",
-      "siteKey": "Site Key",
+      "siteKey": "サイトキー",
       "siteKeyPlaceholder": "Turnstile Site Key を入力",
-      "secretKey": "Secret Key",
+      "secretKey": "シークレットキー",
       "secretKeyPlaceholder": "Turnstile Secret Key を入力",
       "secretKeyDescription": "Cloudflare で Turnstile を作成し、必須のキーを入力してから有効化してください"
     },

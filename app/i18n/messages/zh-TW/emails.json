@@ -2,7 +2,7 @@
   "noPermission": {
     "title": "權限不足",
     "description": "你沒有權限訪問此頁面，請聯絡網站管理員",
-    "adminContact": "管理員聯絡方式",
+      "adminContact": "管理員聯絡方式：{contact}",
     "backToHome": "返回首頁",
     "needPermission": "需要公爵或更高權限才能管理 API Key",
     "contactAdmin": "請聯絡網站管理員升級你的角色"
@@ -44,19 +44,30 @@
     "create": "建立",
     "creating": "建立中...",
     "success": "郵箱建立成功",
-    "failed": "建立郵箱失敗"
+    "failed": "建立郵箱失敗",
+    "noAvailableDomains": "目前帳戶沒有可用的郵件網域",
+    "invalidName": "請輸入 1–64 位字母、數字、點、底線、加號或連字號",
+    "domainDiscarded": "只會使用 @ 前面的名稱；網域請另外選擇",
+    "randomName": "產生隨機郵箱名稱"
   },
   "messages": {
     "received": "收件匣",
     "sent": "已發送",
     "noMessages": "暫無郵件",
-    "messageCount": "封郵件",
+    "messageCount": "{count} 封郵件",
     "from": "寄件者",
     "to": "收件者",
     "subject": "主旨",
+    "noSubject": "（無主旨）",
     "date": "日期",
     "loading": "載入中...",
-    "loadingMore": "載入更多..."
+    "loadingMore": "載入更多...",
+    "quota": {
+      "receive": "剩餘收件",
+      "send": "剩餘寄件",
+      "window": "時窗 {count}",
+      "lifetime": "終身 {count}"
+    }
   },
   "send": {
     "title": "發送郵件",
@@ -67,13 +78,23 @@
     "subjectPlaceholder": "郵件主旨",
     "content": "內容",
     "contentPlaceholder": "郵件內容（支援 HTML）",
+    "requiredFields": "請填寫必填欄位：{fields}",
     "send": "發送",
     "sending": "發送中...",
     "success": "郵件發送成功",
     "failed": "發送郵件失敗",
     "dailyLimitReached": "已達每日發送上限",
     "dailyLimit": "每日限額：{count}/{max}",
-    "dailyLimitUnit": "封/天"
+    "dailyLimitUnit": "封/天",
+    "permissionDenied": "您沒有從此郵箱寄件的權限",
+    "permissionCheckFailed": "檢查寄件權限失敗",
+    "formats": {
+      "text": "純文字",
+      "html": "HTML"
+    },
+    "htmlPlaceholder": "HTML 郵件正文",
+    "htmlHelp": "可輸入 HTML 片段或完整文件；片段會在寄送前自動包裝成包含 <html> 的有效文件。",
+    "textHelp": "純文字會安全逸出，並同時寄送文字版與相容的 HTML 版。"
   },
   "messageView": {
     "loading": "載入郵件詳情...",
@@ -114,7 +135,17 @@
     "deleteFailed": "刪除失敗",
     "createSuccess": "分享連結建立成功",
     "createFailed": "建立分享連結失敗",
-    "shareButton": "分享"
+    "shareButton": "分享",
+    "custom": "自訂",
+    "customValue": "自訂時長",
+    "customUnit": "時長單位",
+    "units": {
+      "minute": "分鐘",
+      "hour": "小時",
+      "day": "天",
+      "week": "週",
+      "month": "月"
+    }
   },
   "shareMessage": {
     "title": "分享郵件",
@@ -144,7 +175,17 @@
     "deleteFailed": "刪除失敗",
     "createSuccess": "分享連結建立成功",
     "createFailed": "建立分享連結失敗",
-    "shareButton": "分享郵件"
+    "shareButton": "分享郵件",
+    "custom": "自訂",
+    "customValue": "自訂時長",
+    "customUnit": "時長單位",
+    "units": {
+      "minute": "分鐘",
+      "hour": "小時",
+      "day": "天",
+      "week": "週",
+      "month": "月"
+    }
   },
   "shared": {
     "loading": "載入中...",

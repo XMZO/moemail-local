@@ -5,6 +5,8 @@ import { eq, and, lt, or, sql, ne, isNull } from "drizzle-orm"
 import { encodeCursor, decodeCursor } from "@/lib/cursor"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
+import { apiError } from "@/lib/api-response"
+import { findOwnedActiveMailbox, ownedMailboxState } from "@/lib/mailbox-access"
 
 export const runtime = "nodejs"
 
@@ -25,29 +27,19 @@ export async function DELETE(
     const email = await db.query.emails.findFirst({
       where: and(
         eq(emails.id, id),
-        eq(emails.userId, userId)
-      )
+        eq(emails.userId, userId),
+      ),
     })
-
     if (!email) {
-      return NextResponse.json(
-        { error: "邮箱不存在或无权限删除" },
-        { status: 403 }
-      )
+      return apiError("MAILBOX_FORBIDDEN", 403)
     }
-    await db.delete(messages)
-      .where(eq(messages.emailId, id))
-
     await db.delete(emails)
-      .where(eq(emails.id, id))
+      .where(and(eq(emails.id, id), eq(emails.userId, userId)))
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Failed to delete email:', error)
-    return NextResponse.json(
-      { error: "删除邮箱失败" },
-      { status: 500 }
-    )
+    console.error("mailbox.delete_failed", error)
+    return apiError("MAILBOX_DELETE_FAILED", 500)
   }
 } 
 
@@ -72,18 +64,11 @@ export async function GET(
     const db = createDb()
     const { id } = await params
 
-    const email = await db.query.emails.findFirst({
-      where: and(
-        eq(emails.id, id),
-        eq(emails.userId, userId)
-      )
-    })
-
+    const email = await findOwnedActiveMailbox(userId, id)
     if (!email) {
-      return NextResponse.json(
-        { error: "无权限查看" },
-        { status: 403 }
-      )
+      const state = await ownedMailboxState(userId, id)
+      if (state === "expired") return apiError("MAILBOX_EXPIRED", 410)
+      return apiError(state === "not_found" ? "MAILBOX_NOT_FOUND" : "MAILBOX_FORBIDDEN", state === "not_found" ? 404 : 403)
     }
 
     const baseConditions = and(
@@ -161,10 +146,7 @@ export async function GET(
       ...(totalCount === undefined ? {} : { total: totalCount })
     })
   } catch (error) {
-    console.error('Failed to fetch messages:', error)
-    return NextResponse.json(
-      { error: "Failed to fetch messages" },
-      { status: 500 }
-    )
+    console.error("message.list_failed", error)
+    return apiError("MESSAGES_READ_FAILED", 500)
   }
 }

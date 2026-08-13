@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server"
 import { createDb } from "@/lib/db"
-import { emails, messages } from "@/lib/schema"
-import { eq } from "drizzle-orm"
-import { checkSendPermission, withUserSendLock } from "@/lib/send-permissions"
+import { messages } from "@/lib/schema"
+import {
+  completeSendQuotaReservation,
+  releaseSendQuotaReservation,
+  reserveSendQuota,
+} from "@/lib/send-permissions"
 import { authorizeRequest } from "@/lib/request-auth"
 import { PERMISSIONS } from "@/lib/permissions"
-import { outboundMessageSchema, resolveOutboundPolicy, sendOutboundMessage } from "@/lib/outbound-mail"
+import { outboundContent, outboundMessageSchema, resolveOutboundPolicy, sendOutboundMessage } from "@/lib/outbound-mail"
+import { isDomainOperationAllowed } from "@/lib/access-policies"
+import { normalizeMailboxDomain } from "@/lib/email-address"
+import { getUserAccessPolicy } from "@/lib/user-access"
+import { apiError } from "@/lib/api-response"
+import { findOwnedActiveMailbox, ownedMailboxState } from "@/lib/mailbox-access"
 
 export const runtime = "nodejs"
 
@@ -27,71 +35,86 @@ export async function POST(
     const payload = await request.json().catch(() => null)
     const parsedMessage = outboundMessageSchema.safeParse(payload)
     if (!parsedMessage.success) {
-      return NextResponse.json(
-        { error: parsedMessage.error.issues[0]?.message ?? "发件内容无效" },
-        { status: 400 }
-      )
+      return apiError("OUTBOUND_MESSAGE_INVALID", 400)
     }
 
-    const email = await db.query.emails.findFirst({
-      where: eq(emails.id, id)
-    })
+    const email = await findOwnedActiveMailbox(userId, id)
 
     if (!email) {
-      return NextResponse.json(
-        { error: "邮箱不存在" },
-        { status: 404 }
-      )
-    }
-
-    if (email.userId !== userId) {
-      return NextResponse.json(
-        { error: "无权访问此邮箱" },
-        { status: 403 }
-      )
+      const state = await ownedMailboxState(userId, id)
+      if (state === "expired") return apiError("MAILBOX_EXPIRED", 410)
+      return apiError(state === "forbidden" ? "MAILBOX_FORBIDDEN" : "MAILBOX_NOT_FOUND", state === "forbidden" ? 403 : 404)
     }
 
     const domainPolicy = await resolveOutboundPolicy(email.address)
     if (!domainPolicy || domainPolicy.outbound.mode === "disabled") {
-      return NextResponse.json(
-        { error: "该邮箱域名未启用发件" },
-        { status: 409 }
-      )
+      return apiError("OUTBOUND_DISABLED", 409)
     }
 
-    return await withUserSendLock(userId, async () => {
-      const permissionResult = await checkSendPermission(userId, false, access)
-      if (!permissionResult.canSend) {
-        return NextResponse.json(
-          { error: permissionResult.error },
-          { status: 403 }
-        )
-      }
+    const separator = email.address.lastIndexOf("@")
+    const domain = separator > 0 ? normalizeMailboxDomain(email.address.slice(separator + 1)) : null
+    if (!isDomainOperationAllowed(access, domain, "send")) {
+      return apiError("MAIL_DOMAIN_SEND_FORBIDDEN", 403)
+    }
 
-      const { message } = await sendOutboundMessage(
+    const currentAccess = await getUserAccessPolicy(userId)
+    if (!isDomainOperationAllowed(currentAccess, domain, "send")) {
+      return apiError("MAIL_DOMAIN_SEND_FORBIDDEN", 403)
+    }
+    if (!domain) return apiError("INVALID_MAIL_DOMAIN", 400)
+    const permissionResult = await reserveSendQuota(userId, email.address, currentAccess)
+    if (!permissionResult.canSend || !permissionResult.reservation) {
+      const code = permissionResult.error ?? "SEND_PERMISSION_DENIED"
+      return apiError(code, code.endsWith("QUOTA_EXCEEDED") ? 429 : 403)
+    }
+
+    // Charge before crossing the external transport boundary. If the process
+    // disappears with an unknown provider outcome, the attempt stays charged
+    // and cannot turn into a repeatable quota bypass after a lease timeout.
+    try {
+      await completeSendQuotaReservation(permissionResult.reservation)
+    } catch (error) {
+      await releaseSendQuotaReservation(permissionResult.reservation).catch(() => undefined)
+      throw error
+    }
+
+    let outboundMessage: Awaited<ReturnType<typeof sendOutboundMessage>>
+    try {
+      outboundMessage = await sendOutboundMessage(
         email.address,
         parsedMessage.data,
         domainPolicy,
       )
-      await db.insert(messages).values({
+    } catch (error) {
+      // A timeout or broken response cannot prove that the provider did not
+      // accept the message. Keep the completed charge fail-closed; the emperor
+      // can explicitly reset usage after investigating a transport incident.
+      throw error
+    }
+
+    const { message } = outboundMessage
+    const persistence = await Promise.allSettled([
+      db.insert(messages).values({
         emailId: email.id,
         fromAddress: email.address,
         toAddress: message.to,
         subject: message.subject,
-        content: "",
+        content: message.format === "text" ? message.content : "",
         type: "sent",
-        html: message.content,
+        html: outboundContent(message).html,
+      }),
+    ])
+    if (persistence.some(result => result.status === "rejected")) {
+      console.error("outbound.post_send_persistence_failed", {
+        historyStored: false,
       })
-
-      const remainingEmails = permissionResult.remainingEmails === undefined
-        ? undefined
-        : Math.max(0, permissionResult.remainingEmails - 1)
-      return NextResponse.json({
-        success: true,
-        message: "邮件发送成功",
-        remainingEmails,
-        transport: domainPolicy.outbound.mode,
-      })
+    }
+    return NextResponse.json({
+      success: true,
+      code: "OUTBOUND_MESSAGE_SENT",
+      remainingEmails: permissionResult.remainingEmails,
+      transport: domainPolicy.outbound.mode,
+      historyStored: persistence[0].status === "fulfilled",
     })
   } catch (error) {
     console.error("outbound.send.failed", {
@@ -100,9 +123,6 @@ export async function POST(
         ? String(error.code).slice(0, 100)
         : "unknown",
     })
-    return NextResponse.json(
-      { error: "发送邮件失败，请检查该域名的发件配置" },
-      { status: 502 }
-    )
+    return apiError("OUTBOUND_SEND_FAILED", 502)
   }
 }
