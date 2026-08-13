@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
+import type { Socket } from "node:net"
 import {
   cpSync,
   existsSync,
@@ -33,30 +34,15 @@ const stagedRedactionProbe = process.argv.includes("--staged-lkg-redaction")
 const verifyMaintenanceBundle = process.argv.includes("--verify-maintenance-bundle")
 const stagedRcloneSecret = "staged-rclone-secret-must-not-appear-in-setup-html"
 
-type MailDirection = "send" | "receive"
 type DomainAccessMode = "allow" | "receive" | "send" | "deny"
+type MailDirection = "send" | "receive"
 type MailQuotaRule = { limit: number; windowValue: number; windowUnit: "second" | "minute" | "hour" | "day" | "week" | "month" }
-type MailboxQuotaRule = { rolling: MailQuotaRule; lifetimeLimit: number }
-type MailQuotaPolicy = {
-  scope: "user" | "role"
-  total: MailQuotaRule
-  domains: Record<string, MailQuotaRule>
-  mailbox: MailboxQuotaRule
-  domainMailboxes: Record<string, MailboxQuotaRule>
-  mailboxes: Record<string, MailboxQuotaRule>
-}
 type RoleAccessPolicy = {
   permissions: Record<string, boolean>
   quotas: { maxActiveMailboxes: number; maxMailboxLifetimeDays: number; maxMessageBytes: number }
   domainAccess: { default: DomainAccessMode; domains: Record<string, DomainAccessMode> }
-  sendQuota: MailQuotaPolicy
-  receiveQuota: MailQuotaPolicy
 }
-
-const mailboxRule = (rollingLimit: number, lifetimeLimit: number): MailboxQuotaRule => ({
-  rolling: { limit: rollingLimit, windowValue: 1, windowUnit: "day" },
-  lifetimeLimit,
-})
+type MailQuotaAssignment = { id: string; direction: "send" | "receive"; subject: { type: "all" } | { type: "role"; role: string } | { type: "user"; userId: string }; target: { type: "all" } | { type: "domain"; domain: string } | { type: "mailbox"; address: string }; rolling: MailQuotaRule; lifetimeLimit: number; shareWithinRole: boolean; ignoreEmperor: boolean }
 
 class CookieJar {
   private readonly values = new Map<string, string>()
@@ -118,6 +104,62 @@ async function stop(child: ChildProcess) {
   if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
 }
 
+async function startSmtpSink() {
+  const messages: string[] = []
+  const sockets = new Set<Socket>()
+  const smtp = createServer(socket => {
+    sockets.add(socket)
+    socket.setEncoding("utf8")
+    socket.on("close", () => sockets.delete(socket))
+    socket.write("220 setup-http.example ESMTP\r\n")
+    let input = ""
+    let data = ""
+    let receivingData = false
+    socket.on("data", chunk => {
+      input += chunk
+      while (true) {
+        const end = input.indexOf("\r\n")
+        if (end < 0) break
+        const line = input.slice(0, end)
+        input = input.slice(end + 2)
+        if (receivingData) {
+          if (line === ".") {
+            receivingData = false
+            messages.push(data)
+            data = ""
+            socket.write("250 queued\r\n")
+          } else {
+            data += `${line}\r\n`
+          }
+        } else if (/^EHLO /iu.test(line)) {
+          socket.write("250-setup-http.example\r\n250 OK\r\n")
+        } else if (/^DATA$/iu.test(line)) {
+          receivingData = true
+          socket.write("354 end with dot\r\n")
+        } else if (/^QUIT$/iu.test(line)) {
+          socket.end("221 bye\r\n")
+        } else {
+          socket.write("250 ok\r\n")
+        }
+      }
+    })
+  })
+  await new Promise<void>((resolvePromise, reject) => {
+    smtp.once("error", reject)
+    smtp.listen(0, "127.0.0.1", resolvePromise)
+  })
+  const address = smtp.address()
+  assert.ok(address && typeof address === "object")
+  return {
+    messages,
+    port: address.port,
+    close: async () => {
+      for (const socket of sockets) socket.destroy()
+      await new Promise<void>(resolvePromise => smtp.close(() => resolvePromise()))
+    },
+  }
+}
+
 async function expireMailbox(mailboxId: string) {
   const expiresAt = new Date(Date.now() - 60_000)
   if (postgresUrl) {
@@ -177,6 +219,7 @@ async function verifyCompressedFontAsset(baseUrl: string, html: string) {
 }
 
 let server: ChildProcess | null = null
+let smtpSink: Awaited<ReturnType<typeof startSmtpSink>> | null = null
 let stdout = ""
 let stderr = ""
 let setupToken = ""
@@ -200,6 +243,7 @@ function launchServer(port: number) {
 }
 
 try {
+  smtpSink = await startSmtpSink()
   cpSync(resolve(repositoryRoot, "drizzle-local"), join(temporaryRoot, "drizzle-local"), {
     recursive: true,
   })
@@ -516,7 +560,17 @@ try {
       policies: [{
         domain: validationDomain,
         inbound: { mode: "worker" },
-        outbound: { mode: "resend", apiKey: "re_http_validation_only", fromName: null },
+        outbound: {
+          mode: "smtp",
+          host: "127.0.0.1",
+          port: smtpSink.port,
+          security: "plain",
+          username: null,
+          password: null,
+          authMethod: "auto",
+          rejectUnauthorized: true,
+          fromName: null,
+        },
       }],
     }),
   })
@@ -570,30 +624,30 @@ try {
   const accessPoliciesBody = await accessPoliciesResponse.json() as {
     policies: {
       roles: Record<string, RoleAccessPolicy>
+      mailQuotaRules: MailQuotaAssignment[]
     }
   }
-  assert.equal(accessPoliciesBody.policies.roles.emperor.sendQuota.total.limit, -1)
-  accessPoliciesBody.policies.roles.emperor.sendQuota = {
-    ...accessPoliciesBody.policies.roles.emperor.sendQuota,
-    scope: "user",
-    total: { limit: 12, windowValue: 2, windowUnit: "hour" },
-    domains: {
-      [validationDomain]: { limit: 4, windowValue: 30, windowUnit: "minute" },
-    },
-  }
+  assert.equal(accessPoliciesBody.policies.mailQuotaRules.some(rule => rule.subject.type === "role" && rule.subject.role === "emperor"), false)
+  accessPoliciesBody.policies.mailQuotaRules.push({ id: crypto.randomUUID(), direction: "send", subject: { type: "all" }, target: { type: "all" }, rolling: { limit: 100_000, windowValue: 1, windowUnit: "day" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }, { id: crypto.randomUUID(), direction: "send", subject: { type: "role", role: "emperor" }, target: { type: "all" }, rolling: { limit: 12, windowValue: 2, windowUnit: "hour" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }, { id: crypto.randomUUID(), direction: "send", subject: { type: "role", role: "emperor" }, target: { type: "domain", domain: validationDomain }, rolling: { limit: 4, windowValue: 30, windowUnit: "minute" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false })
   const saveRolePolicies = await request("/api/access-policies", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
+    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles, mailQuotaRules: accessPoliciesBody.policies.mailQuotaRules }),
   })
   assert.equal(saveRolePolicies.status, 200)
   const emperorUsage = await request("/api/access-policies/usage?role=emperor")
   assert.equal(emperorUsage.status, 200)
   const emperorUsageBody = await emperorUsage.json() as {
-    usage?: { total?: { rule?: { limit?: number } }; domains?: Array<{ domain?: string }> }
+    usage?: { rules?: Array<{ assignment?: { rolling?: { limit?: number }; target?: { type?: string; domain?: string } } }> }
   }
-  assert.equal(emperorUsageBody.usage?.total?.rule?.limit, 12)
-  assert.ok(emperorUsageBody.usage?.domains?.some(domain => domain.domain === validationDomain))
+  assert.ok(emperorUsageBody.usage?.rules?.some(rule => rule.assignment?.rolling?.limit === 12))
+  assert.ok(emperorUsageBody.usage?.rules?.some(rule => rule.assignment?.target?.domain === validationDomain))
+  const globalUsage = await request("/api/access-policies/usage?scope=global")
+  assert.equal(globalUsage.status, 200)
+  assert.equal(
+    (await globalUsage.json() as { usage?: { target?: { type?: string }; rules?: Array<{ assignment?: { rolling?: { limit?: number }; subject?: { type?: string } } }> } }).usage?.rules?.find(rule => rule.assignment?.subject?.type === "all")?.assignment?.rolling?.limit,
+    100_000,
+  )
 
   assert.ok(session.user?.id)
   const mutateEmperorAccess = await request(
@@ -605,27 +659,15 @@ try {
     },
   )
   assert.equal(mutateEmperorAccess.status, 400)
-  const mutateEmperorQuota = await request(
-    `/api/access-policies/users/${encodeURIComponent(session.user!.id!)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        permissions: {},
-        quotas: {},
-        sendQuota: {
-          total: { limit: 3, windowValue: 90, windowUnit: "second" },
-        },
-      }),
-    },
-  )
+  accessPoliciesBody.policies.mailQuotaRules.push({ id: crypto.randomUUID(), direction: "send", subject: { type: "user", userId: session.user!.id! }, target: { type: "all" }, rolling: { limit: 3, windowValue: 90, windowUnit: "second" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false })
+  const mutateEmperorQuota = await request("/api/access-policies", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailQuotaRules: accessPoliciesBody.policies.mailQuotaRules }) })
   assert.equal(mutateEmperorQuota.status, 200)
   const emperorUserUsage = await request(
     `/api/access-policies/usage?userId=${encodeURIComponent(session.user!.id!)}`,
   )
   assert.equal(emperorUserUsage.status, 200)
   assert.equal(
-    (await emperorUserUsage.json() as { usage?: { total?: { rule?: { limit?: number } } } }).usage?.total?.rule?.limit,
+    (await emperorUserUsage.json() as { usage?: { rules?: Array<{ assignment?: { rolling?: { limit?: number }; subject?: { type?: string } } }> } }).usage?.rules?.find(rule => rule.assignment?.subject?.type === "user")?.assignment?.rolling?.limit,
     3,
   )
 
@@ -648,25 +690,12 @@ try {
     default: "deny",
     domains: { [validationDomain]: "allow" },
   }
-  accessPoliciesBody.policies.roles.duke.sendQuota = {
-    ...accessPoliciesBody.policies.roles.duke.sendQuota,
-    scope: "role",
-    total: { limit: 2, windowValue: 1, windowUnit: "hour" },
-    domains: {
-      [validationDomain]: { limit: 1, windowValue: 1, windowUnit: "hour" },
-    },
-  }
-  accessPoliciesBody.policies.roles.duke.receiveQuota = {
-    ...accessPoliciesBody.policies.roles.duke.receiveQuota,
-    mailboxes: {
-      ...accessPoliciesBody.policies.roles.duke.receiveQuota.mailboxes,
-      [`domain-member@${validationDomain}`]: mailboxRule(2, 1),
-    },
-  }
+  accessPoliciesBody.policies.mailQuotaRules = accessPoliciesBody.policies.mailQuotaRules.filter(rule => !(rule.subject.type === "role" && rule.subject.role === "duke"))
+  accessPoliciesBody.policies.mailQuotaRules.push({ id: crypto.randomUUID(), direction: "send", subject: { type: "role", role: "duke" }, target: { type: "domain", domain: validationDomain }, rolling: { limit: 2, windowValue: 1, windowUnit: "hour" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }, { id: crypto.randomUUID(), direction: "receive", subject: { type: "role", role: "duke" }, target: { type: "mailbox", address: `domain-member@${validationDomain}` }, rolling: { limit: 2, windowValue: 1, windowUnit: "day" }, lifetimeLimit: 1, shareWithinRole: false, ignoreEmperor: false })
   const saveDukePolicy = await request("/api/access-policies", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
+    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles, mailQuotaRules: accessPoliciesBody.policies.mailQuotaRules }),
   })
   assert.equal(saveDukePolicy.status, 200)
   const promoteMember = await request("/api/roles/promote", {
@@ -707,6 +736,26 @@ try {
     headers.set("X-API-Key", memberApiKey as string)
     return fetch(`${baseUrl}${path}`, { ...init, headers, redirect: init.redirect ?? "manual" })
   }
+  const memberQuotaResponse = await memberRequest("/api/access-policies/me")
+  assert.equal(memberQuotaResponse.status, 200)
+  const memberQuota = await memberQuotaResponse.json() as {
+    access?: { quotas?: { maxActiveMailboxes?: number }; mailQuotaRules?: unknown[] }
+    usage?: { activeMailboxes?: number; activeApiKeys?: number; send?: unknown; receive?: unknown }
+  }
+  assert.equal(memberQuota.access?.quotas?.maxActiveMailboxes, 2)
+  assert.ok(memberQuota.access?.mailQuotaRules && memberQuota.access.mailQuotaRules.length >= 2)
+  assert.equal(memberQuota.usage?.activeMailboxes, 0)
+  assert.equal(memberQuota.usage?.activeApiKeys, 1)
+  assert.ok(memberQuota.usage?.send && memberQuota.usage.receive)
+  const memberGlobalRule = (memberQuota.access?.mailQuotaRules as MailQuotaAssignment[] | undefined)
+    ?.find(rule => rule.subject.type === "all")
+  assert.ok(memberGlobalRule)
+  const countGlobalBeforeMemberSend = await request("/api/access-policies/usage?scope=global")
+  assert.equal(countGlobalBeforeMemberSend.status, 200)
+  const globalBefore = (await countGlobalBeforeMemberSend.json() as { usage?: { allTimeCompleted?: number } }).usage?.allTimeCompleted ?? 0
+  const memberQuotaByApiKey = await memberApiRequest("/api/access-policies/me")
+  assert.equal(memberQuotaByApiKey.status, 403)
+  assert.equal((await memberQuotaByApiKey.json() as { code?: string }).code, "API_KEY_ROUTE_FORBIDDEN")
   const mailboxPayload = (name: string) => JSON.stringify({
     name,
     domain: validationDomain,
@@ -770,6 +819,72 @@ try {
   )
   assert.equal(clearUserBlock.status, 200)
 
+  const invalidRoleBlock = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scope: "roles",
+      allowedRoles: ["emperor"],
+      localPart: "invalid-role-reservation",
+      domain: validationDomain,
+    }),
+  })
+  assert.equal(invalidRoleBlock.status, 400)
+  assert.equal((await invalidRoleBlock.json() as { code?: string }).code, "INVALID_REQUEST")
+
+  const roleBlockResponse = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scope: "roles",
+      allowedRoles: ["knight"],
+      localPart: "reserved-for-knights",
+      domain: validationDomain,
+    }),
+  })
+  assert.equal(roleBlockResponse.status, 201)
+  const roleBlock = await roleBlockResponse.json() as { block?: { id?: string } }
+  assert.ok(roleBlock.block?.id)
+  const roleDeniedMember = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("reserved-for-knights"),
+  })
+  assert.equal(roleDeniedMember.status, 403)
+  assert.equal((await roleDeniedMember.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
+  const promoteMemberToKnight = await request("/api/roles/promote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: member.user!.id, roleName: "knight" }),
+  })
+  assert.equal(promoteMemberToKnight.status, 200)
+  const roleAllowedMember = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("reserved-for-knights"),
+  })
+  assert.equal(roleAllowedMember.status, 200)
+  const roleAllowedMemberMailbox = await roleAllowedMember.json() as { id: string }
+  assert.equal((await memberRequest(`/api/emails/${roleAllowedMemberMailbox.id}`, { method: "DELETE" })).status, 200)
+  const restoreMemberToDuke = await request("/api/roles/promote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: member.user!.id, roleName: "duke" }),
+  })
+  assert.equal(restoreMemberToDuke.status, 200)
+  const roleAllowedEmperor = await request("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("reserved-for-knights"),
+  })
+  assert.equal(roleAllowedEmperor.status, 200)
+  const roleAllowedMailbox = await roleAllowedEmperor.json() as { id: string }
+  assert.equal((await request(`/api/emails/${roleAllowedMailbox.id}`, { method: "DELETE" })).status, 200)
+  assert.equal((await request(
+    `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(roleBlock.block!.id!)}`,
+    { method: "DELETE" },
+  )).status, 200)
+
   const memberMailboxResponse = await memberRequest("/api/emails/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -777,6 +892,48 @@ try {
   })
   assert.equal(memberMailboxResponse.status, 200)
   const memberMailbox = await memberMailboxResponse.json() as { id: string; email: string }
+
+  const sendMultipleRecipients = await memberRequest(`/api/emails/${memberMailbox.id}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: "first-recipient@example.net; SECOND-recipient@example.net, first-recipient@example.net",
+      subject: "multiple recipient quota integration",
+      content: "multi-recipient marker",
+      format: "text",
+    }),
+  })
+  assert.equal(sendMultipleRecipients.status, 200)
+  assert.equal((await sendMultipleRecipients.json() as { remainingEmails?: number }).remainingEmails, 0)
+  const countGlobalAfterMemberSend = await request("/api/access-policies/usage?scope=global")
+  assert.equal(countGlobalAfterMemberSend.status, 200)
+  assert.equal(
+    (await countGlobalAfterMemberSend.json() as { usage?: { allTimeCompleted?: number } }).usage?.allTimeCompleted,
+    globalBefore + 2,
+  )
+  assert.equal(smtpSink.messages.length, 1)
+  assert.match(smtpSink.messages[0], /first-recipient@example\.net/iu)
+  assert.match(smtpSink.messages[0], /second-recipient@example\.net/iu)
+  const sendAfterAtomicCharge = await memberRequest(`/api/emails/${memberMailbox.id}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: "third-recipient@example.net",
+      subject: "quota overflow",
+      content: "must not reach SMTP",
+      format: "text",
+    }),
+  })
+  assert.equal(sendAfterAtomicCharge.status, 429)
+  assert.equal((await sendAfterAtomicCharge.json() as { code?: string }).code, "SEND_DOMAIN_QUOTA_EXCEEDED")
+  assert.equal(smtpSink.messages.length, 1)
+  const resetMultiRecipientCharge = await request("/api/access-policies/usage", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ direction: "send" satisfies MailDirection, role: "duke" }),
+  })
+  assert.equal(resetMultiRecipientCharge.status, 200)
+  assert.equal((await resetMultiRecipientCharge.json() as { deleted?: number }).deleted, 2)
 
   const denyMemberDomain = await request(
     `/api/access-policies/users/${encodeURIComponent(member.user!.id!)}`,
@@ -962,8 +1119,8 @@ try {
   const quotaBeforeReset = await memberApiRequest(`/api/emails/${recreatedMailbox.id}/quota`)
   assert.equal(quotaBeforeReset.status, 200)
   assert.equal(
-    (await quotaBeforeReset.json() as { receive?: { quota?: { mailbox?: { lifetimeRemaining?: number } } } })
-      .receive?.quota?.mailbox?.lifetimeRemaining,
+    (await quotaBeforeReset.json() as { receive?: { quota?: { applied?: Array<{ lifetimeRemaining?: number }> } } })
+      .receive?.quota?.applied?.find(item => item.lifetimeRemaining !== null)?.lifetimeRemaining,
     0,
   )
   const resetExactMailbox = await request("/api/access-policies/usage", {
@@ -1025,11 +1182,9 @@ try {
   assert.ok(Date.parse(customMessageShareBody.expiresAt ?? "") > Date.now())
   assert.ok(customMessageShareBody.token)
 
-  const disableMemberSendQuota = await setMemberDomainMode("allow", {
-    sendQuota: {
-      total: { limit: 0, windowValue: 45, windowUnit: "second" },
-    },
-  })
+  accessPoliciesBody.policies.mailQuotaRules = accessPoliciesBody.policies.mailQuotaRules.filter(rule => !(rule.subject.type === "user" && rule.subject.userId === member.user!.id && rule.direction === "send"))
+  accessPoliciesBody.policies.mailQuotaRules.push({ id: crypto.randomUUID(), direction: "send", subject: { type: "user", userId: member.user!.id! }, target: { type: "all" }, rolling: { limit: 0, windowValue: 45, windowUnit: "second" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false })
+  const disableMemberSendQuota = await request("/api/access-policies", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailQuotaRules: accessPoliciesBody.policies.mailQuotaRules }) })
   assert.equal(disableMemberSendQuota.status, 200)
   const disabledByUserQuota = await memberRequest(
     `/api/emails/send-permission?emailId=${encodeURIComponent(recreatedMailbox.id)}`,
@@ -1403,9 +1558,11 @@ try {
     accessDomainAndSendQuotaApis: true,
     roleToUserFourStateDomainEnforcementE2e: true,
     userSendQuotaEnforcementE2e: true,
+    multiRecipientAtomicQuotaAndSmtpE2e: true,
     sessionAndApiKeyPolicyParityE2e: true,
     atomicMailboxQuotaE2e: true,
-    globalAndUserMailboxBlocksE2e: true,
+    globalUserAndRoleMailboxBlocksE2e: true,
+    selfQuotaSummaryAndApiKeyBoundaryE2e: true,
     receiveLifetimeQuotaSurvivesRecreationE2e: true,
     emperorExactMailboxResetE2e: true,
     customAndPermanentShareExpiryE2e: true,
@@ -1425,6 +1582,7 @@ try {
   console.error(sanitized.slice(-4_000))
   throw error
 } finally {
+  await smtpSink?.close().catch(() => undefined)
   if (server) await stop(server)
   rmSync(temporaryRoot, { recursive: true, force: true })
 }

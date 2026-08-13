@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server"
 import { i18n, type Locale } from "@/i18n/config"
 import { emptyMessages, loadMessages } from "@/i18n/messages"
 import { InstantLocaleProvider } from "@/i18n/locale-provider"
+import type { CSSProperties } from "react"
 import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import { FloatMenu } from "@/components/float-menu"
@@ -142,7 +143,10 @@ export default async function LocaleLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body 
-        style={{ fontFamily: appearance.fontFamily }}
+        style={{
+          "--moemail-ui-font-family": appearance.fontFamily,
+          fontFamily: "var(--moemail-ui-font-family)",
+        } as CSSProperties}
         className={cn(
           zpix.variable,
           "font-zpix min-h-screen antialiased",

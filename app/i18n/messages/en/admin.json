@@ -12,10 +12,17 @@
   },
   "access": {
     "title": "Permissions and quotas",
-    "description": "Configure feature access, four-state domain permissions, and independent send/receive quotas. General quota 0 means unlimited; mail quota -1 means unlimited and 0 disables.",
+    "description": "Configure role and per-user feature access, domain permissions, mailbox limits, and send/receive quotas.",
+    "quotaGuide": {
+      "title": "How quotas are evaluated",
+      "general": "Role and per-user settings control permissions, domains, mailbox count, mailbox lifetime, and message size. Mail-count quotas are managed separately as rules.",
+      "mail": "A mail-count rule selects users and one address scope. -1 is unlimited, 0 blocks, and a positive value limits a rolling window.",
+      "enforcement": "Permissions and domain access are checked first. One site-wide rule may apply, plus at most one user or role rule (user first); within each layer, mailbox precedes domain, then all domains."
+    },
     "tabs": {
       "roles": "Role defaults",
       "users": "Per-user overrides",
+      "mailQuotas": "Mail quota rules",
       "blocks": "Mailbox-name blocks"
     },
     "sections": {
@@ -37,7 +44,7 @@
     "selectUserHint": "Select a user to configure overrides",
     "emperorLocked": "Emperor permissions cannot be edited",
     "emperorLockedHint": "This invariant is enforced in both the application and API; even the emperor cannot override it.",
-    "emperorQuotaEditableHint": "Emperor feature access, general quotas, and domain permissions are locked. Send and receive quotas remain configurable.",
+    "emperorQuotaEditableHint": "Emperor feature access, resource limits, and domain access are locked. Explicit emperor quota rules remain possible. A site-wide rule includes emperors unless its Ignore Emperor usage option is enabled.",
     "overrideHint": "Items without an override inherit the user's role. Permissions can be explicitly allowed or denied; quotas apply only when enabled.",
     "inherit": "Inherit",
     "allow": "Allow",
@@ -88,13 +95,17 @@
       "manage_api_key": "Manage API keys"
     },
     "quotas": {
+      "sectionHelp": "These three limits govern mailbox creation and individual inbound message size; they are not daily send/receive counters. Role values are the defaults for users in that role.",
+      "overrideHelp": "Enable a field to use a value for this user. A disabled field inherits the role value. Entering 0 explicitly means unlimited; it does not mean inherit.",
+      "overrideField": "Override {field}",
+      "inheritedValue": "Currently inherited: {value}",
       "maxActiveMailboxes": {
         "label": "Active mailbox limit",
-        "help": "0 = unlimited"
+        "help": "Maximum unexpired mailboxes owned by one user. Expired mailboxes do not consume a slot. 0 means unlimited."
       },
       "maxMailboxLifetimeDays": {
         "label": "Maximum mailbox lifetime (days)",
-        "help": "0 = unlimited"
+        "help": "Caps the lifetime selectable when creating a mailbox. 0 allows permanent mailboxes. Existing mailboxes are not shortened when this changes."
       },
       "dailyReceiveLimit": {
         "label": "Daily receive limit",
@@ -102,7 +113,7 @@
       },
       "maxMessageBytes": {
         "label": "Maximum inbound message size (bytes)",
-        "help": "0 = system hard limit of 25 MiB"
+        "help": "Counts the complete raw message, including headers, body, and encoded attachments. 0 leaves only the system hard limit of 25 MiB."
       }
     },
     "sendQuota": {
@@ -144,24 +155,63 @@
       }
     },
     "mailQuota": {
+      "title": "Mail quota rules",
+      "help": "A site-wide rule is a true pool shared by all matching users. A role rule can be per member or shared by the role. A one-user rule is always personal.",
+      "precedence": "The site-wide pool is always enforced. In addition, one user or role rule applies (user first). Within each layer: one mailbox > one domain > all domains.",
+      "independent": "Each message charges at most one site-wide pool and one user/role pool. Permissions and other resource limits remain independently enforced.",
+      "directions": { "send": "Sending", "receive": "Receiving" },
+      "subject": "Who is limited",
+      "subjects": {
+        "all": "Site-wide total",
+        "allHelp": "All matching users consume one shared total pool.",
+        "role": "Permission role",
+        "user": "One user",
+        "selectUser": "Select a user",
+        "roleValue": "Role: {role}",
+        "userValue": "User: {user}"
+      },
+      "target": "Address range",
+      "ignoreEmperor": "Ignore Emperor usage",
+      "ignoreEmperorHelp": "When enabled, emperors neither consume nor are limited by this site-wide pool. Otherwise every user is counted.",
+      "shareWithinRole": "Share the pool within this role",
+      "shareWithinRoleHelp": "When enabled, role members consume one shared pool. Otherwise each member gets an independent copy of the limit.",
+      "pools": { "global": "Site-wide shared", "role": "Role shared", "user": "Per user" },
+      "targets": {
+        "all": "All domains",
+        "allHelp": "Counts matching messages for the selected subject across every domain.",
+        "domain": "One domain",
+        "mailbox": "One mailbox",
+        "selectDomain": "Select a domain",
+        "localPart": "Mailbox name",
+        "domainValue": "Domain: {domain}",
+        "mailboxValue": "Mailbox: {address}"
+      },
+      "add": "Add rule",
+      "duplicate": "A rule for the same direction, subject, and range already exists. Edit that rule instead.",
+      "empty": "No rules for this direction. Matching users are unlimited unless another permission or resource limit denies the operation.",
       "send": {
         "title": "Send quotas",
-        "help": "Total, domain, rolling mailbox, and lifetime mailbox limits apply together.",
+        "help": "Each send consumes all applicable total, sender-domain, and full-mailbox counters. Completed sends and valid in-flight reservations both consume rolling capacity.",
         "userTitle": "Per-user send quota overrides"
       },
       "receive": {
         "title": "Receive quotas",
-        "help": "Inbound delivery is rejected when any total, domain, rolling mailbox, or lifetime mailbox limit is exhausted.",
+        "help": "Before storage, inbound delivery reserves all applicable total, recipient-domain, and full-mailbox quotas. A successful write becomes completed usage; exhaustion at any level rejects that message.",
         "userTitle": "Per-user receive quota overrides"
       },
-      "userHelp": "Unchecked values inherit the role. Any override is counted independently for this user.",
+      "userHelp": "Unchecked values inherit the role. Overriding the total or any domain total moves this user's aggregate counters out of the shared role quota. A mailbox-only override keeps aggregate sharing. Mailbox counters are always independent per user and full address.",
       "limit": "Messages",
       "every": "Every",
       "unit": "Unit",
+      "ruleHelp": "-1 = unlimited; 0 = blocked; a positive value is the maximum in the rolling period immediately preceding now. Completed usage and valid in-flight reservations both count.",
       "lifetime": "Lifetime limit",
+      "lifetimeHelp": "-1 = unlimited; 0 = blocked; a positive value is the cumulative maximum for this full mailbox since counting began. It does not recover over time; use Reset usage to clear it.",
       "total": "Total across all domains",
+      "totalHelp": "Counts every domain in this direction and applies together with domain and mailbox rules.",
       "mailboxDefault": "Default for each mailbox",
+      "mailboxDefaultHelp": "Counted separately for each user's full mailbox address. A domain-mailbox or exact-mailbox rule takes precedence when present.",
       "domains": "Per-domain limits",
+      "domainsHelp": "Without “Limit the domain total,” that domain aggregate is unlimited. Without a mailbox override, the global mailbox default remains in effect. Exact mailbox rules have the highest priority.",
       "domainTotal": "Limit the domain total",
       "domainMailbox": "Override every mailbox in this domain",
       "overrideTotal": "Override total quota",
@@ -170,8 +220,11 @@
       "overrideDomainMailbox": "Override mailboxes in this domain",
       "unlimited": "Unlimited",
       "scope": {
+        "label": "Scope for total and domain counters",
         "user": "Count each user separately",
-        "role": "Share aggregate quotas across the role"
+        "userHelp": "Each role member receives independent total and domain quotas. Mailbox quotas are already always independent.",
+        "role": "Role-shared quotas",
+        "roleHelp": "All role members consume one shared total and per-domain quota, so any member can exhaust it. Mailbox quotas remain independent per user and address."
       },
       "units": {
         "second": "second",
@@ -183,7 +236,7 @@
       },
       "exact": {
         "title": "Exact mailbox overrides",
-        "help": "Optional: set a different rolling and lifetime limit for one full mailbox address.",
+        "help": "Optional: give one full mailbox address the highest-priority rolling and lifetime limits. Removing the rule keeps historical counters; reset usage first when they must be cleared.",
         "localPart": "Mailbox name",
         "invalidLocalPart": "Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens",
         "domain": "Domain",
@@ -193,18 +246,28 @@
       },
       "usage": {
         "title": "Actual usage",
+        "help": "Current window shows completed messages. In-flight reservations also consume capacity but are listed separately. All-time usage is for audit and is not the current limit.",
+        "siteWideHint": "Inspect site-wide shared pools",
+        "empty": "The selected subject has no effective rule in this direction.",
+        "error": "Quota usage could not be read or reset. Try again.",
+        "targetPool": "{target} · {pool}",
+        "ruleLine": "{used} / {limit} in window ({pending} reserved)",
+        "ruleWithLifetime": "{used} / {limit} in window ({pending} reserved) · {lifetimeUsed} / {lifetimeLimit} lifetime",
         "aggregate": "Aggregate of per-user quotas",
         "shared": "Shared role quota",
         "individual": "Independent user quota",
         "allTime": "All-time completed",
         "window": "Current window",
+        "windowAggregate": "Current-window aggregate",
         "pending": "Reserved in-flight",
-        "domainLine": "{allTime} all-time · {completed} / {limit} in window"
+        "domainLine": "{allTime} all-time · {completed} / {limit} in window",
+        "domainAggregateLine": "{allTime} all-time · {completed} aggregate in window"
       },
       "reset": {
         "action": "Reset usage",
         "title": "Reset this quota usage?",
-        "description": "This permanently clears both rolling-window and lifetime counters for the selected direction and target. Policy limits are not changed.",
+        "description": "This permanently deletes completed usage records for the selected subject and direction without changing policy rules. Every overlapping pool backed by the same records changes too. In-flight reservations are preserved.",
+        "overlapWarning": "Reset deletes underlying completed events, so every site-wide, role, and user pool charged by those messages changes together.",
         "cancel": "Cancel",
         "confirm": "Reset counters",
         "mailboxTitle": "Reset this mailbox's usage?",
@@ -217,17 +280,24 @@
     },
     "blocks": {
       "title": "Mailbox-name blocks",
-      "help": "Block one local name globally or only for a selected user. Existing mailboxes are not deleted; new creation is denied until this entry is removed.",
+      "help": "Block a name globally, block one user, or reserve it for the emperor and selected roles. Rules affect only new mailboxes and never delete existing ones.",
       "localPart": "Mailbox name",
       "invalidLocalPart": "Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens",
       "domain": "Domain",
       "global": "Everyone",
       "user": "One user",
+      "roles": "Reserve for roles",
+      "globalHint": "No user may create it",
+      "rolesHelp": "The emperor is always allowed. Select any additional roles that may use this name; selecting none makes it emperor-only.",
       "selectUser": "Select user",
       "add": "Block",
+      "search": "Search names, users or roles as you type",
+      "noSearchResults": "No rules match your search.",
       "empty": "No mailbox names are blocked.",
       "globalScope": "Blocked for everyone",
       "userScope": "Blocked for {user}",
+      "rolesScope": "Available only to the emperor and: {roles}",
+      "emperorOnly": "Emperor",
       "deleteTitle": "Remove this mailbox-name block?",
       "deleteDescription": "{address} can be created again by the affected users after removal.",
       "cancel": "Cancel",
@@ -242,7 +312,7 @@
     },
     "success": {
       "fontTitle": "Site-wide font saved",
-      "fontDescription": "Refresh the page to apply it to all server-rendered pages.",
+      "fontDescription": "The new font now applies to all UI text and editors and will persist across page loads.",
       "advancedSavedTitle": "Advanced appearance saved",
       "advancedSavedDescription": "Refresh the page to apply it. Use safe appearance mode if the page becomes unusable.",
       "advancedClearedTitle": "Advanced appearance cleared",
@@ -285,6 +355,8 @@
       "customJsPlaceholder": "// Runs in the browser\nconsole.log(\"MoeMail custom appearance\")",
       "safeMode": "If custom content makes the page unusable, append ?safe-appearance=1 to any page URL (or &safe-appearance=1 when a query already exists). That request skips all advanced injection so you can clear or fix it here.",
       "limits": "Each input is limited to 128 KiB and the total to 256 KiB. Content is stored in the current database and included in database backups.",
+      "byteCount": "{used} / {maximum} bytes",
+      "totalByteCount": "Live total: {used} / {maximum} bytes",
       "clear": "Clear and disable",
       "save": "Save advanced appearance",
       "clearTitle": "Clear all advanced appearance?",

@@ -59,8 +59,10 @@ const config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ['var(--font-zpix)'],
-        zpix: ['var(--font-zpix)'],
+        sans: ['var(--moemail-ui-font-family, var(--font-zpix))'],
+        mono: ['var(--moemail-ui-font-family, var(--font-zpix))'],
+        serif: ['var(--moemail-ui-font-family, var(--font-zpix))'],
+        zpix: ['var(--moemail-ui-font-family, var(--font-zpix))'],
       },
       keyframes: {
         "accordion-down": {

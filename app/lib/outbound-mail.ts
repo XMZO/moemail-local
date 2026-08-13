@@ -8,13 +8,48 @@ import {
 import { normalizeMailboxAddress, normalizeMailboxDomain } from "./email-address"
 import { htmlToPlainText } from "./mail-content"
 
+export const MAX_OUTBOUND_RECIPIENTS = 50
+
+const outboundRecipientsSchema = z.union([
+  z.string().max(20_000, "RECIPIENTS_TOO_LONG"),
+  z.array(z.string().max(320, "RECIPIENT_TOO_LONG")).max(MAX_OUTBOUND_RECIPIENTS, "TOO_MANY_RECIPIENTS"),
+]).transform((value, ctx) => {
+  const parts = (Array.isArray(value) ? value : [value])
+    .flatMap(item => item.split(/[;,]/u))
+    .map(item => item.trim())
+
+  if (parts.length === 0 || parts.some(part => part.length === 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_REQUIRED" })
+    return z.NEVER
+  }
+
+  const recipients: string[] = []
+  const seen = new Set<string>()
+  for (const part of parts) {
+    if (part.length > 320 || /[\r\n]/u.test(part)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_INVALID" })
+      return z.NEVER
+    }
+    const recipient = normalizeMailboxAddress(part)
+    if (!recipient) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_INVALID" })
+      return z.NEVER
+    }
+    if (!seen.has(recipient)) {
+      seen.add(recipient)
+      recipients.push(recipient)
+    }
+  }
+
+  if (recipients.length > MAX_OUTBOUND_RECIPIENTS) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TOO_MANY_RECIPIENTS" })
+    return z.NEVER
+  }
+  return recipients
+})
+
 export const outboundMessageSchema = z.object({
-  to: z.string()
-    .trim()
-    .min(3, "RECIPIENT_REQUIRED")
-    .max(320, "RECIPIENT_TOO_LONG")
-    .refine(value => !/[\r\n]/.test(value), "RECIPIENT_INVALID")
-    .refine(value => Boolean(normalizeMailboxAddress(value)), "RECIPIENT_INVALID"),
+  to: outboundRecipientsSchema,
   subject: z.string()
     .trim()
     .min(1, "SUBJECT_REQUIRED")
@@ -77,7 +112,7 @@ async function sendWithResend(
     },
     body: JSON.stringify({
       from,
-      to: [message.to],
+      to: message.to,
       subject: message.subject,
       ...content,
     }),

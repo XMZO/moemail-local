@@ -1,20 +1,27 @@
-import { and, eq, inArray } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { createDb, getDatabaseDriver, getPostgresPool, getSqlite } from "./db"
 import {
-  normalizeMailboxAddress,
   normalizeMailboxDomain,
   normalizeMailboxLocalPart,
 } from "./email-address"
 import { mailboxNameBlocks } from "./schema"
-import { mailboxUserBlockScope } from "./mailbox-creation"
+import type { Role } from "./permissions"
+import {
+  GLOBAL_MAILBOX_BLOCK_SCOPE,
+  RESERVABLE_MAILBOX_ROLES,
+  mailboxBlockAllowedRoles,
+  mailboxRoleBlockScope,
+  mailboxUserBlockScope,
+} from "./mailbox-block-scope"
 
-export const GLOBAL_MAILBOX_BLOCK_SCOPE = "global"
+export { GLOBAL_MAILBOX_BLOCK_SCOPE, mailboxBlockAllowedRoles } from "./mailbox-block-scope"
 
-export type MailboxNameBlockScope = "global" | "user"
+export type MailboxNameBlockScope = "global" | "user" | "roles"
 
 export interface MailboxNameBlockInput {
   scope: MailboxNameBlockScope
   userId?: string | null
+  allowedRoles?: Role[]
   localPart: string
   domain: string
 }
@@ -31,33 +38,26 @@ function normalizeInput(input: MailboxNameBlockInput) {
     ? input.userId
     : null
   if (input.scope === "user" && !userId) throw new Error("MAILBOX_BLOCK_USER_REQUIRED")
+  const allowedRoles = input.scope === "roles"
+    ? RESERVABLE_MAILBOX_ROLES.filter(role => input.allowedRoles?.includes(role))
+    : []
   return {
     localPart,
     domain,
     userId,
-    scopeKey: userId ? userScopeKey(userId) : GLOBAL_MAILBOX_BLOCK_SCOPE,
+    scopeKey: input.scope === "roles"
+      ? mailboxRoleBlockScope(allowedRoles)
+      : userId ? userScopeKey(userId) : GLOBAL_MAILBOX_BLOCK_SCOPE,
+    allowedRoles,
   }
 }
 
-export async function findMailboxNameBlock(userId: string, addressValue: unknown) {
-  const address = normalizeMailboxAddress(addressValue)
-  if (!address) return null
-  const separator = address.lastIndexOf("@")
-  const [localPart, domain] = [address.slice(0, separator), address.slice(separator + 1)]
-  return createDb().query.mailboxNameBlocks.findFirst({
-    where: and(
-      eq(mailboxNameBlocks.localPart, localPart),
-      eq(mailboxNameBlocks.domain, domain),
-      inArray(mailboxNameBlocks.scopeKey, [GLOBAL_MAILBOX_BLOCK_SCOPE, userScopeKey(userId)]),
-    ),
-  })
-}
-
 export async function listMailboxNameBlocks() {
-  return createDb().query.mailboxNameBlocks.findMany({
+  const blocks = await createDb().query.mailboxNameBlocks.findMany({
     with: { user: { columns: { id: true, name: true, username: true, email: true } } },
     orderBy: (block, { desc }) => [desc(block.createdAt), desc(block.id)],
   })
+  return blocks.map(block => ({ ...block, allowedRoles: mailboxBlockAllowedRoles(block.scopeKey) }))
 }
 
 export async function createMailboxNameBlock(input: MailboxNameBlockInput) {
@@ -71,6 +71,12 @@ export async function createMailboxNameBlock(input: MailboxNameBlockInput) {
         const target = getSqlite().prepare(`SELECT 1 FROM user WHERE id = ? LIMIT 1`)
           .get(normalized.userId)
         if (!target) throw new Error("USER_NOT_FOUND")
+      }
+      if (input.scope === "roles") {
+        getSqlite().prepare(`
+          DELETE FROM mailbox_name_block
+          WHERE local_part = ? AND domain = ? AND scope_key LIKE 'roles:%'
+        `).run(normalized.localPart, normalized.domain)
       }
       getSqlite().prepare(`
         INSERT OR IGNORE INTO mailbox_name_block
@@ -121,6 +127,12 @@ export async function createMailboxNameBlock(input: MailboxNameBlockInput) {
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
         ["moemail:mailbox-block:global"],
       )
+    }
+    if (input.scope === "roles") {
+      await client.query(`
+        DELETE FROM mailbox_name_block
+        WHERE local_part = $1 AND domain = $2 AND scope_key LIKE 'roles:%'
+      `, [normalized.localPart, normalized.domain])
     }
     await client.query(`
       INSERT INTO mailbox_name_block

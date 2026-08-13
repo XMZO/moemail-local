@@ -12,10 +12,17 @@
   },
   "access": {
     "title": "权限与配额",
-    "description": "配置功能权限、四态域名权限以及独立的收发额度。常规额度 0 表示不限；收发额度 -1 表示不限、0 表示禁止。",
+    "description": "配置角色和单用户的功能权限、域名权限、邮箱限制与收发额度。",
+    "quotaGuide": {
+      "title": "额度怎么计算",
+      "general": "角色和单用户设置控制功能权限、域名、邮箱数量、邮箱有效期和邮件大小；收发封数由独立的额度规则管理。",
+      "mail": "每条收发额度规则选择作用对象和一个地址范围。-1 表示不限，0 表示禁止，正数表示滚动时间窗口内的封数上限。",
+      "enforcement": "系统先检查功能权限和域名权限，再检查一条全站共享规则，并在单用户与权限组规则中最多再选一条（单用户优先）；每层内单邮箱优先于单域名，单域名优先于全部域名。"
+    },
     "tabs": {
       "roles": "角色默认值",
       "users": "单用户覆盖",
+      "mailQuotas": "收发额度规则",
       "blocks": "邮箱名黑名单"
     },
     "sections": {
@@ -37,7 +44,7 @@
     "selectUserHint": "选择一个用户后设置覆盖值",
     "emperorLocked": "皇帝权限不可编辑",
     "emperorLockedHint": "这是应用与后端 API 同时强制的系统不变量，包括皇帝本人也不能修改。",
-    "emperorQuotaEditableHint": "皇帝的功能权限、常规额度和域名权限由系统锁定；收件与发件额度仍可配置。",
+    "emperorQuotaEditableHint": "皇帝的功能权限、资源限制和域名权限由系统锁定；仍可用明确指向皇帝的额度规则限制。全站额度是否包含皇帝由规则的“忽略皇帝用量”开关决定。",
     "overrideHint": "未覆盖的项继续继承用户角色。权限可明确允许或拒绝；额度仅在启用后覆盖。",
     "inherit": "继承",
     "allow": "允许",
@@ -88,13 +95,17 @@
       "manage_api_key": "管理 API Key"
     },
     "quotas": {
+      "sectionHelp": "这三项控制邮箱创建和单封入站邮件，不是每日收发封数。角色值会成为该角色用户的默认值。",
+      "overrideHelp": "勾选后才使用此用户的数值；未勾选时继续使用角色值。输入 0 是明确设置为不限，并不等于继承。",
+      "overrideField": "覆盖{field}",
+      "inheritedValue": "当前继承值：{value}",
       "maxActiveMailboxes": {
         "label": "活动邮箱上限",
-        "help": "0 = 不限"
+        "help": "同一用户同时未过期的邮箱数量上限；已过期邮箱不占名额。0 表示不限。"
       },
       "maxMailboxLifetimeDays": {
         "label": "邮箱最长有效期（天）",
-        "help": "0 = 不限"
+        "help": "限制新建邮箱可选择的有效期；0 允许永久邮箱。修改后不会缩短已有邮箱。"
       },
       "dailyReceiveLimit": {
         "label": "每日收件数",
@@ -102,7 +113,7 @@
       },
       "maxMessageBytes": {
         "label": "单封收件大小上限（字节）",
-        "help": "0 = 仅受系统 25 MiB 硬上限"
+        "help": "按包含邮件头、正文和编码后附件的原始邮件总字节数计算；0 表示仅受系统 25 MiB 硬上限。"
       }
     },
     "sendQuota": {
@@ -144,24 +155,63 @@
       }
     },
     "mailQuota": {
+      "title": "收发额度规则",
+      "help": "全站规则是真正由所有匹配用户共用的总额度；权限组规则可选择按用户独立或由组内共享；单用户规则始终独立。",
+      "precedence": "全站总额度始终叠加检查；其外再选一条单用户或权限组规则（单用户优先）。每一层内：单邮箱 > 单域名 > 全部域名。",
+      "independent": "每封邮件最多扣一个全站池和一个用户/权限组池。功能权限、域名访问、邮箱数量、有效期和邮件大小限制仍独立生效。",
+      "directions": { "send": "发件", "receive": "收件" },
+      "subject": "限制对象",
+      "subjects": {
+        "all": "全站总额度",
+        "allHelp": "所有匹配用户共同消耗同一个总额度池。",
+        "role": "权限组",
+        "user": "单用户",
+        "selectUser": "选择用户",
+        "roleValue": "权限组：{role}",
+        "userValue": "用户：{user}"
+      },
+      "target": "地址范围",
+      "ignoreEmperor": "忽略皇帝用量",
+      "ignoreEmperorHelp": "勾选后皇帝不受此全站池限制，也不会消耗它；不勾选则全部用户都计入。",
+      "shareWithinRole": "权限组成员共享额度池",
+      "shareWithinRoleHelp": "勾选后组内成员共同消耗此额度；不勾选则每位成员各有一份相同额度。",
+      "pools": { "global": "全站共享", "role": "权限组共享", "user": "用户独立" },
+      "targets": {
+        "all": "全部域名",
+        "allHelp": "统计所选对象在全部域名中符合该收发方向的邮件。",
+        "domain": "单域名",
+        "mailbox": "单邮箱",
+        "selectDomain": "选择域名",
+        "localPart": "邮箱名",
+        "domainValue": "域名：{domain}",
+        "mailboxValue": "邮箱：{address}"
+      },
+      "add": "添加规则",
+      "duplicate": "相同收发方向、对象和地址范围的规则已经存在，请直接编辑现有规则。",
+      "empty": "这个收发方向尚无规则；匹配用户默认不限，但其他权限或资源限制仍可能拒绝操作。",
       "send": {
         "title": "发件额度",
-        "help": "总额度、域名额度、单邮箱滚动额度和单邮箱生命周期额度同时生效。",
+        "help": "每次发件都会同时占用适用的总量、发件域名和该完整邮箱的计数；已完成和仍有效的发送中预留都会占用滚动额度。",
         "userTitle": "用户发件额度覆盖"
       },
       "receive": {
         "title": "收件额度",
-        "help": "总额度、域名额度、单邮箱滚动额度或生命周期额度任一耗尽时，入站投递都会被拒绝。",
+        "help": "入站邮件会在写入前预留适用的总量、收件域名和完整邮箱额度；写入成功后计为已完成，任一层级耗尽都会拒绝该封邮件。",
         "userTitle": "用户收件额度覆盖"
       },
-      "userHelp": "未勾选的值继承角色；一旦设置任一覆盖，该方向的额度会为此用户独立计算。",
+      "userHelp": "未勾选的值继承角色。覆盖总额度或任一域名总额度后，该用户的总量与域名计数会脱离角色共享额度；仅覆盖单邮箱规则时，角色总量仍照常共享。单邮箱计数始终按具体用户和完整地址独立。",
       "limit": "封数",
       "every": "每",
       "unit": "单位",
+      "ruleHelp": "-1 = 不限；0 = 禁止；正数 = 紧邻当前时刻的滚动窗口内最多允许的封数。已完成和仍有效的进行中预留都会计入。",
       "lifetime": "生命周期上限",
+      "lifetimeHelp": "-1 = 不限；0 = 禁止；正数 = 此完整邮箱从开始计数以来累计允许的封数，不会随时间恢复。可用“重置用量”清零。",
       "total": "所有域名的总额度",
+      "totalHelp": "统计该收发方向的所有域名，并与域名和单邮箱规则同时生效。",
       "mailboxDefault": "每个邮箱的默认额度",
+      "mailboxDefaultHelp": "按每个用户的完整邮箱地址分别计数。存在域名邮箱规则或精确邮箱规则时，更具体的规则优先。",
       "domains": "单域名额度",
+      "domainsHelp": "未勾选“限制该域名总量”时，该域名总量不限；未勾选邮箱覆盖时继续使用全局单邮箱默认值。精确邮箱覆盖优先级最高。",
       "domainTotal": "限制该域名总量",
       "domainMailbox": "覆盖该域名下每个邮箱",
       "overrideTotal": "覆盖总额度",
@@ -170,8 +220,11 @@
       "overrideDomainMailbox": "覆盖该域名下的邮箱额度",
       "unlimited": "不限",
       "scope": {
+        "label": "总量与域名计数范围",
         "user": "每个用户分别计算",
-        "role": "角色成员共享聚合额度"
+        "userHelp": "每位角色成员拥有独立的总额度和域名额度；单邮箱额度本来就始终独立。",
+        "role": "角色共享额度",
+        "roleHelp": "所有角色成员共同消耗同一份总额度和域名额度；任一成员都可能用完共享额度。单邮箱额度仍按用户和地址独立。"
       },
       "units": {
         "second": "秒",
@@ -183,7 +236,7 @@
       },
       "exact": {
         "title": "精确邮箱覆盖",
-        "help": "可选：为某个完整邮箱地址单独设置滚动上限和生命周期上限。",
+        "help": "可选：为某个完整邮箱地址设置最高优先级的滚动与生命周期上限。移除规则不会删除历史计数；需要清零时请先重置用量。",
         "localPart": "邮箱名",
         "invalidLocalPart": "请输入 1–64 位字母、数字、点、下划线、加号或连字符",
         "domain": "域名",
@@ -193,18 +246,28 @@
       },
       "usage": {
         "title": "实际用量",
+        "help": "当前窗口显示已完成数量；“进行中预留”也会占用额度但单独列出。历史数量仅供审计，不代表当前限制。",
+        "siteWideHint": "统计全站共享额度池",
+        "empty": "所选对象在这个方向没有有效规则。",
+        "error": "读取或重置额度用量失败，请稍后重试。",
+        "targetPool": "范围 {target} · 计数池 {pool}",
+        "ruleLine": "窗口 {used} / {limit}（预留 {pending}）",
+        "ruleWithLifetime": "窗口 {used} / {limit}（预留 {pending}）· 累计 {lifetimeUsed} / {lifetimeLimit}",
         "aggregate": "按用户额度汇总",
         "shared": "角色共享额度",
         "individual": "用户独立额度",
         "allTime": "历史已完成",
         "window": "当前窗口",
+        "windowAggregate": "当前窗口汇总",
         "pending": "进行中预留",
-        "domainLine": "历史 {allTime} · 窗口 {completed} / {limit}"
+        "domainLine": "历史 {allTime} · 窗口 {completed} / {limit}",
+        "domainAggregateLine": "历史 {allTime} · 窗口汇总 {completed}"
       },
       "reset": {
         "action": "重置用量",
         "title": "重置该额度用量？",
-        "description": "这会永久清除所选收发方向与目标的滚动窗口和生命周期计数，但不会修改额度规则。",
+        "description": "这会永久清除所选对象在该收发方向的已完成用量记录，不会修改额度规则。相同记录参与的所有重叠额度池都会同步变化；进行中的预留不会删除。",
+        "overlapWarning": "重置会删除底层已完成记录，因此同一邮件参与的全站、权限组和用户额度都会同步变化。",
         "cancel": "取消",
         "confirm": "重置计数",
         "mailboxTitle": "重置这个邮箱的用量？",
@@ -217,17 +280,24 @@
     },
     "blocks": {
       "title": "邮箱名黑名单",
-      "help": "可以在全站禁止某个邮箱名，或只禁止某个用户使用。不会删除已有邮箱；清除规则前无法再次创建。",
+      "help": "可全站禁止、只禁止单个用户，或将名称保留给皇帝和选中的角色。规则只约束新建，不会删除已有邮箱。",
       "localPart": "邮箱名",
       "invalidLocalPart": "请输入 1–64 位字母、数字、点、下划线、加号或连字符",
       "domain": "域名",
       "global": "所有用户",
       "user": "单个用户",
+      "roles": "保留给角色",
+      "globalHint": "任何用户都不能新建",
+      "rolesHelp": "皇帝始终允许；勾选还可使用该名称的角色。不勾选任何角色时仅皇帝可用。",
       "selectUser": "选择用户",
       "add": "加入黑名单",
+      "search": "实时搜索邮箱名、用户或角色",
+      "noSearchResults": "没有符合搜索条件的规则。",
       "empty": "当前没有被禁止的邮箱名。",
       "globalScope": "所有用户均禁止",
       "userScope": "仅禁止 {user}",
+      "rolesScope": "仅皇帝和以下角色可用：{roles}",
+      "emperorOnly": "皇帝",
       "deleteTitle": "移除该邮箱名黑名单？",
       "deleteDescription": "移除后，受影响用户可再次创建 {address}。",
       "cancel": "取消",
@@ -242,7 +312,7 @@
     },
     "success": {
       "fontTitle": "全站字体已保存",
-      "fontDescription": "刷新页面后，所有服务端渲染页面都会使用新字体。",
+      "fontDescription": "新字体已应用到全部界面文字与编辑框；后续页面加载会继续使用。",
       "advancedSavedTitle": "高级外观已保存",
       "advancedSavedDescription": "刷新页面后生效；若页面异常，可使用安全外观模式。",
       "advancedClearedTitle": "高级外观已清空",
@@ -285,6 +355,8 @@
       "customJsPlaceholder": "// 在浏览器中执行\nconsole.log(\"MoeMail custom appearance\")",
       "safeMode": "如果自定义内容导致页面无法操作，在任意页面 URL 后添加 ?safe-appearance=1（已有参数时使用 &safe-appearance=1）。该次请求会跳过全部高级注入，再进入这里清空或修正。",
       "limits": "每个输入最多 128 KiB，合计最多 256 KiB。内容保存在当前数据库，备份数据库时会一并保存。",
+      "byteCount": "{used} / {maximum} 字节",
+      "totalByteCount": "实时合计：{used} / {maximum} 字节",
       "clear": "清空并禁用",
       "save": "保存高级外观",
       "clearTitle": "清空全部高级外观？",

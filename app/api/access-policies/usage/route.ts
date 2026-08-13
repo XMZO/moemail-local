@@ -10,6 +10,7 @@ import { authorizeRequest } from "@/lib/request-auth"
 import { users } from "@/lib/schema"
 import {
   getRoleMailQuotaUsage,
+  getGlobalMailQuotaUsage,
   getUserMailQuotaUsage,
   resetMailQuotaUsage,
 } from "@/lib/send-permissions"
@@ -38,8 +39,16 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams
     const role = params.get("role")
     const userId = params.get("userId")
+    const scope = params.get("scope")
     const direction = params.get("direction") === "receive" ? "receive" : "send"
     const policies = await getAccessPolicies()
+    if (scope === "global") {
+      const access = {
+        ...resolveRoleAccessPolicy(policies, ROLES.CIVILIAN),
+        mailQuotaRules: policies.mailQuotaRules.filter(rule => rule.subject.type === "all"),
+      }
+      return Response.json({ usage: await getGlobalMailQuotaUsage(access, direction) }, { headers })
+    }
     if (role && validRoles.has(role as Role)) {
       const roleName = role as Role
       const access = resolveRoleAccessPolicy(policies, roleName)
@@ -70,6 +79,7 @@ export async function DELETE(request: Request) {
   if (!authorization.ok) return authorization.response
   const payload = await request.json().catch(() => null) as {
     direction?: unknown
+    all?: unknown
     userId?: unknown
     role?: unknown
     mailboxAddress?: unknown
@@ -77,14 +87,16 @@ export async function DELETE(request: Request) {
   if (
     !payload
     || (payload.direction !== "send" && payload.direction !== "receive")
+    || (payload.all !== undefined && typeof payload.all !== "boolean")
     || (payload.userId !== undefined && typeof payload.userId !== "string")
     || (payload.role !== undefined && !validRoles.has(payload.role as Role))
     || (payload.mailboxAddress !== undefined && typeof payload.mailboxAddress !== "string")
-    || (!payload.userId && !payload.role)
+    || ([payload.all === true, Boolean(payload.userId), Boolean(payload.role)].filter(Boolean).length !== 1)
   ) return apiError("INVALID_REQUEST", 400, { headers })
   try {
     const deleted = await resetMailQuotaUsage({
       direction: payload.direction,
+      all: payload.all === true,
       userId: payload.userId as string | undefined,
       role: payload.role as Role | undefined,
       mailboxAddress: payload.mailboxAddress as string | undefined,

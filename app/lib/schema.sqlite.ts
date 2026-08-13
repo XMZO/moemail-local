@@ -80,6 +80,8 @@ export const sendQuotaEvents = sqliteTable("send_quota_event", {
   direction: text("direction", { enum: ["send", "receive"] }).notNull().default("send"),
   senderDomain: text("sender_domain").notNull(),
   mailboxAddress: text("mailbox_address").notNull().default(""),
+  globalRuleId: text("global_rule_id"),
+  scopedRuleId: text("scoped_rule_id"),
   status: text("status", { enum: ["reserved", "sent"] }).notNull().default("reserved"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
@@ -94,6 +96,9 @@ export const sendQuotaEvents = sqliteTable("send_quota_event", {
   index("send_quota_event_user_direction_mailbox_created_idx").on(table.userId, table.direction, table.mailboxAddress, table.createdAt),
   index("send_quota_event_user_created_idx").on(table.userId, table.createdAt),
   index("send_quota_event_role_created_idx").on(table.policyRole, table.createdAt),
+  index("send_quota_event_global_rule_created_idx").on(table.globalRuleId, table.createdAt),
+  index("send_quota_event_scoped_rule_created_idx").on(table.scopedRuleId, table.createdAt),
+  index("send_quota_event_scoped_rule_user_created_idx").on(table.scopedRuleId, table.userId, table.createdAt),
   check("send_quota_event_status_check", sql`${table.status} IN ('reserved', 'sent')`),
   check("send_quota_event_direction_check", sql`${table.direction} IN ('send', 'receive')`),
   check("send_quota_event_role_check", sql`${table.policyRole} IN ('emperor', 'duke', 'knight', 'civilian')`),

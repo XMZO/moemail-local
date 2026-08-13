@@ -75,7 +75,7 @@ try {
 
   const migrated = sqlite.prepare(`
     SELECT id, user_id, quota_subject, policy_role, direction, sender_domain,
-      mailbox_address, status, created_at, reservation_expires_at, completed_at
+      mailbox_address, global_rule_id, scoped_rule_id, status, created_at, reservation_expires_at, completed_at
     FROM send_quota_event WHERE id = ?
   `).get("legacy-event") as Record<string, unknown>
   assert.deepEqual(migrated, {
@@ -86,6 +86,8 @@ try {
     direction: "send",
     sender_domain: "legacy.example",
     mailbox_address: "",
+    global_rule_id: null,
+    scoped_rule_id: null,
     status: "sent",
     created_at: 1_786_560_000_000,
     reservation_expires_at: 1_786_560_060_000,
@@ -106,6 +108,9 @@ try {
     "send_quota_event_subject_direction_created_idx",
     "send_quota_event_subject_direction_domain_created_idx",
     "send_quota_event_user_direction_mailbox_created_idx",
+    "send_quota_event_global_rule_created_idx",
+    "send_quota_event_scoped_rule_created_idx",
+    "send_quota_event_scoped_rule_user_created_idx",
   ]) assert(indexes.has(name), `missing migrated index: ${name}`)
 
   assert.throws(() => sqlite?.prepare(`

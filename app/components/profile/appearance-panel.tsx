@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { AlertTriangle, Code2, RotateCcw, Save, ShieldAlert, Trash2, Type } from "lucide-react"
-import { useTranslations } from "next-intl"
+import { useFormatter, useTranslations } from "next-intl"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import { readApiErrorCode } from "@/lib/api-error-client"
 import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
+import { MAX_APPEARANCE_FRAGMENT_BYTES, MAX_APPEARANCE_TOTAL_BYTES } from "@/lib/appearance-values"
 
 const presets = [
   { key: "pixel", value: "var(--font-zpix), sans-serif" },
@@ -45,6 +46,7 @@ interface AppearanceResponse {
 type PendingAdvancedAction = "save" | "clear" | null
 
 export function AppearancePanel({ allowAdvanced = false }: { allowAdvanced?: boolean }) {
+  const format = useFormatter()
   const t = useTranslations("admin.appearance")
   const tApi = useTranslations("api")
   const [fontFamily, setFontFamily] = useState("")
@@ -62,6 +64,18 @@ export function AppearancePanel({ allowAdvanced = false }: { allowAdvanced?: boo
   const [error, setError] = useState("")
   const { toast } = useToast()
   const canEditAdvanced = allowAdvanced && advancedEditable
+  const advancedBytes = useMemo(() => {
+    const encoder = new TextEncoder()
+    const fragments = {
+      customCss: encoder.encode(customCss).byteLength,
+      headHtml: encoder.encode(headHtml).byteLength,
+      bodyEndHtml: encoder.encode(bodyEndHtml).byteLength,
+      customJs: encoder.encode(customJs).byteLength,
+    }
+    return { fragments, total: Object.values(fragments).reduce((sum, value) => sum + value, 0) }
+  }, [bodyEndHtml, customCss, customJs, headHtml])
+  const advancedTooLarge = advancedBytes.total > MAX_APPEARANCE_TOTAL_BYTES
+    || Object.values(advancedBytes.fragments).some(value => value > MAX_APPEARANCE_FRAGMENT_BYTES)
 
   const applyAdvanced = useCallback((body: AppearanceResponse) => {
     setAdvancedEnabled(Boolean(body.advancedEnabled))
@@ -102,6 +116,7 @@ export function AppearancePanel({ allowAdvanced = false }: { allowAdvanced?: boo
       const body = await response.json() as AppearanceResponse
       if (!response.ok || !body.fontFamily) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "APPEARANCE_SAVE_FAILED") as never))
       setFontFamily(body.fontFamily)
+      document.body.style.setProperty("--moemail-ui-font-family", body.fontFamily)
       toast({ title: t("success.fontTitle"), description: t("success.fontDescription") })
     } catch (caught) {
       console.error("appearance.font_save_failed", caught)
@@ -179,22 +194,23 @@ export function AppearancePanel({ allowAdvanced = false }: { allowAdvanced?: boo
 
                 <div className="flex items-center justify-between gap-4 rounded border p-3"><div><Label>{t("advanced.enabled")}</Label><p className="text-xs text-muted-foreground">{t("advanced.enabledDescription")}</p></div><Switch checked={advancedEnabled} onCheckedChange={setAdvancedEnabled} disabled={advancedSaving} /></div>
 
-                <div className="space-y-2"><Label>{t("advanced.customCss")}</Label><Textarea value={customCss} onChange={event => setCustomCss(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t.raw("advanced.customCssPlaceholder")} className="min-h-44 resize-y font-mono text-xs leading-5" /><p className="text-xs text-muted-foreground">{t("advanced.customCssHelp")}</p></div>
+                <div className="space-y-2"><Label>{t("advanced.customCss")}</Label><Textarea value={customCss} onChange={event => setCustomCss(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t.raw("advanced.customCssPlaceholder")} className="min-h-44 resize-y font-mono text-xs leading-5" /><div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{t("advanced.customCssHelp")}</span><span className={advancedBytes.fragments.customCss > MAX_APPEARANCE_FRAGMENT_BYTES ? "text-destructive" : undefined}>{t("advanced.byteCount", { used: format.number(advancedBytes.fragments.customCss), maximum: format.number(MAX_APPEARANCE_FRAGMENT_BYTES) })}</span></div></div>
 
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="space-y-2"><Label>{t("advanced.headHtml")}</Label><Textarea value={headHtml} onChange={event => setHeadHtml(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t.raw("advanced.headHtmlPlaceholder")} className="min-h-40 resize-y font-mono text-xs leading-5" /></div>
-                  <div className="space-y-2"><Label>{t("advanced.bodyEndHtml")}</Label><Textarea value={bodyEndHtml} onChange={event => setBodyEndHtml(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t.raw("advanced.bodyEndHtmlPlaceholder")} className="min-h-40 resize-y font-mono text-xs leading-5" /></div>
+                  <div className="space-y-2"><Label>{t("advanced.headHtml")}</Label><Textarea value={headHtml} onChange={event => setHeadHtml(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t.raw("advanced.headHtmlPlaceholder")} className="min-h-40 resize-y font-mono text-xs leading-5" /><p className={`text-right text-xs ${advancedBytes.fragments.headHtml > MAX_APPEARANCE_FRAGMENT_BYTES ? "text-destructive" : "text-muted-foreground"}`}>{t("advanced.byteCount", { used: format.number(advancedBytes.fragments.headHtml), maximum: format.number(MAX_APPEARANCE_FRAGMENT_BYTES) })}</p></div>
+                  <div className="space-y-2"><Label>{t("advanced.bodyEndHtml")}</Label><Textarea value={bodyEndHtml} onChange={event => setBodyEndHtml(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t.raw("advanced.bodyEndHtmlPlaceholder")} className="min-h-40 resize-y font-mono text-xs leading-5" /><p className={`text-right text-xs ${advancedBytes.fragments.bodyEndHtml > MAX_APPEARANCE_FRAGMENT_BYTES ? "text-destructive" : "text-muted-foreground"}`}>{t("advanced.byteCount", { used: format.number(advancedBytes.fragments.bodyEndHtml), maximum: format.number(MAX_APPEARANCE_FRAGMENT_BYTES) })}</p></div>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-4"><div><Label>{t("advanced.customJs")}</Label><p className="text-xs text-muted-foreground">{t.raw("advanced.customJsHelp")}</p></div><div className="flex items-center gap-2"><Label htmlFor="custom-js-enabled" className="text-xs">{t("advanced.allowExecution")}</Label><Switch id="custom-js-enabled" checked={customJsEnabled} onCheckedChange={setCustomJsEnabled} disabled={advancedSaving} /></div></div>
                   <Textarea value={customJs} onChange={event => setCustomJs(event.target.value)} disabled={advancedSaving} spellCheck={false} placeholder={t("advanced.customJsPlaceholder")} className="min-h-44 resize-y font-mono text-xs leading-5" />
+                  <p className={`text-right text-xs ${advancedBytes.fragments.customJs > MAX_APPEARANCE_FRAGMENT_BYTES ? "text-destructive" : "text-muted-foreground"}`}>{t("advanced.byteCount", { used: format.number(advancedBytes.fragments.customJs), maximum: format.number(MAX_APPEARANCE_FRAGMENT_BYTES) })}</p>
                 </div>
 
                 <div className="rounded border border-amber-500/60 bg-amber-500/10 p-3 text-xs"><div className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" /><p>{t("advanced.safeMode")}</p></div></div>
-                <p className="text-xs text-muted-foreground">{t("advanced.limits")}</p>
+                <div className={`rounded border p-3 text-xs ${advancedTooLarge ? "border-destructive/60 bg-destructive/10 text-destructive" : "text-muted-foreground"}`}><p>{t("advanced.limits")}</p><p className="mt-1 font-medium">{t("advanced.totalByteCount", { used: format.number(advancedBytes.total), maximum: format.number(MAX_APPEARANCE_TOTAL_BYTES) })}</p></div>
 
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => setPendingAdvancedAction("clear")} disabled={advancedSaving}><Trash2 className="mr-1 h-4 w-4" />{t("advanced.clear")}</Button><Button type="button" onClick={() => setPendingAdvancedAction("save")} disabled={advancedSaving}><Save className="mr-1 h-4 w-4" />{t("advanced.save")}</Button></div>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => setPendingAdvancedAction("clear")} disabled={advancedSaving}><Trash2 className="mr-1 h-4 w-4" />{t("advanced.clear")}</Button><Button type="button" onClick={() => setPendingAdvancedAction("save")} disabled={advancedSaving || advancedTooLarge}><Save className="mr-1 h-4 w-4" />{t("advanced.save")}</Button></div>
               </>
             )}
           </div>

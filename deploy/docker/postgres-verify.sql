@@ -87,6 +87,7 @@ BEGIN
     ('send_quota_event', 'id'), ('send_quota_event', 'user_id'),
     ('send_quota_event', 'quota_subject'), ('send_quota_event', 'policy_role'),
     ('send_quota_event', 'direction'), ('send_quota_event', 'mailbox_address'),
+    ('send_quota_event', 'global_rule_id'), ('send_quota_event', 'scoped_rule_id'),
     ('send_quota_event', 'sender_domain'), ('send_quota_event', 'status'),
     ('send_quota_event', 'created_at'), ('send_quota_event', 'reservation_expires_at'),
     ('send_quota_event', 'completed_at'),
@@ -175,6 +176,9 @@ BEGIN
     ('send_quota_event_user_direction_mailbox_created_idx', 'send_quota_event', false, ARRAY['user_id', 'direction', 'mailbox_address', 'created_at']::text[]),
     ('send_quota_event_user_created_idx', 'send_quota_event', false, ARRAY['user_id', 'created_at']::text[]),
     ('send_quota_event_role_created_idx', 'send_quota_event', false, ARRAY['policy_role', 'created_at']::text[]),
+    ('send_quota_event_global_rule_created_idx', 'send_quota_event', false, ARRAY['global_rule_id', 'created_at']::text[]),
+    ('send_quota_event_scoped_rule_created_idx', 'send_quota_event', false, ARRAY['scoped_rule_id', 'created_at']::text[]),
+    ('send_quota_event_scoped_rule_user_created_idx', 'send_quota_event', false, ARRAY['scoped_rule_id', 'user_id', 'created_at']::text[]),
     ('name_user_id_unique', 'api_keys', true, ARRAY['name', 'user_id']::text[]),
     ('user_role_user_id_idx', 'user_role', false, ARRAY['user_id']::text[]),
     ('webhook_user_id_idx', 'webhook', false, ARRAY['user_id']::text[])

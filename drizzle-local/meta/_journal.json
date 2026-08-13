@@ -22,6 +22,13 @@
       "when": 1786567180202,
       "tag": "0002_rapid_magdalene",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786640429184,
+      "tag": "0003_quota_rule_identity",
+      "breakpoints": true
     }
   ]
 }

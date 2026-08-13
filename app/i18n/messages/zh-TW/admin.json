@@ -12,10 +12,17 @@
   },
   "access": {
     "title": "權限與配額",
-    "description": "設定功能權限、四態網域權限以及獨立的收發額度。一般額度 0 代表不限；收發額度 -1 代表不限、0 代表禁止。",
+    "description": "設定角色與單一使用者的功能權限、網域權限、信箱限制及收發額度。",
+    "quotaGuide": {
+      "title": "額度如何計算",
+      "general": "角色與單一使用者設定控制功能權限、網域、信箱數量、有效期和郵件大小；收發封數由獨立規則管理。",
+      "mail": "每條規則選擇限制對象與一個地址範圍；-1 表示不限，0 表示禁止，正數為滾動視窗上限。",
+      "enforcement": "先檢查功能與網域權限，再檢查一條全站共用規則，並於單一使用者與角色規則中最多再選一條（單一使用者優先）；每層內單一信箱 > 單一網域 > 全部網域。"
+    },
     "tabs": {
       "roles": "角色預設值",
       "users": "單一使用者覆寫",
+      "mailQuotas": "收發額度規則",
       "blocks": "信箱名稱封鎖"
     },
     "sections": {
@@ -37,7 +44,7 @@
     "selectUserHint": "選擇使用者後設定覆寫值",
     "emperorLocked": "皇帝權限無法編輯",
     "emperorLockedHint": "這是應用程式與後端 API 共同強制的系統不變條件，皇帝本人也無法修改。",
-    "emperorQuotaEditableHint": "皇帝的功能權限、一般額度與網域權限由系統鎖定；收件與寄件額度仍可設定。",
+    "emperorQuotaEditableHint": "皇帝的功能、資源與網域權限由系統鎖定；仍可用明確指向皇帝的額度規則限制。全站額度是否包含皇帝，由規則的「忽略皇帝用量」開關決定。",
     "overrideHint": "未覆寫的項目會繼承使用者角色。權限可明確允許或拒絕；配額僅在啟用後覆寫。",
     "inherit": "繼承",
     "allow": "允許",
@@ -88,13 +95,17 @@
       "manage_api_key": "管理 API Key"
     },
     "quotas": {
+      "sectionHelp": "這三項控制信箱建立與單封入站郵件，不是每日收發封數。角色值會成為該角色使用者的預設值。",
+      "overrideHelp": "勾選後才使用此使用者的數值；未勾選時繼續使用角色值。輸入 0 是明確設為不限，並不代表繼承。",
+      "overrideField": "覆寫{field}",
+      "inheritedValue": "目前繼承值：{value}",
       "maxActiveMailboxes": {
         "label": "作用中信箱上限",
-        "help": "0 = 無限制"
+        "help": "同一使用者同時未過期的信箱數量上限；已過期信箱不占名額。0 表示不限。"
       },
       "maxMailboxLifetimeDays": {
         "label": "信箱最長有效期（天）",
-        "help": "0 = 無限制"
+        "help": "限制建立信箱時可選的有效期；0 允許永久信箱。修改後不會縮短既有信箱。"
       },
       "dailyReceiveLimit": {
         "label": "每日收件上限",
@@ -102,7 +113,7 @@
       },
       "maxMessageBytes": {
         "label": "單封收件大小上限（位元組）",
-        "help": "0 = 僅受系統 25 MiB 硬性上限"
+        "help": "按包含郵件標頭、本文與編碼後附件的原始郵件總位元組數計算；0 表示僅受系統 25 MiB 硬性上限。"
       }
     },
     "sendQuota": {
@@ -144,24 +155,46 @@
       }
     },
     "mailQuota": {
+      "title": "收發額度規則",
+      "help": "全站規則是所有符合使用者共用的真正總額度；角色規則可選擇成員獨立或角色共用；單一使用者規則始終獨立。",
+      "precedence": "全站總額度始終疊加檢查；此外再套用一條單一使用者或角色規則（單一使用者優先）。每層內：單一信箱 > 單一網域 > 全部網域。",
+      "independent": "每封郵件最多扣除一個全站池及一個使用者／角色池。功能權限、網域存取與其他資源限制仍獨立生效。",
+      "directions": { "send": "寄件", "receive": "收件" },
+      "subject": "限制對象",
+      "subjects": { "all": "全站總額度", "allHelp": "所有符合使用者共同消耗同一個總額度池。", "role": "權限角色", "user": "單一使用者", "selectUser": "選擇使用者", "roleValue": "角色：{role}", "userValue": "使用者：{user}" },
+      "target": "地址範圍",
+      "ignoreEmperor": "忽略皇帝用量",
+      "ignoreEmperorHelp": "啟用後皇帝不受此全站池限制，也不會消耗它；否則全部使用者都會計入。",
+      "shareWithinRole": "角色成員共用額度池",
+      "shareWithinRoleHelp": "啟用後角色成員共同消耗此額度；否則每位成員各有一份相同額度。",
+      "pools": { "global": "全站共用", "role": "角色共用", "user": "使用者獨立" },
+      "targets": { "all": "全部網域", "allHelp": "統計所選對象在全部網域中符合此收發方向的郵件。", "domain": "單一網域", "mailbox": "單一信箱", "selectDomain": "選擇網域", "localPart": "信箱名稱", "domainValue": "網域：{domain}", "mailboxValue": "信箱：{address}" },
+      "add": "新增規則",
+      "duplicate": "相同方向、對象與範圍的規則已存在，請編輯現有規則。",
+      "empty": "此方向尚無規則；符合的使用者預設不限，但其他權限或資源限制仍可能拒絕操作。",
       "send": {
         "title": "寄件額度",
-        "help": "總額度、網域額度、單一信箱滾動額度與生命週期額度會同時生效。",
+        "help": "每次寄件都會同時占用適用的總量、寄件網域與完整信箱計數；已完成及仍有效的寄送中預留都會占用滾動額度。",
         "userTitle": "使用者寄件額度覆寫"
       },
       "receive": {
         "title": "收件額度",
-        "help": "總額度、網域額度、單一信箱滾動額度或生命週期額度任一用盡時，入站投遞都會被拒絕。",
+        "help": "入站郵件在寫入前會預留適用的總量、收件網域與完整信箱額度；寫入成功後計為已完成，任一層級用盡都會拒絕該封郵件。",
         "userTitle": "使用者收件額度覆寫"
       },
-      "userHelp": "未勾選的值繼承角色；設定任一覆寫後，該方向額度會為此使用者獨立計算。",
+      "userHelp": "未勾選的值繼承角色。覆寫總額度或任一網域總額度後，此使用者的總量與網域計數會脫離角色共用額度；只覆寫單一信箱規則時，角色總量仍照常共用。單一信箱計數始終按具體使用者與完整地址獨立。",
       "limit": "封數",
       "every": "每",
       "unit": "單位",
+      "ruleHelp": "-1 = 不限；0 = 禁止；正數 = 緊鄰目前時刻的滾動視窗內最多允許的封數。已完成與仍有效的進行中預留都會計入。",
       "lifetime": "生命週期上限",
+      "lifetimeHelp": "-1 = 不限；0 = 禁止；正數 = 此完整信箱自開始計數以來累計允許的封數，不會隨時間恢復。可使用「重設用量」清零。",
       "total": "所有網域的總額度",
+      "totalHelp": "統計此收發方向的所有網域，並與網域及單一信箱規則同時生效。",
       "mailboxDefault": "每個信箱的預設額度",
+      "mailboxDefaultHelp": "按每位使用者的完整信箱地址分別計數。存在網域信箱規則或精確信箱規則時，更具體的規則優先。",
       "domains": "單一網域額度",
+      "domainsHelp": "未勾選「限制此網域總量」時，該網域總量不限；未勾選信箱覆寫時繼續使用全域單一信箱預設值。精確信箱覆寫優先級最高。",
       "domainTotal": "限制此網域總量",
       "domainMailbox": "覆寫此網域下每個信箱",
       "overrideTotal": "覆寫總額度",
@@ -170,8 +203,11 @@
       "overrideDomainMailbox": "覆寫此網域下的信箱額度",
       "unlimited": "不限",
       "scope": {
+        "label": "總量與網域計數範圍",
         "user": "每個使用者分別計算",
-        "role": "角色成員共用彙總額度"
+        "userHelp": "每位角色成員擁有獨立的總額度與網域額度；單一信箱額度本來就始終獨立。",
+        "role": "角色共用額度",
+        "roleHelp": "所有角色成員共同消耗同一份總額度與網域額度；任一成員都可能用盡共用額度。單一信箱額度仍按使用者和地址獨立。"
       },
       "units": {
         "second": "秒",
@@ -183,7 +219,7 @@
       },
       "exact": {
         "title": "精確信箱覆寫",
-        "help": "選用：為某個完整信箱地址單獨設定滾動上限與生命週期上限。",
+        "help": "選用：為某個完整信箱地址設定最高優先級的滾動與生命週期上限。移除規則不會刪除歷史計數；需要清零時請先重設用量。",
         "localPart": "信箱名稱",
         "invalidLocalPart": "請輸入 1–64 位字母、數字、點、底線、加號或連字號",
         "domain": "網域",
@@ -193,18 +229,28 @@
       },
       "usage": {
         "title": "實際用量",
+        "help": "目前視窗顯示已完成數量；「進行中保留」也會占用額度但會分開列出。歷史數量僅供稽核，不代表目前限制。",
+        "siteWideHint": "統計全站共用額度池",
+        "empty": "所選對象在此方向沒有有效規則。",
+        "error": "讀取或重設額度用量失敗，請稍後重試。",
+        "targetPool": "範圍 {target} · 計數池 {pool}",
+        "ruleLine": "視窗 {used} / {limit}（保留 {pending}）",
+        "ruleWithLifetime": "視窗 {used} / {limit}（保留 {pending}）· 累計 {lifetimeUsed} / {lifetimeLimit}",
         "aggregate": "依使用者額度彙總",
         "shared": "角色共用額度",
         "individual": "使用者獨立額度",
         "allTime": "歷史已完成",
         "window": "目前視窗",
+        "windowAggregate": "目前視窗彙總",
         "pending": "進行中保留",
-        "domainLine": "歷史 {allTime} · 視窗 {completed} / {limit}"
+        "domainLine": "歷史 {allTime} · 視窗 {completed} / {limit}",
+        "domainAggregateLine": "歷史 {allTime} · 視窗彙總 {completed}"
       },
       "reset": {
         "action": "重設用量",
         "title": "重設此額度用量？",
-        "description": "這會永久清除所選收發方向與目標的滾動視窗和生命週期計數，但不會修改額度規則。",
+        "description": "這會永久清除所選對象在該收發方向的已完成用量記錄，不會修改額度規則。相同記錄參與的所有重疊額度池都會同步變動；進行中的保留不會刪除。",
+        "overlapWarning": "重設會刪除底層已完成記錄，因此同一郵件參與的全站、角色與使用者額度都會同步變動。",
         "cancel": "取消",
         "confirm": "重設計數",
         "mailboxTitle": "重設此信箱的用量？",
@@ -217,17 +263,24 @@
     },
     "blocks": {
       "title": "信箱名稱封鎖",
-      "help": "可在全站封鎖某個信箱名稱，或只禁止指定使用者使用。不會刪除既有信箱；移除規則前無法再次建立。",
+      "help": "可全站禁止、只禁止單一使用者，或將名稱保留給皇帝及選定角色。規則只限制新建，不會刪除既有信箱。",
       "localPart": "信箱名稱",
       "invalidLocalPart": "請輸入 1–64 位字母、數字、點、底線、加號或連字號",
       "domain": "網域",
       "global": "所有使用者",
       "user": "單一使用者",
+      "roles": "保留給角色",
+      "globalHint": "任何使用者都不能新建",
+      "rolesHelp": "皇帝一律允許；勾選其他可使用此名稱的角色。未勾選任何角色時僅皇帝可用。",
       "selectUser": "選擇使用者",
       "add": "封鎖",
+      "search": "即時搜尋信箱名稱、使用者或角色",
+      "noSearchResults": "沒有符合搜尋條件的規則。",
       "empty": "目前沒有被封鎖的信箱名稱。",
       "globalScope": "所有使用者均禁止",
       "userScope": "僅禁止 {user}",
+      "rolesScope": "僅皇帝與以下角色可用：{roles}",
+      "emperorOnly": "皇帝",
       "deleteTitle": "移除此信箱名稱封鎖？",
       "deleteDescription": "移除後，受影響的使用者可再次建立 {address}。",
       "cancel": "取消",
@@ -242,7 +295,7 @@
     },
     "success": {
       "fontTitle": "全站字型已儲存",
-      "fontDescription": "重新整理頁面後，所有伺服器端算繪頁面都會使用新字型。",
+      "fontDescription": "新字型已套用至所有介面文字與編輯框；後續頁面載入會繼續使用。",
       "advancedSavedTitle": "進階外觀已儲存",
       "advancedSavedDescription": "重新整理頁面後生效；若頁面異常，可使用安全外觀模式。",
       "advancedClearedTitle": "進階外觀已清除",
@@ -285,6 +338,8 @@
       "customJsPlaceholder": "// 在瀏覽器中執行\nconsole.log(\"MoeMail custom appearance\")",
       "safeMode": "若自訂內容導致頁面無法操作，請在任意頁面 URL 後附加 ?safe-appearance=1（已有參數時使用 &safe-appearance=1）。該次要求會跳過全部進階注入，讓你回到此處清除或修正。",
       "limits": "每個輸入最多 128 KiB，合計最多 256 KiB。內容儲存在目前資料庫中，備份資料庫時也會一併儲存。",
+      "byteCount": "{used} / {maximum} 位元組",
+      "totalByteCount": "即時合計：{used} / {maximum} 位元組",
       "clear": "清除並停用",
       "save": "儲存進階外觀",
       "clearTitle": "清除全部進階外觀？",

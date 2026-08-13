@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,9 @@ export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogPr
   const [content, setContent] = useState("")
   const [format, setFormat] = useState<"text" | "html">("text")
   const { toast } = useToast()
+  const recipientCount = useMemo(() => new Set(
+    to.split(/[;,]/u).map(value => value.trim().toLowerCase()).filter(Boolean),
+  ).size, [to])
 
   const handleSend = async () => {
     if (!to.trim() || !subject.trim() || !content.trim()) {
@@ -125,6 +128,9 @@ export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogPr
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTo(e.target.value)}
             placeholder={t("toPlaceholder")}
           />
+          <p className="text-xs text-muted-foreground">
+            {t("toHelp", { count: recipientCount, maximum: 50 })}
+          </p>
           <Input
             value={subject}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSubject(e.target.value)}

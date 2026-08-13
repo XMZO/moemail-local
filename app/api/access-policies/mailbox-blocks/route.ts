@@ -3,14 +3,16 @@ import {
   deleteMailboxNameBlock,
   listMailboxNameBlocks,
 } from "@/lib/mailbox-name-blocks"
+import { RESERVABLE_MAILBOX_ROLES } from "@/lib/mailbox-block-scope"
 import { apiError } from "@/lib/api-response"
-import { ROLES } from "@/lib/permissions"
+import { ROLES, type Role } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const headers = { "Cache-Control": "private, no-store" }
+const allowedRoleNames = new Set<string>(RESERVABLE_MAILBOX_ROLES)
 
 async function authorizeEmperor(request: Request) {
   const authorization = await authorizeRequest(request)
@@ -38,20 +40,34 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null) as {
     scope?: unknown
     userId?: unknown
+    allowedRoles?: unknown
     localPart?: unknown
     domain?: unknown
   } | null
   if (
     !payload
-    || (payload.scope !== "global" && payload.scope !== "user")
+    || (payload.scope !== "global" && payload.scope !== "user" && payload.scope !== "roles")
     || typeof payload.localPart !== "string"
     || typeof payload.domain !== "string"
-    || (payload.userId !== undefined && typeof payload.userId !== "string")
+    || (payload.scope === "global" && (payload.userId !== undefined || payload.allowedRoles !== undefined))
+    || (payload.scope === "user" && (
+      typeof payload.userId !== "string"
+      || payload.userId.length === 0
+      || payload.allowedRoles !== undefined
+    ))
+    || (payload.scope === "roles" && (
+      payload.userId !== undefined
+      || !Array.isArray(payload.allowedRoles)
+      || payload.allowedRoles.length > RESERVABLE_MAILBOX_ROLES.length
+      || payload.allowedRoles.some(role => typeof role !== "string" || !allowedRoleNames.has(role))
+      || new Set(payload.allowedRoles).size !== payload.allowedRoles.length
+    ))
   ) return apiError("INVALID_REQUEST", 400, { headers })
   try {
     const block = await createMailboxNameBlock({
       scope: payload.scope,
-      userId: payload.userId,
+      userId: typeof payload.userId === "string" ? payload.userId : undefined,
+      allowedRoles: payload.allowedRoles as Role[] | undefined,
       localPart: payload.localPart,
       domain: payload.domain,
     })

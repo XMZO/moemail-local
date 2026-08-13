@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid"
 import { getDatabaseDriver, getPostgresPool, getSqlite } from "./db"
+import { mailboxBlockAllowedRoles, mailboxUserBlockScope } from "./mailbox-block-scope"
+import { ROLES, type Role } from "./permissions"
 
 export type MailboxCreationFailure =
   | "MAILBOX_QUOTA_EXCEEDED"
@@ -23,12 +25,16 @@ export interface MailboxCreationInput {
 
 const RANDOM_ATTEMPTS = 32
 
-export function mailboxUserBlockScope(userId: string) {
-  return `user:${userId}`
-}
-
 function randomLocalPart() {
   return nanoid(8).toLowerCase()
+}
+
+function mailboxBlockApplies(scopeKey: string, userId: string, roles: Role[]) {
+  if (scopeKey === "global" || scopeKey === mailboxUserBlockScope(userId)) return true
+  const allowedRoles = mailboxBlockAllowedRoles(scopeKey)
+  return allowedRoles !== null
+    && !roles.includes(ROLES.EMPEROR)
+    && !allowedRoles.some(role => roles.includes(role))
 }
 
 function sqliteCreateMailbox(input: MailboxCreationInput): MailboxCreationResult {
@@ -46,15 +52,20 @@ function sqliteCreateMailbox(input: MailboxCreationInput): MailboxCreationResult
     }
 
     const attempts = input.localPart ? 1 : RANDOM_ATTEMPTS
+    const roleRows = sqlite.prepare(`
+      SELECT role.name AS name FROM user_role
+      INNER JOIN role ON role.id = user_role.role_id
+      WHERE user_role.user_id = ?
+    `).all(input.userId) as Array<{ name: string }>
+    const roleNames = roleRows.map(row => row.name as Role)
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const localPart = input.localPart ?? randomLocalPart()
       const address = `${localPart}@${input.domain}`
-      const blocked = sqlite.prepare(`
-        SELECT 1 FROM mailbox_name_block
-        WHERE local_part = ? AND domain = ? AND scope_key IN ('global', ?)
-        LIMIT 1
-      `).get(localPart, input.domain, mailboxUserBlockScope(input.userId))
-      if (blocked) {
+      const blocks = sqlite.prepare(`
+        SELECT scope_key AS scopeKey FROM mailbox_name_block
+        WHERE local_part = ? AND domain = ?
+      `).all(localPart, input.domain) as Array<{ scopeKey: string }>
+      if (blocks.some(block => mailboxBlockApplies(block.scopeKey, input.userId, roleNames))) {
         if (input.localPart) return { ok: false, code: "MAILBOX_NAME_BLOCKED" }
         continue
       }
@@ -104,15 +115,20 @@ async function postgresCreateMailbox(input: MailboxCreationInput): Promise<Mailb
     }
 
     const attempts = input.localPart ? 1 : RANDOM_ATTEMPTS
+    const rolesResult = await client.query<{ name: string }>(`
+      SELECT role.name FROM user_role
+      INNER JOIN role ON role.id = user_role.role_id
+      WHERE user_role.user_id = $1
+    `, [input.userId])
+    const roleNames = rolesResult.rows.map(row => row.name as Role)
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const localPart = input.localPart ?? randomLocalPart()
       const address = `${localPart}@${input.domain}`
-      const blocked = await client.query(`
-        SELECT 1 FROM mailbox_name_block
-        WHERE local_part = $1 AND domain = $2 AND scope_key IN ('global', $3)
-        LIMIT 1
-      `, [localPart, input.domain, mailboxUserBlockScope(input.userId)])
-      if (blocked.rowCount) {
+      const blocks = await client.query<{ scopeKey: string }>(`
+        SELECT scope_key AS "scopeKey" FROM mailbox_name_block
+        WHERE local_part = $1 AND domain = $2
+      `, [localPart, input.domain])
+      if (blocks.rows.some(block => mailboxBlockApplies(block.scopeKey, input.userId, roleNames))) {
         if (input.localPart) {
           await client.query("ROLLBACK")
           return { ok: false, code: "MAILBOX_NAME_BLOCKED" }

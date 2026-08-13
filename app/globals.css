@@ -57,6 +57,15 @@
     @apply bg-background text-foreground;
   }
 
+  button,
+  input,
+  select,
+  textarea,
+  code,
+  pre {
+    font-family: inherit;
+  }
+
   @keyframes locale-content-leave {
     from {
       opacity: 1;

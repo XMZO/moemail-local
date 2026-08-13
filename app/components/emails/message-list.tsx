@@ -51,14 +51,14 @@ interface MessageResponse {
   total?: number
 }
 
-interface MailboxQuotaCounter {
+interface AppliedQuotaCounter {
   rolling: { remaining: number | null }
   lifetimeRemaining: number | null
 }
 
 interface MailboxQuotaResponse {
-  send?: { allowed: boolean; error?: string; quota?: { mailbox?: MailboxQuotaCounter } }
-  receive?: { allowed: boolean; error?: string; quota?: { mailbox?: MailboxQuotaCounter } }
+  send?: { allowed: boolean; error?: string; quota?: { applied?: AppliedQuotaCounter[] } }
+  receive?: { allowed: boolean; error?: string; quota?: { applied?: AppliedQuotaCounter[] } }
 }
 
 export function MessageList({ email, messageType, onMessageSelect, selectedMessageId, refreshTrigger }: MessageListProps) {
@@ -273,15 +273,17 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                 value: reason,
               })}</span>
             }
-            const mailbox = state.quota?.mailbox
-            if (!mailbox) return null
+            const applied = state.quota?.applied ?? []
+            if (applied.length === 0) return null
+            const finiteRolling = applied.flatMap(item => item.rolling.remaining === null ? [] : [item.rolling.remaining])
+            const finiteLifetime = applied.flatMap(item => item.lifetimeRemaining === null ? [] : [item.lifetimeRemaining])
             const parts = [
-              mailbox.rolling.remaining === null
+              finiteRolling.length === 0
                 ? null
-                : t("quota.window", { count: mailbox.rolling.remaining }),
-              mailbox.lifetimeRemaining === null
+                : t("quota.window", { count: Math.min(...finiteRolling) }),
+              finiteLifetime.length === 0
                 ? null
-                : t("quota.lifetime", { count: mailbox.lifetimeRemaining }),
+                : t("quota.lifetime", { count: Math.min(...finiteLifetime) }),
             ].filter((value): value is string => value !== null)
             if (parts.length === 0) return null
             return <span key={direction}>{tFormat("labelValue", {

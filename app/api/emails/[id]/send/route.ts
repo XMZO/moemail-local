@@ -2,8 +2,8 @@ import { NextResponse } from "next/server"
 import { createDb } from "@/lib/db"
 import { messages } from "@/lib/schema"
 import {
-  completeSendQuotaReservation,
-  releaseSendQuotaReservation,
+  completeSendQuotaReservations,
+  releaseSendQuotaReservations,
   reserveSendQuota,
 } from "@/lib/send-permissions"
 import { authorizeRequest } from "@/lib/request-auth"
@@ -62,8 +62,13 @@ export async function POST(
       return apiError("MAIL_DOMAIN_SEND_FORBIDDEN", 403)
     }
     if (!domain) return apiError("INVALID_MAIL_DOMAIN", 400)
-    const permissionResult = await reserveSendQuota(userId, email.address, currentAccess)
-    if (!permissionResult.canSend || !permissionResult.reservation) {
+    const permissionResult = await reserveSendQuota(
+      userId,
+      email.address,
+      currentAccess,
+      parsedMessage.data.to.length,
+    )
+    if (!permissionResult.canSend || !permissionResult.reservations?.length) {
       const code = permissionResult.error ?? "SEND_PERMISSION_DENIED"
       return apiError(code, code.endsWith("QUOTA_EXCEEDED") ? 429 : 403)
     }
@@ -72,9 +77,9 @@ export async function POST(
     // disappears with an unknown provider outcome, the attempt stays charged
     // and cannot turn into a repeatable quota bypass after a lease timeout.
     try {
-      await completeSendQuotaReservation(permissionResult.reservation)
+      await completeSendQuotaReservations(permissionResult.reservations)
     } catch (error) {
-      await releaseSendQuotaReservation(permissionResult.reservation).catch(() => undefined)
+      await releaseSendQuotaReservations(permissionResult.reservations).catch(() => undefined)
       throw error
     }
 
@@ -97,7 +102,7 @@ export async function POST(
       db.insert(messages).values({
         emailId: email.id,
         fromAddress: email.address,
-        toAddress: message.to,
+        toAddress: message.to.join(", "),
         subject: message.subject,
         content: message.format === "text" ? message.content : "",
         type: "sent",

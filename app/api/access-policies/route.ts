@@ -58,8 +58,12 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const roles = (payload as { roles?: unknown }).roles
-    const policies = await updateAccessPolicies(current => ({ ...current, roles }))
+    const { roles, mailQuotaRules } = payload as { roles?: unknown; mailQuotaRules?: unknown }
+    const policies = await updateAccessPolicies(current => ({
+      ...current,
+      ...(roles === undefined ? {} : { roles }),
+      ...(mailQuotaRules === undefined ? {} : { mailQuotaRules }),
+    }))
     return Response.json({ ok: true, policies }, { headers })
   } catch (error) {
     console.error("access_policy.save_failed", error)

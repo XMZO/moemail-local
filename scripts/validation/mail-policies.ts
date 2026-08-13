@@ -3,10 +3,14 @@ import { createServer } from "node:net"
 import {
   createDefaultAccessPolicies,
   EMPEROR_ACCESS_POLICY,
+  isMigratedMailQuotaAssignment,
   isDomainAllowed,
   parseAccessPolicies,
   resolveAccessPolicy,
-  sendQuotaRuleForDomain,
+  resolveMailQuotaAssignment,
+  resolveMailQuotaAssignments,
+  type MailQuotaPolicy,
+  type MailQuotaRule,
 } from "../../app/lib/access-policies"
 import { domainPoliciesSchema, type DomainPolicy } from "../../app/lib/domain-policies"
 import { outboundContent, outboundMessageSchema, sendOutboundMessage, testSmtpConnection } from "../../app/lib/outbound-mail"
@@ -95,23 +99,24 @@ assert.equal(
 )
 
 const accessDefaults = parseAccessPolicies(createDefaultAccessPolicies())
-assert.equal(accessDefaults.version, 4)
-assert.equal(accessDefaults.roles.duke.sendQuota.total.limit, 5)
-assert.equal(accessDefaults.roles.knight.sendQuota.total.limit, 2)
-assert.equal(accessDefaults.roles.civilian.sendQuota.total.limit, 0)
+assert.equal(accessDefaults.version, 5)
+assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "duke-user", ["duke"]), "send", "box@example.test")?.rolling.limit, 5)
+assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "knight-user", ["knight"]), "send", "box@example.test")?.rolling.limit, 2)
+assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "civilian-user", ["civilian"]), "send", "box@example.test")?.rolling.limit, 0)
 assert.ok(Object.values(PERMISSIONS).every(permission => EMPEROR_ACCESS_POLICY.permissions[permission]))
-assert.equal(accessDefaults.roles.emperor.sendQuota.total.limit, -1)
-assert.equal(EMPEROR_ACCESS_POLICY.sendQuota.total.limit, -1)
+assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "owner", ["emperor"]), "send", "box@example.test"), undefined)
+assert.equal(EMPEROR_ACCESS_POLICY.mailQuotaRules.length, 0)
 assert.equal(EMPEROR_ACCESS_POLICY.quotas.maxMessageBytes, 0)
 assert.equal(Object.isFrozen(EMPEROR_ACCESS_POLICY), true)
 assert.equal(Object.isFrozen(EMPEROR_ACCESS_POLICY.permissions), true)
 assert.equal(Object.isFrozen(EMPEROR_ACCESS_POLICY.quotas), true)
 assert.equal(EMPEROR_ACCESS_POLICY.allowedDomains, null)
 
+const legacyDefaults = createDefaultAccessPolicies()
 const legacyAccess = {
   version: 1,
   roles: Object.fromEntries((["duke", "knight", "civilian"] as const).map(role => {
-    const current = accessDefaults.roles[role]
+    const current = legacyDefaults.roles[role]
     return [role, {
       permissions: current.permissions,
       quotas: {
@@ -125,8 +130,61 @@ const legacyAccess = {
 }
 const migratedLegacyAccess = parseAccessPolicies(legacyAccess)
 assert.equal(migratedLegacyAccess.roles.duke.domainAccess.default, "allow")
-assert.equal(migratedLegacyAccess.roles.duke.sendQuota.total.limit, 5)
-assert.equal(migratedLegacyAccess.roles.civilian.sendQuota.total.limit, -1)
+assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(migratedLegacyAccess, "legacy-duke", ["duke"]), "send", "box@example.test")?.rolling.limit, 5)
+assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(migratedLegacyAccess, "legacy-civilian", ["civilian"]), "send", "box@example.test")?.rolling.limit, -1)
+
+const version4Defaults = createDefaultAccessPolicies()
+const legacyUnlimited: MailQuotaRule = { limit: -1, windowValue: 1, windowUnit: "day" }
+const legacyUnlimitedMailbox = { rolling: legacyUnlimited, lifetimeLimit: -1 }
+const version4Quota = (scope: "user" | "role" = "user"): MailQuotaPolicy => ({
+  scope,
+  total: structuredClone(legacyUnlimited),
+  domains: {},
+  mailbox: structuredClone(legacyUnlimitedMailbox),
+  domainMailboxes: {},
+  mailboxes: {},
+})
+const version4Access = {
+  version: 4,
+  roles: Object.fromEntries(((["emperor", "duke", "knight", "civilian"] as const)).map(role => [role, {
+    ...structuredClone(version4Defaults.roles[role]),
+    sendQuota: version4Quota(role === "duke" ? "role" : "user"),
+    receiveQuota: version4Quota(),
+  }])),
+  users: {},
+}
+version4Access.roles.duke.sendQuota.mailbox = {
+  rolling: { limit: 9, windowValue: 2, windowUnit: "hour" },
+  lifetimeLimit: 4,
+}
+version4Access.roles.duke.sendQuota.domainMailboxes = {
+  "legacy.example": {
+    rolling: { limit: 8, windowValue: 1, windowUnit: "day" },
+    lifetimeLimit: 3,
+  },
+}
+version4Access.roles.duke.sendQuota.mailboxes = {
+  "exact@legacy.example": {
+    rolling: { limit: 7, windowValue: 1, windowUnit: "week" },
+    lifetimeLimit: 6,
+  },
+}
+const migratedVersion4 = parseAccessPolicies(version4Access)
+const migratedDukeRules = migratedVersion4.mailQuotaRules.filter(rule => (
+  rule.direction === "send" && rule.subject.type === "role" && rule.subject.role === "duke"
+))
+const migratedWildcard = migratedDukeRules.find(rule => rule.target.type === "all")!
+const migratedDomain = migratedDukeRules.find(rule => rule.target.type === "domain")!
+const migratedExact = migratedDukeRules.find(rule => rule.target.type === "mailbox")!
+assert.equal(migratedWildcard.rolling.limit, 9)
+assert.equal(migratedWildcard.lifetimeLimit, -1)
+assert.equal(migratedWildcard.shareWithinRole, true)
+assert.equal(migratedDomain.rolling.limit, 8)
+assert.equal(migratedDomain.lifetimeLimit, -1)
+assert.equal(migratedExact.rolling.limit, 7)
+assert.equal(migratedExact.lifetimeLimit, 6)
+assert.equal(isMigratedMailQuotaAssignment(migratedWildcard), true)
+assert.equal(isMigratedMailQuotaAssignment({ ...migratedWildcard, target: { type: "domain", domain: "forged.example" } }), false)
 
 const restrictedAccess = createDefaultAccessPolicies()
 restrictedAccess.roles.duke.domainAccess = { default: "deny", domains: { "alpha.example": "allow" } }
@@ -136,17 +194,7 @@ restrictedAccess.users.restricted = {
   quotas: {},
   domainAccess: { default: "deny", domains: { "user.example": "allow" } },
 }
-restrictedAccess.roles.duke.sendQuota = {
-  scope: "role",
-  total: { limit: 10, windowValue: 2, windowUnit: "hour" },
-  domains: {
-    "alpha.example": { limit: 7, windowValue: 30, windowUnit: "minute" },
-    "beta.example": { limit: 6, windowValue: 15, windowUnit: "minute" },
-  },
-  mailbox: { rolling: { limit: -1, windowValue: 1, windowUnit: "day" }, lifetimeLimit: -1 },
-  domainMailboxes: {},
-  mailboxes: {},
-}
+restrictedAccess.mailQuotaRules = [{ id: "11111111-1111-4111-8111-111111111111", direction: "send", subject: { type: "role", role: "duke" }, target: { type: "all" }, rolling: { limit: 10, windowValue: 2, windowUnit: "hour" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }, { id: "22222222-2222-4222-8222-222222222222", direction: "send", subject: { type: "role", role: "duke" }, target: { type: "domain", domain: "alpha.example" }, rolling: { limit: 7, windowValue: 30, windowUnit: "minute" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }, { id: "33333333-3333-4333-8333-333333333333", direction: "send", subject: { type: "role", role: "duke" }, target: { type: "domain", domain: "beta.example" }, rolling: { limit: 6, windowValue: 15, windowUnit: "minute" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }]
 assert.deepEqual(
   resolveAccessPolicy(restrictedAccess, "role-only", ["duke", "knight"]).allowedDomains,
   ["alpha.example", "beta.example"],
@@ -155,37 +203,36 @@ const userRestrictedAccess = resolveAccessPolicy(restrictedAccess, "restricted",
 assert.equal(isDomainAllowed(userRestrictedAccess, "USER.EXAMPLE"), true)
 assert.equal(isDomainAllowed(userRestrictedAccess, "alpha.example"), false)
 assert.equal(resolveAccessPolicy(restrictedAccess, "emperor", ["emperor"]).allowedDomains, null)
-assert.equal(resolveAccessPolicy(restrictedAccess, "role-quota", ["duke"]).sendQuota.scope, "role")
-assert.equal(resolveAccessPolicy(restrictedAccess, "role-quota", ["duke"]).sendQuotaRole, "duke")
-restrictedAccess.users["custom-quota"] = {
-  permissions: {},
-  quotas: {},
-  sendQuota: {
-    total: { limit: 3, windowValue: 90, windowUnit: "second" },
-    domains: {
-      "alpha.example": { limit: 0, windowValue: 1, windowUnit: "day" },
-    },
-  },
-}
+assert.equal(resolveAccessPolicy(restrictedAccess, "role-quota", ["duke"]).quotaRole, "duke")
+restrictedAccess.users["custom-quota"] = { permissions: {}, quotas: {} }
+restrictedAccess.mailQuotaRules.push({ id: "44444444-4444-4444-8444-444444444444", direction: "send", subject: { type: "user", userId: "custom-quota" }, target: { type: "all" }, rolling: { limit: 3, windowValue: 90, windowUnit: "second" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false }, { id: "55555555-5555-4555-8555-555555555555", direction: "send", subject: { type: "user", userId: "custom-quota" }, target: { type: "domain", domain: "alpha.example" }, rolling: { limit: 0, windowValue: 1, windowUnit: "day" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false })
 const customQuota = resolveAccessPolicy(restrictedAccess, "custom-quota", ["duke"])
-assert.equal(customQuota.sendQuota.scope, "user")
-assert.equal(customQuota.sendQuota.total.limit, 3)
-assert.equal(customQuota.sendQuota.domains["alpha.example"].limit, 0)
-assert.equal(customQuota.sendQuota.domains["beta.example"].limit, 6)
-assert.equal(sendQuotaRuleForDomain(customQuota, "alpha.example").limit, 0)
-assert.equal(sendQuotaRuleForDomain(customQuota, "other.example").limit, -1)
+assert.equal(resolveMailQuotaAssignment(customQuota, "send", "box@alpha.example")?.rolling.limit, 0)
+assert.equal(resolveMailQuotaAssignment(customQuota, "send", "box@beta.example")?.rolling.limit, 3)
+assert.equal(resolveMailQuotaAssignment(customQuota, "send", "box@other.example")?.rolling.limit, 3)
 assert.equal(sendQuotaWindowMilliseconds({ limit: 1, windowValue: 90, windowUnit: "second" }), 90_000)
 assert.equal(sendQuotaWindowMilliseconds({ limit: 1, windowValue: 2, windowUnit: "month" }), 60 * 24 * 60 * 60 * 1_000)
 const emperorOverride = structuredClone(restrictedAccess)
-emperorOverride.users.owner = {
-  permissions: {},
-  quotas: {},
-  sendQuota: { total: { limit: 1, windowValue: 1, windowUnit: "minute" } },
-}
+emperorOverride.users.owner = { permissions: {}, quotas: {} }
+emperorOverride.mailQuotaRules.push({ id: "66666666-6666-4666-8666-666666666666", direction: "send", subject: { type: "user", userId: "owner" }, target: { type: "all" }, rolling: { limit: 1, windowValue: 1, windowUnit: "minute" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false })
 const emperorQuota = resolveAccessPolicy(emperorOverride, "owner", ["emperor"])
 assert.ok(Object.values(emperorQuota.permissions).every(Boolean))
 assert.equal(emperorQuota.allowedDomains, null)
-assert.equal(emperorQuota.sendQuota.total.limit, 1)
+assert.equal(resolveMailQuotaAssignment(emperorQuota, "send", "owner@example.test")?.rolling.limit, 1)
+const globalEmperorPolicy = createDefaultAccessPolicies()
+globalEmperorPolicy.mailQuotaRules.push({ id: "77777777-7777-4777-8777-777777777777", direction: "send", subject: { type: "all" }, target: { type: "all" }, rolling: { limit: 100, windowValue: 1, windowUnit: "day" }, lifetimeLimit: -1, shareWithinRole: false, ignoreEmperor: false })
+assert.equal(resolveMailQuotaAssignments(resolveAccessPolicy(globalEmperorPolicy, "owner", ["emperor"]), "send", "owner@example.test")[0]?.rolling.limit, 100)
+globalEmperorPolicy.mailQuotaRules[globalEmperorPolicy.mailQuotaRules.length - 1].ignoreEmperor = true
+assert.equal(resolveMailQuotaAssignments(resolveAccessPolicy(globalEmperorPolicy, "owner", ["emperor"]), "send", "owner@example.test").length, 0)
+const invalidGlobalRule = globalEmperorPolicy.mailQuotaRules.at(-1)!
+assert.throws(() => parseAccessPolicies({
+  ...globalEmperorPolicy,
+  mailQuotaRules: [{ ...invalidGlobalRule, shareWithinRole: true }],
+}))
+assert.throws(() => parseAccessPolicies({
+  ...globalEmperorPolicy,
+  mailQuotaRules: [{ ...invalidGlobalRule, lifetimeLimit: 1 }],
+}))
 assert.throws(() => parseAccessPolicies({
   ...restrictedAccess,
   roles: {
@@ -203,7 +250,7 @@ globalThis.fetch = async (input, init) => {
 try {
   await sendOutboundMessage(
     "sender@resend.example",
-    { to: "recipient@example.net", subject: "Policy test", content: "<b>hello</b>", format: "html" },
+    { to: "recipient@example.net; SECOND@example.net", subject: "Policy test", content: "<b>hello</b>", format: "html" },
     domainPolicies[0],
   )
 } finally {
@@ -215,7 +262,7 @@ assert.equal(capturedResendRequest.headers.get("authorization"), "Bearer re_test
 assert.equal(capturedResendRequest.redirect, "manual")
 const resendBody = await capturedResendRequest.json() as { from: string; to: string[]; html: string; text?: string }
 assert.equal(resendBody.from, "Domain One <sender@resend.example>")
-assert.deepEqual(resendBody.to, ["recipient@example.net"])
+assert.deepEqual(resendBody.to, ["recipient@example.net", "second@example.net"])
 assert.match(resendBody.html, /^<!doctype html><html>/i)
 assert.equal(resendBody.text, "hello")
 assert.equal(
@@ -227,7 +274,22 @@ assert.equal(
   "html",
 )
 assert.deepEqual(
-  outboundContent({ to: "recipient@example.net", subject: "Text", content: "<unsafe>&", format: "text" }),
+  outboundMessageSchema.parse({
+    to: "First@Example.net; second@example.net, first@example.net",
+    subject: "Multiple recipients",
+    content: "hello",
+    format: "text",
+  }).to,
+  ["first@example.net", "second@example.net"],
+)
+assert.equal(outboundMessageSchema.safeParse({
+  to: "recipient@example.net, ",
+  subject: "Trailing separator",
+  content: "hello",
+  format: "text",
+}).success, false)
+assert.deepEqual(
+  outboundContent({ to: ["recipient@example.net"], subject: "Text", content: "<unsafe>&", format: "text" }),
   {
     text: "<unsafe>&",
     html: "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><pre style=\"white-space:pre-wrap;font:inherit\">&lt;unsafe&gt;&amp;</pre></body></html>",
@@ -235,7 +297,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   outboundContent({
-    to: "recipient@example.net",
+    to: ["recipient@example.net"],
     subject: "Image fallback",
     content: '<head><style>hidden</style></head><p>Hello&nbsp;<strong>world</strong></p><img src="pixel" alt="chart &amp; summary"><script>alert(1)</script>',
     format: "html",
@@ -247,7 +309,7 @@ assert.deepEqual(
 )
 assert.equal(
   outboundContent({
-    to: "recipient@example.net",
+    to: ["recipient@example.net"],
     subject: "Image-only message",
     content: '<img src="pixel">',
     format: "html",
@@ -258,7 +320,7 @@ const adversarialHtml = "<script>".repeat(250_000)
 const conversionStarted = performance.now()
 assert.equal(
   outboundContent({
-    to: "recipient@example.net",
+    to: ["recipient@example.net"],
     subject: "Adversarial fallback",
     content: adversarialHtml,
     format: "html",
@@ -326,13 +388,15 @@ try {
   assert.equal(connection.ok, true)
   await sendOutboundMessage(
     "sender@smtp.example",
-    { to: "recipient@example.net", subject: "SMTP policy test", content: "<p>smtp hello</p>", format: "html" },
+    { to: "recipient@example.net, second@example.net", subject: "SMTP policy test", content: "<p>smtp hello</p>", format: "html" },
     smtpPolicy,
   )
 } finally {
   await new Promise<void>(resolve => smtpServer.close(() => resolve()))
 }
 assert.match(smtpRaw, /Subject: SMTP policy test/)
+assert.match(smtpRaw, /recipient@example\.net/)
+assert.match(smtpRaw, /second@example\.net/)
 assert.match(smtpRaw, /smtp (?:=\r?\n)?hello/)
 assert.match(smtpRaw, /<html/i)
 assert.match(smtpRaw, /Content-Type: text\/plain/i)

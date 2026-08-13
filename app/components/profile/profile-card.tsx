@@ -17,6 +17,7 @@ import { AppearancePanel } from "./appearance-panel"
 import { DomainPolicyPanel } from "./domain-policy-panel"
 import { PromotePanel } from "./promote-panel"
 import { RuntimeConfigPanel } from "./runtime-config-panel"
+import { MyQuotaPanel } from "./my-quota-panel"
 import { WebsiteConfigPanel } from "./website-config-panel"
 import { WebhookConfig } from "./webhook-config"
 
@@ -144,6 +145,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
         </div>
 
         {visitedTabs.has("account") && <TabsContent value="account" forceMount className={persistentTabClass}>
+          <div className="space-y-4">
           <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-6">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-primary/10 ring-2 ring-primary/20">
@@ -156,6 +158,8 @@ export function ProfileCard({ user }: ProfileCardProps) {
               </div>
               <div className="flex shrink-0 gap-2 sm:flex-col"><Button onClick={() => router.push(`/${locale}/moe`)} className="flex-1 gap-2"><Mail className="h-4 w-4" />{tNav("backToMailbox")}</Button><Button variant="outline" onClick={() => signOut({ callbackUrl: `/${locale}` })} className="flex-1">{tAuth("logout")}</Button></div>
             </div>
+          </div>
+          <MyQuotaPanel />
           </div>
         </TabsContent>}
         {canManageConfig && visitedTabs.has("domains") && <TabsContent value="domains" forceMount className={persistentTabClass}><DomainPolicyPanel /></TabsContent>}

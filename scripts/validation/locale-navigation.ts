@@ -55,13 +55,16 @@ assert.match(userPanelSource, /<SelectTrigger className="h-8 w-full min-w-0 text
 const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profile/access-policy-panel.tsx"), "utf8")
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
-assert.match(accessPanelSource, /<RoleMailQuotaEditor/u)
-assert.match(accessPanelSource, /<UserMailQuotaEditor/u)
-assert.match(accessPanelSource, /\/api\/access-policies\/usage\?role=/u)
-assert.match(accessPanelSource, /\/api\/access-policies\/usage\?userId=/u)
+assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
+assert.match(accessPanelSource, /mailQuotaRules/u)
+assert.doesNotMatch(accessPanelSource, /<RoleMailQuotaEditor|<UserMailQuotaEditor/u)
+assert.match(sendQuotaSource, /subjectSpecificity|subjects\.all/u)
 assert.doesNotMatch(sendQuotaSource, /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u)
 assert.match(sendQuotaSource, /admin\.access\.mailQuota/u)
-assert.match(sendQuotaSource, /min-\[420px\]:grid-cols-\[minmax\(4\.5rem,.7fr\)_minmax\(4\.5rem,.55fr\)_minmax\(6\.5rem,1fr\)\]/u)
+assert.match(sendQuotaSource, /min-\[520px\]:grid-cols-\[minmax\(5rem,.7fr\)_minmax\(5rem,.6fr\)_minmax\(7\.5rem,1fr\)\]/u)
+assert.match(sendQuotaSource, /grid-cols-\[1\.25rem_minmax\(0,1fr\)\]/u)
+assert.match(sendQuotaSource, /\[overflow-wrap:anywhere\]/u)
+assert.match(sendQuotaSource, /\[&>span\]:truncate/u)
 
 console.log(JSON.stringify({
   localeNavigationPreservesPath: true,

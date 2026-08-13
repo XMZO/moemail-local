@@ -2,15 +2,14 @@ import { randomUUID } from "node:crypto"
 import type {
   EffectiveAccessPolicy,
   MailDirection,
+  MailQuotaAssignment,
   MailQuotaRule,
-  MailboxQuotaRule,
 } from "./access-policies"
 import {
+  effectiveMailQuotaAssignments,
+  isMigratedMailQuotaAssignment,
   isDomainOperationAllowed,
-  mailboxQuotaRuleForAddress,
-  mailQuotaForDirection,
-  mailQuotaRoleForDirection,
-  mailQuotaRuleForDomain,
+  resolveMailQuotaAssignments,
 } from "./access-policies"
 import {
   getDatabaseDriver,
@@ -21,7 +20,7 @@ import {
   normalizeMailboxAddress,
   normalizeMailboxDomain,
 } from "./email-address"
-import { PERMISSIONS } from "./permissions"
+import { PERMISSIONS, ROLES, type Role } from "./permissions"
 import { getUserAccessPolicy } from "./user-access"
 
 const UNIT_MILLISECONDS = {
@@ -45,9 +44,8 @@ export interface MailQuotaCounter {
 
 export type SendQuotaCounter = MailQuotaCounter & { sent: number }
 
-export interface MailboxQuotaCounter {
-  address: string
-  rule: MailboxQuotaRule
+export interface AppliedMailQuotaCounter {
+  assignment: MailQuotaAssignment
   rolling: MailQuotaCounter
   lifetimeCompleted: number
   lifetimePending: number
@@ -58,41 +56,25 @@ export interface MailboxQuotaCounter {
 export interface MailQuotaSnapshot {
   direction: MailDirection
   subject: string
-  scope: "user" | "role"
-  role: EffectiveAccessPolicy["sendQuotaRole"]
-  total: MailQuotaCounter
-  domain?: MailQuotaCounter & { domain: string }
-  mailbox?: MailboxQuotaCounter
+  role: Role
+  applied: AppliedMailQuotaCounter[]
 }
 
-export interface SendQuotaSnapshot {
-  subject: string
-  scope: "user" | "role"
-  role: EffectiveAccessPolicy["sendQuotaRole"]
-  total: SendQuotaCounter
-  domain?: SendQuotaCounter & { domain: string }
-  mailbox?: MailboxQuotaCounter
+export interface SendQuotaSnapshot extends Omit<MailQuotaSnapshot, "applied"> {
+  applied: Array<Omit<AppliedMailQuotaCounter, "rolling"> & { rolling: SendQuotaCounter }>
 }
 
 export interface MailQuotaUsage {
   direction: MailDirection
-  target: { type: "role" | "user"; id: string }
-  scope: "user" | "role"
-  role: EffectiveAccessPolicy["sendQuotaRole"]
+  target: { type: "all" | "role" | "user"; id: string }
   aggregate: boolean
   allTimeCompleted: number
-  total: MailQuotaCounter
-  domains: Array<MailQuotaCounter & { domain: string; allTimeCompleted: number }>
+  rules: AppliedMailQuotaCounter[]
 }
 
-export interface SendQuotaUsage {
-  target: { type: "role" | "user"; id: string }
-  scope: "user" | "role"
-  role: EffectiveAccessPolicy["sendQuotaRole"]
-  aggregate: boolean
+export interface SendQuotaUsage extends Omit<MailQuotaUsage, "rules"> {
   allTimeSent: number
-  total: SendQuotaCounter
-  domains: Array<SendQuotaCounter & { domain: string; allTimeSent: number }>
+  rules: Array<Omit<AppliedMailQuotaCounter, "rolling"> & { rolling: SendQuotaCounter }>
 }
 
 export type MailQuotaError =
@@ -100,10 +82,12 @@ export type MailQuotaError =
   | "RECEIVE_PERMISSION_DENIED"
   | "MAIL_DOMAIN_SEND_FORBIDDEN"
   | "MAIL_DOMAIN_RECEIVE_FORBIDDEN"
+  | "SEND_GLOBAL_QUOTA_EXCEEDED"
   | "SEND_TOTAL_QUOTA_EXCEEDED"
   | "SEND_DOMAIN_QUOTA_EXCEEDED"
   | "SEND_MAILBOX_QUOTA_EXCEEDED"
   | "SEND_MAILBOX_LIFETIME_QUOTA_EXCEEDED"
+  | "RECEIVE_GLOBAL_QUOTA_EXCEEDED"
   | "RECEIVE_TOTAL_QUOTA_EXCEEDED"
   | "RECEIVE_DOMAIN_QUOTA_EXCEEDED"
   | "RECEIVE_MAILBOX_QUOTA_EXCEEDED"
@@ -138,8 +122,22 @@ export interface MailQuotaReservation {
 
 export type SendQuotaReservation = MailQuotaReservation
 
-type Counter = { completed: number; pending: number }
+type RawCounter = {
+  completed: number
+  pending: number
+  lifetimeCompleted: number
+  lifetimePending: number
+}
+
 type MailQuotaSqlite = ReturnType<typeof getSqlite>
+type Query = <T extends Record<string, unknown> = Record<string, string | number>>(
+  text: string,
+  values?: unknown[],
+) => Promise<{ rows: T[] }>
+type CounterFilter =
+  | { column: "user_id" | "policy_role" | "quota_subject"; value: string }
+  | { column: "all"; excludeEmperor: boolean }
+
 let validationDatabaseOverride: MailQuotaSqlite | undefined
 
 export function setSendQuotaDatabaseForValidation(database?: MailQuotaSqlite) {
@@ -157,14 +155,16 @@ function activeDriver() {
   return validationDatabaseOverride ? "sqlite" : getDatabaseDriver()
 }
 
-function quotaSubject(
-  userId: string,
-  access: EffectiveAccessPolicy,
-  direction: MailDirection,
-) {
-  const policy = mailQuotaForDirection(access, direction)
-  const role = mailQuotaRoleForDirection(access, direction)
-  return policy.scope === "role" ? `role:${role}` : `user:${userId}`
+function quotaSubject(userId: string) {
+  return `user:${userId}`
+}
+
+function minimumRemaining(applied: AppliedMailQuotaCounter[]) {
+  const finite = applied.flatMap(item => [
+    ...(item.rolling.remaining === null ? [] : [item.rolling.remaining]),
+    ...(item.lifetimeRemaining === null ? [] : [item.lifetimeRemaining]),
+  ])
+  return finite.length === 0 ? undefined : Math.min(...finite)
 }
 
 export function mailQuotaWindowMilliseconds(rule: MailQuotaRule) {
@@ -178,188 +178,161 @@ function cutoffMilliseconds(now: number, rule: MailQuotaRule) {
   return Math.max(0, now - mailQuotaWindowMilliseconds(rule))
 }
 
-function counter(rule: MailQuotaRule, counts: Counter): MailQuotaCounter {
-  const used = counts.completed + counts.pending
+function counter(rule: MailQuotaRule, completed: number, pending: number): MailQuotaCounter {
+  const used = completed + pending
   return {
     rule,
-    ...counts,
+    completed,
+    pending,
     used,
     remaining: rule.limit < 0 ? null : Math.max(0, rule.limit - used),
   }
 }
 
-function sendCounter(value: MailQuotaCounter): SendQuotaCounter {
-  return { ...value, sent: value.completed }
-}
-
-function mailboxCounter(
-  address: string,
-  rule: MailboxQuotaRule,
-  rolling: Counter,
-  lifetime: Counter,
-): MailboxQuotaCounter {
-  const lifetimeUsed = lifetime.completed + lifetime.pending
+function appliedCounter(assignment: MailQuotaAssignment, counts: RawCounter): AppliedMailQuotaCounter {
+  const lifetimeUsed = counts.lifetimeCompleted + counts.lifetimePending
   return {
-    address,
-    rule,
-    rolling: counter(rule.rolling, rolling),
-    lifetimeCompleted: lifetime.completed,
-    lifetimePending: lifetime.pending,
+    assignment,
+    rolling: counter(assignment.rolling, counts.completed, counts.pending),
+    lifetimeCompleted: counts.lifetimeCompleted,
+    lifetimePending: counts.lifetimePending,
     lifetimeUsed,
-    lifetimeRemaining: rule.lifetimeLimit < 0
+    lifetimeRemaining: assignment.lifetimeLimit < 0
       ? null
-      : Math.max(0, rule.lifetimeLimit - lifetimeUsed),
+      : Math.max(0, assignment.lifetimeLimit - lifetimeUsed),
   }
 }
 
-function errorPrefix(direction: MailDirection) {
-  return direction === "send" ? "SEND" : "RECEIVE"
+function targetConditions(assignment: MailQuotaAssignment) {
+  if (assignment.target.type === "domain") {
+    return { column: "sender_domain", value: assignment.target.domain }
+  }
+  if (assignment.target.type === "mailbox") {
+    return { column: "mailbox_address", value: assignment.target.address }
+  }
+  return null
 }
 
-function quotaError(snapshot: MailQuotaSnapshot): MailQuotaError | undefined {
-  const prefix = errorPrefix(snapshot.direction)
-  if (snapshot.total.rule.limit === 0 || (
-    snapshot.total.rule.limit > 0 && snapshot.total.used >= snapshot.total.rule.limit
-  )) return `${prefix}_TOTAL_QUOTA_EXCEEDED` as MailQuotaError
+function assignmentRuleCondition(assignment: MailQuotaAssignment) {
+  return {
+    column: assignment.subject.type === "all" ? "global_rule_id" : "scoped_rule_id",
+    value: assignment.id,
+    // Version-4 events had no rule-id columns. Only an identity whose ID
+    // exactly matches the deterministic migration ID may claim NULL history.
+    includeLegacy: isMigratedMailQuotaAssignment(assignment),
+  } as const
+}
 
-  const domain = snapshot.domain
-  if (domain && (domain.rule.limit === 0 || (
-    domain.rule.limit > 0 && domain.used >= domain.rule.limit
-  ))) return `${prefix}_DOMAIN_QUOTA_EXCEEDED` as MailQuotaError
-
-  const mailbox = snapshot.mailbox
-  if (mailbox && (mailbox.rolling.rule.limit === 0 || (
-    mailbox.rolling.rule.limit > 0 && mailbox.rolling.used >= mailbox.rolling.rule.limit
-  ))) return `${prefix}_MAILBOX_QUOTA_EXCEEDED` as MailQuotaError
-  if (mailbox && (mailbox.rule.lifetimeLimit === 0 || (
-    mailbox.rule.lifetimeLimit > 0 && mailbox.lifetimeUsed >= mailbox.rule.lifetimeLimit
-  ))) return `${prefix}_MAILBOX_LIFETIME_QUOTA_EXCEEDED` as MailQuotaError
-
-  return undefined
+function assignmentFilter(userId: string, role: Role, assignment: MailQuotaAssignment): CounterFilter {
+  if (assignment.subject.type === "all") {
+    return { column: "all", excludeEmperor: assignment.ignoreEmperor }
+  }
+  if (assignment.subject.type === "role" && assignment.shareWithinRole) {
+    return { column: "policy_role" as const, value: role }
+  }
+  return { column: "user_id" as const, value: userId }
 }
 
 function sqliteCounter(
-  subject: string,
-  userId: string,
+  filter: CounterFilter,
   direction: MailDirection,
-  domain: string | null,
-  mailboxAddress: string | null,
-  rule: MailQuotaRule | null,
+  assignment: MailQuotaAssignment,
   now: number,
-): Counter {
-  // Aggregate limits may be shared by a role. Mailbox limits always belong to
-  // the concrete user and address so one role member cannot consume another
-  // member's mailbox lifetime allowance.
-  const conditions = [mailboxAddress === null ? "quota_subject = ?" : "user_id = ?", "direction = ?"]
-  const values: Array<string | number> = [mailboxAddress === null ? subject : userId, direction]
-  if (domain !== null) {
-    conditions.push("sender_domain = ?")
-    values.push(domain)
-  }
-  if (mailboxAddress !== null) {
-    conditions.push("mailbox_address = ?")
-    values.push(mailboxAddress)
-  }
-  const cutoff = rule ? cutoffMilliseconds(now, rule) : 0
+): RawCounter {
+  const target = targetConditions(assignment)
+  const assignmentRule = assignmentRuleCondition(assignment)
+  const targetClause = target ? ` AND ${target.column} = ?` : ""
+  const assignmentClause = assignmentRule.includeLegacy
+    ? `(${assignmentRule.column} = ? OR ${assignmentRule.column} IS NULL)`
+    : `${assignmentRule.column} = ?`
+  const filterClause = filter.column === "all"
+    ? filter.excludeEmperor
+      ? "policy_role <> ?"
+      : "1 = 1"
+    : `${filter.column} = ?`
+  const filterValues = filter.column === "all"
+    ? filter.excludeEmperor ? [ROLES.EMPEROR] : []
+    : [filter.value]
   const row = sqliteHandle().prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN status = 'sent' AND created_at >= ? THEN 1 ELSE 0 END), 0) AS completed,
-      COALESCE(SUM(CASE WHEN status = 'reserved' AND created_at >= ? AND reservation_expires_at > ? THEN 1 ELSE 0 END), 0) AS pending
+      COALESCE(SUM(CASE WHEN status = 'reserved' AND created_at >= ? AND reservation_expires_at > ? THEN 1 ELSE 0 END), 0) AS pending,
+      COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS lifetime_completed,
+      COALESCE(SUM(CASE WHEN status = 'reserved' AND reservation_expires_at > ? THEN 1 ELSE 0 END), 0) AS lifetime_pending
     FROM send_quota_event
-    WHERE ${conditions.join(" AND ")}
-  `).get(cutoff, cutoff, now, ...values) as { completed: number; pending: number }
-  return { completed: Number(row.completed), pending: Number(row.pending) }
+    WHERE ${filterClause} AND direction = ? AND ${assignmentClause}${targetClause}
+  `).get(
+    cutoffMilliseconds(now, assignment.rolling),
+    cutoffMilliseconds(now, assignment.rolling),
+    now,
+    now,
+    ...filterValues,
+    direction,
+    assignmentRule.value,
+    ...(target ? [target.value] : []),
+  ) as {
+    completed: number
+    pending: number
+    lifetime_completed: number
+    lifetime_pending: number
+  }
+  return {
+    completed: Number(row.completed),
+    pending: Number(row.pending),
+    lifetimeCompleted: Number(row.lifetime_completed),
+    lifetimePending: Number(row.lifetime_pending),
+  }
 }
-
-type Query = (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, string | number>> }>
 
 async function postgresCounter(
   query: Query,
-  subject: string,
-  userId: string,
+  filter: CounterFilter,
   direction: MailDirection,
-  domain: string | null,
-  mailboxAddress: string | null,
-  rule: MailQuotaRule | null,
+  assignment: MailQuotaAssignment,
   now: number,
-): Promise<Counter> {
-  const conditions = [mailboxAddress === null ? "quota_subject = $1" : "user_id = $1", "direction = $2"]
-  const values: unknown[] = [mailboxAddress === null ? subject : userId, direction, new Date(rule ? cutoffMilliseconds(now, rule) : 0), new Date(now)]
-  if (domain !== null) {
-    values.push(domain)
-    conditions.push(`sender_domain = $${values.length}`)
-  }
-  if (mailboxAddress !== null) {
-    values.push(mailboxAddress)
-    conditions.push(`mailbox_address = $${values.length}`)
-  }
-  const result = await query(`
+): Promise<RawCounter> {
+  const target = targetConditions(assignment)
+  const assignmentRule = assignmentRuleCondition(assignment)
+  const values: unknown[] = [
+    direction,
+    new Date(cutoffMilliseconds(now, assignment.rolling)),
+    new Date(now),
+  ]
+  const filterClause = filter.column === "all"
+    ? filter.excludeEmperor
+      ? `policy_role <> $${values.push(ROLES.EMPEROR)}`
+      : "1 = 1"
+    : `${filter.column} = $${values.push(filter.value)}`
+  const targetClause = target ? ` AND ${target.column} = $${values.length + 1}` : ""
+  if (target) values.push(target.value)
+  const assignmentParameter = `$${values.push(assignmentRule.value)}`
+  const assignmentClause = assignmentRule.includeLegacy
+    ? ` AND (${assignmentRule.column} = ${assignmentParameter} OR ${assignmentRule.column} IS NULL)`
+    : ` AND ${assignmentRule.column} = ${assignmentParameter}`
+  const result = await query<{
+    completed: string
+    pending: string
+    lifetime_completed: string
+    lifetime_pending: string
+  }>(`
     SELECT
-      COUNT(*) FILTER (WHERE status = 'sent' AND created_at >= $3) AS completed,
-      COUNT(*) FILTER (WHERE status = 'reserved' AND created_at >= $3 AND reservation_expires_at > $4) AS pending
+      COUNT(*) FILTER (WHERE status = 'sent' AND created_at >= $2) AS completed,
+      COUNT(*) FILTER (WHERE status = 'reserved' AND created_at >= $2 AND reservation_expires_at > $3) AS pending,
+      COUNT(*) FILTER (WHERE status = 'sent') AS lifetime_completed,
+      COUNT(*) FILTER (WHERE status = 'reserved' AND reservation_expires_at > $3) AS lifetime_pending
     FROM send_quota_event
-    WHERE ${conditions.join(" AND ")}
+    WHERE ${filterClause} AND direction = $1${targetClause}${assignmentClause}
   `, values)
   return {
     completed: Number(result.rows[0]?.completed ?? 0),
     pending: Number(result.rows[0]?.pending ?? 0),
+    lifetimeCompleted: Number(result.rows[0]?.lifetime_completed ?? 0),
+    lifetimePending: Number(result.rows[0]?.lifetime_pending ?? 0),
   }
 }
 
 function mailboxDomain(address: string) {
   return address.slice(address.lastIndexOf("@") + 1)
-}
-
-async function snapshotWithCounter(
-  userId: string,
-  mailboxAddress: string,
-  access: EffectiveAccessPolicy,
-  direction: MailDirection,
-  read: (
-    domain: string | null,
-    mailbox: string | null,
-    rule: MailQuotaRule | null,
-  ) => Counter | Promise<Counter>,
-) {
-  const policy = mailQuotaForDirection(access, direction)
-  const role = mailQuotaRoleForDirection(access, direction)
-  const subject = quotaSubject(userId, access, direction)
-  const domain = mailboxDomain(mailboxAddress)
-  const domainRule = mailQuotaRuleForDomain(access, direction, domain)
-  const mailboxRule = mailboxQuotaRuleForAddress(access, direction, mailboxAddress)
-  const [totalCounts, domainCounts, mailboxRollingCounts, mailboxLifetimeCounts] = await Promise.all([
-    read(null, null, policy.total),
-    read(domain, null, domainRule),
-    read(null, mailboxAddress, mailboxRule.rolling),
-    read(null, mailboxAddress, null),
-  ])
-  return {
-    direction,
-    subject,
-    scope: policy.scope,
-    role,
-    total: counter(policy.total, totalCounts),
-    domain: { domain, ...counter(domainRule, domainCounts) },
-    mailbox: mailboxCounter(mailboxAddress, mailboxRule, mailboxRollingCounts, mailboxLifetimeCounts),
-  } satisfies MailQuotaSnapshot
-}
-
-async function readSnapshot(
-  userId: string,
-  mailboxAddress: string,
-  access: EffectiveAccessPolicy,
-  direction: MailDirection,
-  now = Date.now(),
-) {
-  if (activeDriver() === "sqlite") {
-    return snapshotWithCounter(userId, mailboxAddress, access, direction, (domain, mailbox, rule) => (
-      sqliteCounter(quotaSubject(userId, access, direction), userId, direction, domain, mailbox, rule, now)
-    ))
-  }
-  const query = getPostgresPool().query.bind(getPostgresPool()) as unknown as Query
-  return snapshotWithCounter(userId, mailboxAddress, access, direction, (domain, mailbox, rule) => (
-    postgresCounter(query, quotaSubject(userId, access, direction), userId, direction, domain, mailbox, rule, now)
-  ))
 }
 
 function directionPermission(access: EffectiveAccessPolicy, direction: MailDirection) {
@@ -380,6 +353,54 @@ function checkError(direction: MailDirection): MailQuotaError {
   return direction === "send" ? "SEND_PERMISSION_CHECK_FAILED" : "RECEIVE_PERMISSION_CHECK_FAILED"
 }
 
+function quotaError(snapshot: MailQuotaSnapshot, units = 1): MailQuotaError | undefined {
+  const prefix = snapshot.direction === "send" ? "SEND" : "RECEIVE"
+  for (const applied of snapshot.applied) {
+    if (applied.rolling.rule.limit === 0 || (
+      applied.rolling.rule.limit > 0 && applied.rolling.used + units > applied.rolling.rule.limit
+    )) {
+      if (applied.assignment.subject.type === "all") {
+        return `${prefix}_GLOBAL_QUOTA_EXCEEDED` as MailQuotaError
+      }
+      const target = applied.assignment.target.type === "all"
+        ? "TOTAL"
+        : applied.assignment.target.type === "domain" ? "DOMAIN" : "MAILBOX"
+      return `${prefix}_${target}_QUOTA_EXCEEDED` as MailQuotaError
+    }
+    if (applied.assignment.target.type === "mailbox" && (
+      applied.assignment.lifetimeLimit === 0
+      || (applied.assignment.lifetimeLimit > 0 && applied.lifetimeUsed + units > applied.assignment.lifetimeLimit)
+    )) return `${prefix}_MAILBOX_LIFETIME_QUOTA_EXCEEDED` as MailQuotaError
+  }
+  return undefined
+}
+
+async function readSnapshot(
+  userId: string,
+  mailboxAddress: string,
+  access: EffectiveAccessPolicy,
+  direction: MailDirection,
+  query?: Query,
+  resolvedAssignments?: MailQuotaAssignment[],
+) {
+  const assignments = resolvedAssignments ?? resolveMailQuotaAssignments(access, direction, mailboxAddress)
+  const snapshot: MailQuotaSnapshot = {
+    direction,
+    subject: quotaSubject(userId),
+    role: access.quotaRole,
+    applied: [],
+  }
+  const now = Date.now()
+  snapshot.applied = await Promise.all(assignments.map(async assignment => {
+    const filter = assignmentFilter(userId, access.quotaRole, assignment)
+    const counts = activeDriver() === "sqlite"
+      ? sqliteCounter(filter, direction, assignment, now)
+      : await postgresCounter(query ?? getPostgresPool().query.bind(getPostgresPool()) as Query, filter, direction, assignment, now)
+    return appliedCounter(assignment, counts)
+  }))
+  return snapshot
+}
+
 export async function checkMailPermission(
   userId: string,
   mailboxAddressValue: string,
@@ -391,8 +412,7 @@ export async function checkMailPermission(
     if (!directionPermission(access, direction)) return { allowed: false, error: permissionError(direction) }
     const mailboxAddress = normalizeMailboxAddress(mailboxAddressValue)
     if (!mailboxAddress) return { allowed: false, error: checkError(direction) }
-    const domain = mailboxDomain(mailboxAddress)
-    if (!isDomainOperationAllowed(access, domain, direction)) {
+    if (!isDomainOperationAllowed(access, mailboxDomain(mailboxAddress), direction)) {
       return { allowed: false, error: domainError(direction) }
     }
     const quota = await readSnapshot(userId, mailboxAddress, access, direction)
@@ -401,7 +421,7 @@ export async function checkMailPermission(
       allowed: !error,
       ...(error ? { error } : {}),
       quota,
-      remaining: quota.total.remaining ?? undefined,
+      remaining: minimumRemaining(quota.applied),
     }
   } catch (error) {
     console.error("mail.permission.check_failed", {
@@ -415,8 +435,10 @@ export async function checkMailPermission(
 function sendSnapshot(snapshot: MailQuotaSnapshot): SendQuotaSnapshot {
   return {
     ...snapshot,
-    total: sendCounter(snapshot.total),
-    domain: snapshot.domain ? { ...sendCounter(snapshot.domain), domain: snapshot.domain.domain } : undefined,
+    applied: snapshot.applied.map(item => ({
+      ...item,
+      rolling: { ...item.rolling, sent: item.rolling.completed },
+    })),
   }
 }
 
@@ -425,7 +447,6 @@ export async function checkSendPermission(
   senderDomainOrAddress?: string | null,
   resolvedAccess?: EffectiveAccessPolicy,
 ): Promise<SendPermissionResult> {
-  const access = resolvedAccess ?? await getUserAccessPolicy(userId)
   const value = senderDomainOrAddress == null ? null : String(senderDomainOrAddress)
   const address = value?.includes("@")
     ? normalizeMailboxAddress(value)
@@ -433,12 +454,9 @@ export async function checkSendPermission(
       ? `__quota__@${normalizeMailboxDomain(value)}`
       : null
   if (!address) {
-    return {
-      canSend: false,
-      error: senderDomainOrAddress == null ? permissionError("send") : checkError("send"),
-    }
+    return { canSend: false, error: senderDomainOrAddress == null ? permissionError("send") : checkError("send") }
   }
-  const result = await checkMailPermission(userId, address, "send", access)
+  const result = await checkMailPermission(userId, address, "send", resolvedAccess)
   return {
     canSend: result.allowed,
     error: result.error,
@@ -452,80 +470,76 @@ export async function reserveMailQuota(
   mailboxAddressValue: string,
   direction: MailDirection,
   resolvedAccess?: EffectiveAccessPolicy,
-): Promise<MailPermissionResult & { reservation?: MailQuotaReservation }> {
+  units = 1,
+): Promise<MailPermissionResult & { reservation?: MailQuotaReservation; reservations?: MailQuotaReservation[] }> {
+  if (!Number.isSafeInteger(units) || units < 1 || units > 50) return { allowed: false, error: checkError(direction) }
   const access = resolvedAccess ?? await getUserAccessPolicy(userId)
   if (!directionPermission(access, direction)) return { allowed: false, error: permissionError(direction) }
   const mailboxAddress = normalizeMailboxAddress(mailboxAddressValue)
   if (!mailboxAddress) return { allowed: false, error: checkError(direction) }
   const domain = mailboxDomain(mailboxAddress)
-  if (!isDomainOperationAllowed(access, domain, direction)) {
-    return { allowed: false, error: domainError(direction) }
-  }
+  if (!isDomainOperationAllowed(access, domain, direction)) return { allowed: false, error: domainError(direction) }
+  const assignments = resolveMailQuotaAssignments(access, direction, mailboxAddress)
 
   const now = Date.now()
-  const reservationExpiresAt = now + RESERVATION_LEASE_MILLISECONDS
-  const subject = quotaSubject(userId, access, direction)
-  const role = mailQuotaRoleForDirection(access, direction)
-  const id = randomUUID()
-  const finalizeReservation = (snapshot: MailQuotaSnapshot): MailPermissionResult & { reservation?: MailQuotaReservation } => {
-    const error = quotaError(snapshot)
-    if (error) return { allowed: false, error, quota: snapshot }
-    const reserved: MailQuotaSnapshot = {
+  const expiresAt = now + RESERVATION_LEASE_MILLISECONDS
+  const subject = quotaSubject(userId)
+  const ids = Array.from({ length: units }, () => randomUUID())
+  const reservations = ids.map(id => ({
+    id,
+    direction,
+    userId,
+    subject,
+    domain,
+    mailboxAddress,
+    createdAt: new Date(now),
+    expiresAt: new Date(expiresAt),
+  }))
+  const finalize = (snapshot: MailQuotaSnapshot) => {
+    const error = quotaError(snapshot, units)
+    if (error) return { allowed: false as const, error, quota: snapshot }
+    const quota = snapshot.applied.length > 0 ? {
       ...snapshot,
-      total: counter(snapshot.total.rule, { completed: snapshot.total.completed, pending: snapshot.total.pending + 1 }),
-      domain: snapshot.domain ? {
-        domain: snapshot.domain.domain,
-        ...counter(snapshot.domain.rule, { completed: snapshot.domain.completed, pending: snapshot.domain.pending + 1 }),
-      } : undefined,
-      mailbox: snapshot.mailbox ? mailboxCounter(
-        mailboxAddress,
-        snapshot.mailbox.rule,
-        { completed: snapshot.mailbox.rolling.completed, pending: snapshot.mailbox.rolling.pending + 1 },
-        { completed: snapshot.mailbox.lifetimeCompleted, pending: snapshot.mailbox.lifetimePending + 1 },
-      ) : undefined,
-    }
+      applied: snapshot.applied.map(item => appliedCounter(item.assignment, {
+        completed: item.rolling.completed,
+        pending: item.rolling.pending + units,
+        lifetimeCompleted: item.lifetimeCompleted,
+        lifetimePending: item.lifetimePending + units,
+      })),
+    } : snapshot
     return {
-      allowed: true,
-      quota: reserved,
-      remaining: reserved.total.remaining ?? undefined,
-      reservation: { id, direction, userId, subject, domain, mailboxAddress, createdAt: new Date(now), expiresAt: new Date(reservationExpiresAt) },
+      allowed: true as const,
+      quota,
+      remaining: minimumRemaining(quota.applied),
+      reservation: reservations[0],
+      reservations,
     }
-  }
-
-  const reserve = async (read: Parameters<typeof snapshotWithCounter>[4], insert: () => void | Promise<void>) => {
-    const snapshot = await snapshotWithCounter(userId, mailboxAddress, access, direction, read)
-    const prepared = finalizeReservation(snapshot)
-    if (!prepared.allowed) return prepared
-    await insert()
-    return prepared
   }
 
   if (activeDriver() === "sqlite") {
     return sqliteHandle().transaction(() => {
-      const policy = mailQuotaForDirection(access, direction)
-      const domainRule = mailQuotaRuleForDomain(access, direction, domain)
-      const mailboxRule = mailboxQuotaRuleForAddress(access, direction, mailboxAddress)
       const snapshot: MailQuotaSnapshot = {
         direction,
         subject,
-        scope: policy.scope,
-        role,
-        total: counter(policy.total, sqliteCounter(subject, userId, direction, null, null, policy.total, now)),
-        domain: { domain, ...counter(domainRule, sqliteCounter(subject, userId, direction, domain, null, domainRule, now)) },
-        mailbox: mailboxCounter(
-          mailboxAddress,
-          mailboxRule,
-          sqliteCounter(subject, userId, direction, null, mailboxAddress, mailboxRule.rolling, now),
-          sqliteCounter(subject, userId, direction, null, mailboxAddress, null, now),
-        ),
+        role: access.quotaRole,
+        applied: assignments.map(assignment => appliedCounter(
+          assignment,
+          sqliteCounter(assignmentFilter(userId, access.quotaRole, assignment), direction, assignment, now),
+        )),
       }
-      const result = finalizeReservation(snapshot)
+      const result = finalize(snapshot)
       if (!result.allowed) return result
-      sqliteHandle().prepare(`
+      const insert = sqliteHandle().prepare(`
         INSERT INTO send_quota_event
-          (id, user_id, quota_subject, policy_role, direction, sender_domain, mailbox_address, status, created_at, reservation_expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)
-      `).run(id, userId, subject, role, direction, domain, mailboxAddress, now, reservationExpiresAt)
+          (id, user_id, quota_subject, policy_role, direction, sender_domain, mailbox_address, global_rule_id, scoped_rule_id, status, created_at, reservation_expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)
+      `)
+      const eventSubject = assignments.some(assignment => assignment.subject.type === "role" && assignment.shareWithinRole)
+          ? `role:${access.quotaRole}`
+          : subject
+      const globalRuleId = assignments.find(assignment => assignment.subject.type === "all")?.id ?? null
+      const scopedRuleId = assignments.find(assignment => assignment.subject.type !== "all")?.id ?? null
+      for (const id of ids) insert.run(id, userId, eventSubject, access.quotaRole, direction, domain, mailboxAddress, globalRuleId, scopedRuleId, now, expiresAt)
       return result
     }).immediate()
   }
@@ -533,19 +547,49 @@ export async function reserveMailQuota(
   const client = await getPostgresPool().connect()
   try {
     await client.query("BEGIN")
-    // Serialize the complete aggregate budget. Locking per mailbox would let
-    // concurrent reservations for different addresses oversubscribe a shared
-    // total or per-domain limit.
-    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${subject}:${direction}`])
-    const query = client.query.bind(client) as unknown as Query
-    const result = await reserve(
-      (readDomain, readMailbox, rule) => postgresCounter(query, subject, userId, direction, readDomain, readMailbox, rule, now),
-      async () => { await client.query(`
-        INSERT INTO send_quota_event
-          (id, user_id, quota_subject, policy_role, direction, sender_domain, mailbox_address, status, created_at, reservation_expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'reserved', $8, $9)
-      `, [id, userId, subject, role, direction, domain, mailboxAddress, new Date(now), new Date(reservationExpiresAt)]) },
+    // Resets take the exclusive form of this lock. Shared acquisition keeps
+    // ordinary reservations concurrent while preventing a reset from deleting
+    // usage underneath an in-flight reservation transaction.
+    await client.query(
+      "SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))",
+      [`mail-quota:${direction}:maintenance`],
     )
+    const lockKeys = [...new Set(assignments.map(assignment => {
+      const shared = assignment.subject.type === "all"
+        || (assignment.subject.type === "role" && assignment.shareWithinRole)
+      return shared
+        ? `mail-quota:${direction}:shared:${assignment.id}`
+        : `mail-quota:${direction}:user:${userId}:${assignment.id}`
+    }))].sort()
+    for (const key of lockKeys) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key])
+    }
+    const query = client.query.bind(client) as Query
+    const snapshot = await readSnapshot(userId, mailboxAddress, access, direction, query, assignments)
+    const result = finalize(snapshot)
+    if (result.allowed) {
+      const eventSubject = snapshot.applied.some(item => item.assignment.subject.type === "role" && item.assignment.shareWithinRole)
+          ? `role:${access.quotaRole}`
+          : subject
+      await client.query(`
+        INSERT INTO send_quota_event
+          (id, user_id, quota_subject, policy_role, direction, sender_domain, mailbox_address, global_rule_id, scoped_rule_id, status, created_at, reservation_expires_at)
+        SELECT id, $2, $3, $4, $5, $6, $7, $8, $9, 'reserved', $10, $11
+        FROM UNNEST($1::text[]) AS ids(id)
+      `, [
+        ids,
+        userId,
+        eventSubject,
+        access.quotaRole,
+        direction,
+        domain,
+        mailboxAddress,
+        assignments.find(assignment => assignment.subject.type === "all")?.id ?? null,
+        assignments.find(assignment => assignment.subject.type !== "all")?.id ?? null,
+        new Date(now),
+        new Date(expiresAt),
+      ])
+    }
     await client.query(result.allowed ? "COMMIT" : "ROLLBACK")
     return result
   } catch (error) {
@@ -560,19 +604,55 @@ export async function reserveSendQuota(
   userId: string,
   senderAddressOrDomain: string,
   resolvedAccess?: EffectiveAccessPolicy,
-): Promise<SendPermissionResult & { reservation?: SendQuotaReservation }> {
-  const address = senderAddressOrDomain.includes("@")
-    ? senderAddressOrDomain
-    : `__quota__@${senderAddressOrDomain}`
-  const result = await reserveMailQuota(userId, address, "send", resolvedAccess)
+  units = 1,
+): Promise<SendPermissionResult & { reservation?: SendQuotaReservation; reservations?: SendQuotaReservation[] }> {
+  const address = senderAddressOrDomain.includes("@") ? senderAddressOrDomain : `__quota__@${senderAddressOrDomain}`
+  const result = await reserveMailQuota(userId, address, "send", resolvedAccess, units)
   return {
     canSend: result.allowed,
     error: result.error,
     quota: result.quota ? sendSnapshot(result.quota) : undefined,
     remainingEmails: result.remaining,
     reservation: result.reservation,
+    reservations: result.reservations,
   }
 }
+
+export async function completeMailQuotaReservations(reservations: MailQuotaReservation[]) {
+  if (reservations.length === 0) return
+  const direction = reservations[0].direction
+  if (reservations.some(item => item.direction !== direction)) throw new Error("MAIL_QUOTA_RESERVATION_DIRECTION_MISMATCH")
+  const ids = reservations.map(item => item.id)
+  if (activeDriver() === "sqlite") {
+    return sqliteHandle().transaction(() => {
+      const update = sqliteHandle().prepare(`
+        UPDATE send_quota_event SET status = 'sent', completed_at = ?
+        WHERE id = ? AND status = 'reserved' AND direction = ?
+      `)
+      const completedAt = Date.now()
+      for (const id of ids) {
+        if (update.run(completedAt, id, direction).changes !== 1) throw new Error("MAIL_QUOTA_RESERVATION_NOT_FOUND")
+      }
+    }).immediate()
+  }
+  const client = await getPostgresPool().connect()
+  try {
+    await client.query("BEGIN")
+    const result = await client.query(`
+      UPDATE send_quota_event SET status = 'sent', completed_at = NOW()
+      WHERE id = ANY($1::text[]) AND status = 'reserved' AND direction = $2
+    `, [ids, direction])
+    if (result.rowCount !== ids.length) throw new Error("MAIL_QUOTA_RESERVATION_NOT_FOUND")
+    await client.query("COMMIT")
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export const completeSendQuotaReservations = completeMailQuotaReservations
 
 export async function completeMailQuotaReservation(reservation: MailQuotaReservation) {
   if (activeDriver() === "sqlite") {
@@ -592,13 +672,6 @@ export async function completeMailQuotaReservation(reservation: MailQuotaReserva
 
 export const completeSendQuotaReservation = completeMailQuotaReservation
 
-/**
- * Rolls back a quota charge only after the outbound transport has returned a
- * definite failure. Callers intentionally complete outbound reservations
- * before handing the message to an external provider: if the process exits
- * while the provider outcome is unknown, the attempt remains charged instead
- * of becoming a quota-bypass window when a short reservation lease expires.
- */
 export async function releaseMailQuotaReservation(reservation: MailQuotaReservation) {
   if (activeDriver() === "sqlite") {
     sqliteHandle().prepare("DELETE FROM send_quota_event WHERE id = ? AND status = 'reserved' AND direction = ?")
@@ -613,162 +686,132 @@ export async function releaseMailQuotaReservation(reservation: MailQuotaReservat
 
 export const releaseSendQuotaReservation = releaseMailQuotaReservation
 
-type UsageFilter = { column: "quota_subject" | "policy_role" | "user_id"; value: string }
+export async function releaseMailQuotaReservations(reservations: MailQuotaReservation[]) {
+  if (reservations.length === 0) return
+  const direction = reservations[0].direction
+  if (reservations.some(item => item.direction !== direction)) throw new Error("MAIL_QUOTA_RESERVATION_DIRECTION_MISMATCH")
+  const ids = reservations.map(item => item.id)
+  if (activeDriver() === "sqlite") {
+    return sqliteHandle().transaction(() => {
+      const remove = sqliteHandle().prepare(
+        "DELETE FROM send_quota_event WHERE id = ? AND status = 'reserved' AND direction = ?",
+      )
+      for (const id of ids) remove.run(id, direction)
+    }).immediate()
+  }
+  await getPostgresPool().query(
+    "DELETE FROM send_quota_event WHERE id = ANY($1::text[]) AND status = 'reserved' AND direction = $2",
+    [ids, direction],
+  )
+}
 
-async function usageCounter(
-  filter: UsageFilter,
+export const releaseSendQuotaReservations = releaseMailQuotaReservations
+
+async function allTimeCompleted(
+  filter: CounterFilter,
   direction: MailDirection,
-  domain: string | null,
-  rule: MailQuotaRule,
-  now: number,
-): Promise<Counter & { allTimeCompleted: number }> {
-  const cutoff = cutoffMilliseconds(now, rule)
+  assignedRuleColumn?: "global_rule_id" | "scoped_rule_id",
+) {
+  const assignedRuleClause = assignedRuleColumn ? ` AND ${assignedRuleColumn} IS NOT NULL` : ""
   if (activeDriver() === "sqlite") {
-    const domainClause = domain === null ? "" : " AND sender_domain = ?"
+    const sqliteFilter = filter.column === "all"
+      ? filter.excludeEmperor
+        ? "policy_role <> ?"
+        : "1 = 1"
+      : `${filter.column} = ?`
+    const sqliteValues = filter.column === "all"
+      ? filter.excludeEmperor ? [ROLES.EMPEROR] : []
+      : [filter.value]
     const row = sqliteHandle().prepare(`
-      SELECT
-        COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS all_time,
-        COALESCE(SUM(CASE WHEN status = 'sent' AND created_at >= ? THEN 1 ELSE 0 END), 0) AS completed,
-        COALESCE(SUM(CASE WHEN status = 'reserved' AND created_at >= ? AND reservation_expires_at > ? THEN 1 ELSE 0 END), 0) AS pending
-      FROM send_quota_event
-      WHERE ${filter.column} = ? AND direction = ?${domainClause}
-    `).get(cutoff, cutoff, now, filter.value, direction, ...(domain === null ? [] : [domain])) as {
-      all_time: number; completed: number; pending: number
-    }
-    return { allTimeCompleted: Number(row.all_time), completed: Number(row.completed), pending: Number(row.pending) }
+      SELECT COUNT(*) AS count FROM send_quota_event
+      WHERE ${sqliteFilter} AND direction = ? AND status = 'sent'${assignedRuleClause}
+    `).get(...sqliteValues, direction) as { count: number }
+    return Number(row.count)
   }
-  const domainClause = domain === null ? "" : " AND sender_domain = $5"
-  const result = await getPostgresPool().query<{
-    all_time: string; completed: string; pending: string
-  }>(`
-    SELECT
-      COUNT(*) FILTER (WHERE status = 'sent') AS all_time,
-      COUNT(*) FILTER (WHERE status = 'sent' AND created_at >= $3) AS completed,
-      COUNT(*) FILTER (WHERE status = 'reserved' AND created_at >= $3 AND reservation_expires_at > $4) AS pending
-    FROM send_quota_event
-    WHERE ${filter.column} = $1 AND direction = $2${domainClause}
-  `, [filter.value, direction, new Date(cutoff), new Date(now), ...(domain === null ? [] : [domain])])
-  return {
-    allTimeCompleted: Number(result.rows[0]?.all_time ?? 0),
-    completed: Number(result.rows[0]?.completed ?? 0),
-    pending: Number(result.rows[0]?.pending ?? 0),
-  }
-}
-
-async function usageDomains(filter: UsageFilter, direction: MailDirection): Promise<string[]> {
-  if (activeDriver() === "sqlite") {
-    const rows = sqliteHandle().prepare(`
-      SELECT DISTINCT sender_domain AS domain FROM send_quota_event
-      WHERE ${filter.column} = ? AND direction = ? AND status = 'sent' ORDER BY sender_domain
-    `).all(filter.value, direction) as Array<{ domain: string }>
-    return rows.map(row => row.domain)
-  }
-  const result = await getPostgresPool().query<{ domain: string }>(`
-    SELECT DISTINCT sender_domain AS domain FROM send_quota_event
-    WHERE ${filter.column} = $1 AND direction = $2 AND status = 'sent' ORDER BY sender_domain
-  `, [filter.value, direction])
-  return result.rows.map(row => row.domain)
-}
-
-function sameFilter(left: UsageFilter, right: UsageFilter) {
-  return left.column === right.column && left.value === right.value
+  const filterClause = filter.column === "all"
+    ? filter.excludeEmperor
+      ? "policy_role <> $2"
+      : "1 = 1"
+    : `${filter.column} = $2`
+  const result = await getPostgresPool().query<{ count: string }>(`
+    SELECT COUNT(*) AS count FROM send_quota_event
+    WHERE ${filterClause} AND direction = $1 AND status = 'sent'${assignedRuleClause}
+  `, filter.column === "all"
+    ? filter.excludeEmperor ? [direction, ROLES.EMPEROR] : [direction]
+    : [direction, filter.value])
+  return Number(result.rows[0]?.count ?? 0)
 }
 
 async function buildUsage(
   target: MailQuotaUsage["target"],
   access: EffectiveAccessPolicy,
   direction: MailDirection,
-  quotaFilter: UsageFilter,
-  auditFilter: UsageFilter,
+  filter: CounterFilter,
   aggregate: boolean,
+  assignedRuleColumn?: "global_rule_id" | "scoped_rule_id",
 ): Promise<MailQuotaUsage> {
-  const policy = mailQuotaForDirection(access, direction)
-  const role = mailQuotaRoleForDirection(access, direction)
+  const rules = effectiveMailQuotaAssignments(access, direction)
   const now = Date.now()
-  const totalUsage = await usageCounter(quotaFilter, direction, null, policy.total, now)
-  const auditUsage = sameFilter(quotaFilter, auditFilter)
-    ? totalUsage
-    : await usageCounter(auditFilter, direction, null, policy.total, now)
-  const domains = await Promise.all([...new Set([
-    ...Object.keys(policy.domains),
-    ...await usageDomains(auditFilter, direction),
-  ])].sort().map(async domain => {
-    const rule = mailQuotaRuleForDomain(access, direction, domain)
-    const usage = await usageCounter(quotaFilter, direction, domain, rule, now)
-    const audit = sameFilter(quotaFilter, auditFilter)
-      ? usage
-      : await usageCounter(auditFilter, direction, domain, rule, now)
-    return {
-      domain,
-      allTimeCompleted: audit.allTimeCompleted,
-      ...counter(rule, usage),
-      ...(aggregate ? { remaining: null } : {}),
-    }
+  const counters = await Promise.all(rules.map(async assignment => {
+    const ruleFilter = target.type === "user"
+      ? assignmentFilter(target.id, access.quotaRole, assignment)
+      : assignment.subject.type === "all"
+        ? { column: "all" as const, excludeEmperor: assignment.ignoreEmperor }
+        : assignment.subject.type === "role" && assignment.shareWithinRole
+          ? { column: "policy_role" as const, value: access.quotaRole }
+          : filter
+    const counts = activeDriver() === "sqlite"
+      ? sqliteCounter(ruleFilter, direction, assignment, now)
+      : await postgresCounter(getPostgresPool().query.bind(getPostgresPool()) as Query, ruleFilter, direction, assignment, now)
+    const applied = appliedCounter(assignment, counts)
+    const shared = assignment.subject.type === "all"
+      || (assignment.subject.type === "role" && assignment.shareWithinRole)
+    return aggregate && !shared ? {
+      ...applied,
+      rolling: { ...applied.rolling, remaining: null },
+      lifetimeRemaining: null,
+    } : applied
   }))
   return {
     direction,
     target,
-    scope: policy.scope,
-    role,
     aggregate,
-    allTimeCompleted: auditUsage.allTimeCompleted,
-    total: { ...counter(policy.total, totalUsage), ...(aggregate ? { remaining: null } : {}) },
-    domains,
+    allTimeCompleted: await allTimeCompleted(filter, direction, assignedRuleColumn),
+    rules: counters,
   }
 }
 
-export function getRoleMailQuotaUsage(
-  role: EffectiveAccessPolicy["sendQuotaRole"],
-  access: EffectiveAccessPolicy,
-  direction: MailDirection,
-) {
-  const policy = mailQuotaForDirection(access, direction)
-  const aggregate = policy.scope === "user"
-  return buildUsage(
-    { type: "role", id: role },
-    access,
-    direction,
-    aggregate ? { column: "policy_role", value: role } : { column: "quota_subject", value: `role:${role}` },
-    { column: "policy_role", value: role },
-    aggregate,
-  )
+export function getRoleMailQuotaUsage(role: Role, access: EffectiveAccessPolicy, direction: MailDirection) {
+  return buildUsage({ type: "role", id: role }, access, direction, { column: "policy_role", value: role }, true)
 }
 
-export function getUserMailQuotaUsage(
-  userId: string,
-  access: EffectiveAccessPolicy,
-  direction: MailDirection,
-) {
+export function getUserMailQuotaUsage(userId: string, access: EffectiveAccessPolicy, direction: MailDirection) {
+  return buildUsage({ type: "user", id: userId }, access, direction, { column: "user_id", value: userId }, false)
+}
+
+export function getGlobalMailQuotaUsage(access: EffectiveAccessPolicy, direction: MailDirection) {
   return buildUsage(
-    { type: "user", id: userId },
-    access,
+    { type: "all", id: "all" },
+    { ...access, mailQuotaRules: access.mailQuotaRules.filter(rule => rule.subject.type === "all") },
     direction,
-    { column: "quota_subject", value: quotaSubject(userId, access, direction) },
-    { column: "user_id", value: userId },
-    false,
+    { column: "all", excludeEmperor: false },
+    true,
+    "global_rule_id",
   )
 }
 
 function toSendUsage(value: MailQuotaUsage): SendQuotaUsage {
   return {
-    target: value.target,
-    scope: value.scope,
-    role: value.role,
-    aggregate: value.aggregate,
+    ...value,
     allTimeSent: value.allTimeCompleted,
-    total: sendCounter(value.total),
-    domains: value.domains.map(domain => ({
-      ...sendCounter(domain),
-      domain: domain.domain,
-      allTimeSent: domain.allTimeCompleted,
+    rules: value.rules.map(rule => ({
+      ...rule,
+      rolling: { ...rule.rolling, sent: rule.rolling.completed },
     })),
   }
 }
 
-export async function getRoleSendQuotaUsage(
-  role: EffectiveAccessPolicy["sendQuotaRole"],
-  access: EffectiveAccessPolicy,
-) {
+export async function getRoleSendQuotaUsage(role: Role, access: EffectiveAccessPolicy) {
   return toSendUsage(await getRoleMailQuotaUsage(role, access, "send"))
 }
 
@@ -778,25 +821,43 @@ export async function getUserSendQuotaUsage(userId: string, access: EffectiveAcc
 
 export async function resetMailQuotaUsage(input: {
   direction: MailDirection
+  all?: boolean
   userId?: string
-  role?: EffectiveAccessPolicy["sendQuotaRole"]
+  role?: Role
   mailboxAddress?: string
 }) {
   const address = input.mailboxAddress == null ? null : normalizeMailboxAddress(input.mailboxAddress)
   if (input.mailboxAddress != null && !address) throw new Error("INVALID_MAILBOX_ADDRESS")
-  if (!input.userId && !input.role) throw new Error("QUOTA_RESET_TARGET_REQUIRED")
-  const conditions = ["direction = ?"]
-  const sqliteValues: string[] = [input.direction]
-  // A user reset is exact. A role reset intentionally removes every event
-  // recorded while that role policy was active, regardless of user/role scope.
-  if (input.userId) { conditions.push("user_id = ?"); sqliteValues.push(input.userId) }
-  else if (input.role) { conditions.push("policy_role = ?"); sqliteValues.push(input.role) }
-  if (address) { conditions.push("mailbox_address = ?"); sqliteValues.push(address) }
-  if (activeDriver() === "sqlite") {
-    return sqliteHandle().prepare(`DELETE FROM send_quota_event WHERE ${conditions.join(" AND ")}`).run(...sqliteValues).changes
+  if ([input.all === true, Boolean(input.userId), Boolean(input.role)].filter(Boolean).length !== 1) {
+    throw new Error("QUOTA_RESET_TARGET_REQUIRED")
   }
-  const pgValues = sqliteValues
-  const pgConditions = conditions.map((condition, index) => condition.replace("?", `$${index + 1}`))
-  const result = await getPostgresPool().query(`DELETE FROM send_quota_event WHERE ${pgConditions.join(" AND ")}`, pgValues)
-  return result.rowCount ?? 0
+  const conditions = ["direction = ?", "status = 'sent'"]
+  const values: string[] = [input.direction]
+  if (input.all) conditions.push("global_rule_id IS NOT NULL")
+  else if (input.userId) { conditions.push("user_id = ?"); values.push(input.userId) }
+  else if (input.role) { conditions.push("policy_role = ?"); values.push(input.role) }
+  if (address) { conditions.push("mailbox_address = ?"); values.push(address) }
+  if (activeDriver() === "sqlite") {
+    return sqliteHandle().transaction(() => (
+      sqliteHandle().prepare(`DELETE FROM send_quota_event WHERE ${conditions.join(" AND ")}`).run(...values).changes
+    )).immediate()
+  }
+  let parameter = 0
+  const pgConditions = conditions.map(condition => condition.replace("?", () => `$${++parameter}`))
+  const client = await getPostgresPool().connect()
+  try {
+    await client.query("BEGIN")
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [`mail-quota:${input.direction}:maintenance`],
+    )
+    const result = await client.query(`DELETE FROM send_quota_event WHERE ${pgConditions.join(" AND ")}`, values)
+    await client.query("COMMIT")
+    return result.rowCount ?? 0
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
 }
