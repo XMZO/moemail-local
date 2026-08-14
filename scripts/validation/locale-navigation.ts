@@ -114,6 +114,10 @@ const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile
 const searchableUserSource = readFileSync(join(process.cwd(), "app/components/profile/searchable-user-select.tsx"), "utf8")
 const domainPolicySource = readFileSync(join(process.cwd(), "app/components/profile/domain-policy-panel.tsx"), "utf8")
 const messageListSource = readFileSync(join(process.cwd(), "app/components/emails/message-list.tsx"), "utf8")
+const htmlFrameSource = readFileSync(join(process.cwd(), "app/components/emails/html-message-frame.tsx"), "utf8")
+const messageViewSource = readFileSync(join(process.cwd(), "app/components/emails/message-view.tsx"), "utf8")
+const sharedMessageSource = readFileSync(join(process.cwd(), "app/components/emails/shared-message-detail.tsx"), "utf8")
+const threeColumnSource = readFileSync(join(process.cwd(), "app/components/emails/three-column-layout.tsx"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
 assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
 assert.match(accessPanelSource, /mailQuotaRules/u)
@@ -121,11 +125,21 @@ assert.doesNotMatch(accessPanelSource, /<RoleMailQuotaEditor|<UserMailQuotaEdito
 assert.match(sendQuotaSource, /subjectSpecificity|subjects\.all/u)
 assert.doesNotMatch(sendQuotaSource, /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u)
 assert.match(sendQuotaSource, /admin\.access\.mailQuota/u)
-assert.match(sendQuotaSource, /min-\[520px\]:grid-cols-\[minmax\(5rem,.7fr\)_minmax\(5rem,.6fr\)_minmax\(7\.5rem,1fr\)\]/u)
+assert.match(sendQuotaSource, /RULES_PER_PAGE = 20/u)
+assert.match(sendQuotaSource, /filteredRules\.slice/u)
+assert.match(sendQuotaSource, /subjectFilter[\s\S]*targetFilter/u)
+assert.match(sendQuotaSource, /editingRule[\s\S]*cloneAssignment/u)
+assert.match(sendQuotaSource, /manager\.modes\.custom/u)
+assert.match(sendQuotaSource, /raw\.trim\(\) === "" \? Number\.NaN/u)
+assert.match(sendQuotaSource, /rules\.length >= 2_000/u)
+assert.match(sendQuotaSource, /AlertDialogTitle/u)
+assert.match(sendQuotaSource, /md:grid-cols-\[minmax\(12rem,1fr\)_minmax\(9rem,.45fr\)_minmax\(9rem,.45fr\)\]/u)
 assert.match(sendQuotaSource, /grid-cols-\[1\.25rem_minmax\(0,1fr\)\]/u)
 assert.match(sendQuotaSource, /\[overflow-wrap:anywhere\]/u)
 assert.match(sendQuotaSource, /\[&>span\]:truncate/u)
 assert.match(accessPanelSource, /setUsageRevision\(value => value \+ 1\)/u)
+assert.match(accessPanelSource, /ALL_MAILBOX_BLOCK_DOMAINS/u)
+assert.match(accessPanelSource, /blocks\.allDomains/u)
 assert.match(sendQuotaSource, /<SearchableUserSelect/u)
 assert.match(searchableUserSource, /setTimeout\(\(\) =>/u)
 assert.match(searchableUserSource, /\/api\/roles\/users\?\$\{params\}/u)
@@ -142,6 +156,12 @@ assert.match(domainPolicySource, /<details className="group overflow-hidden roun
 assert.match(messageListSource, /ml-auto flex min-w-0 flex-1 justify-end gap-1 overflow-x-auto whitespace-nowrap/u)
 assert.match(messageListSource, /max-w-48 shrink-0 truncate rounded-full/u)
 assert.doesNotMatch(messageListSource, /basis-full flex flex-wrap gap-x-3/u)
+assert.match(htmlFrameSource, /if \(!frame \|\| frame\.html !== html \|\| frame\.dark !== dark\)/u)
+assert.match(htmlFrameSource, /srcDoc=\{frame\.source\}/u)
+assert.doesNotMatch(htmlFrameSource, /srcDoc=\{source\}/u)
+assert.match(messageViewSource, /relative min-h-0 flex-1 overflow-auto/u)
+assert.match(sharedMessageSource, /relative min-h-0 flex-1 overflow-auto/u)
+assert.ok([...threeColumnSource.matchAll(/min-h-0 flex-1 overflow-auto/gu)].length >= 5)
 
 const mailuPanelSource = readFileSync(join(process.cwd(), "app/components/profile/mailu-integration-panel.tsx"), "utf8")
 assert.equal([...mailuPanelSource.matchAll(/<MailuSettingsSection\b/gu)].length, 6)
@@ -182,6 +202,7 @@ console.log(JSON.stringify({
   duplicateRoleIconRemoved: true,
   userRoleEditorResponsive: true,
   accessPolicyLayoutCovered: true,
+  allDomainMailboxBlocksLocalized: true,
   bidirectionalMailQuotaUiLocalized: true,
   quotaUsageRefreshAfterSave: true,
   quotaUserSearchLiveAndAbortable: true,
@@ -190,4 +211,5 @@ console.log(JSON.stringify({
   mailuRealtimeControlsLocalized: true,
   genericImapRealtimeControlsLocalized: true,
   imapAdvancedSettingsResponsive: true,
+  htmlMessageFrameMountAndSizingGuarded: true,
 }))

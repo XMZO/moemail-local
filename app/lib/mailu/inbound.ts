@@ -9,6 +9,8 @@ import { normalizeMailboxAddress } from "../email-address"
 import { ingestEmail, MAX_RAW_EMAIL_SIZE } from "../email-ingestion"
 import { getMailuIntegration, type MailuIntegration } from "./config"
 
+const MAILU_RECIPIENT_TRACE_VERSION = 2 as const
+
 const stateFields = {
   version: z.literal(1),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -37,8 +39,11 @@ const LEASE_MS = 300_000
 const CONFIG_CHECK_MS = 5_000
 let stateMutationTail: Promise<void> = Promise.resolve()
 
-function fingerprint(integration: MailuIntegration) {
-  return createHash("sha256").update(JSON.stringify({
+function fingerprint(
+  integration: MailuIntegration,
+  recipientTraceVersion: 1 | typeof MAILU_RECIPIENT_TRACE_VERSION = MAILU_RECIPIENT_TRACE_VERSION,
+) {
+  const connection = {
     host: integration.imap.host,
     port: integration.imap.port,
     security: integration.imap.security,
@@ -46,7 +51,12 @@ function fingerprint(integration: MailuIntegration) {
     mailbox: integration.imap.mailbox,
     recipientHeader: integration.imap.recipientHeader,
     initialSync: integration.imap.initialSync,
-  })).digest("hex")
+  }
+  return createHash("sha256").update(JSON.stringify(
+    recipientTraceVersion === 1
+      ? connection
+      : { ...connection, recipientTraceVersion },
+  )).digest("hex")
 }
 
 function retentionFingerprint(integration: MailuIntegration) {
@@ -223,11 +233,14 @@ export async function testMailuImapConnection(integration: MailuImapConnection) 
   }
 }
 
-function headerValues(message: ParsedEmail, key: string) {
-  return message.headers
-    .filter(header => header.key?.toLowerCase() === key)
-    .map(header => header.value)
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
+function headerValues(message: ParsedEmail, key: string, limit: number) {
+  const values: string[] = []
+  for (const header of message.headers) {
+    if (header.key?.toLowerCase() !== key || typeof header.value !== "string" || header.value.length === 0) continue
+    values.push(header.value)
+    if (values.length >= limit) break
+  }
+  return values
 }
 
 function headerAddress(value: string) {
@@ -241,14 +254,72 @@ function headerAddress(value: string) {
   }
 }
 
+type ReceivedTrace = {
+  byHost: string
+  deliveryId: string
+  protocol: string
+  postfix: boolean
+  recipient: string
+}
+
+function parseReceivedTrace(value: string): ReceivedTrace | null {
+  if (value.length > 8_192) return null
+  const unfolded = value.replace(/\r?\n[ \t]+/gu, " ").trim()
+  if (!unfolded || /[\r\n\0]/u.test(unfolded)) return null
+
+  const routes = [...unfolded.matchAll(
+    /\bby[ \t]+([a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?)[ \t]+(?:(\(Postfix\))[ \t]+)?with[ \t]+([a-z0-9][a-z0-9.-]{0,31})\b/giu,
+  )]
+  const recipients = [...unfolded.matchAll(/\bfor[ \t]+<([^<>\r\n]{1,320})>[ \t]*;/giu)]
+  const deliveryIds = [...unfolded.matchAll(/\bid[ \t]+([^\s()<>;]{1,256})(?=[ \t]|$)/giu)]
+  if (routes.length !== 1 || recipients.length !== 1 || deliveryIds.length !== 1) return null
+
+  const recipient = headerAddress(recipients[0][1])
+  if (!recipient) return null
+  return {
+    byHost: routes[0][1].toLowerCase(),
+    deliveryId: deliveryIds[0][1],
+    postfix: Boolean(routes[0][2]),
+    protocol: routes[0][3].toLowerCase(),
+    recipient,
+  }
+}
+
 export function mailuEnvelopeRecipient(parsed: ParsedEmail, integration: MailuIntegration) {
   // Mailu mode never falls back to MIME To/Cc. Only the explicitly configured,
   // server-added delivery trace is accepted, and ambiguity fails closed.
-  const values = headerValues(parsed, integration.imap.recipientHeader)
+  const values = headerValues(parsed, integration.imap.recipientHeader, 2)
   if (values.length !== 1) return null
   const candidate = headerAddress(values[0])
-  if (!candidate || candidate === integration.collector.address) return null
-  return candidate
+  if (!candidate) return null
+  if (candidate !== integration.collector.address) return candidate
+  if (integration.imap.recipientHeader !== "delivered-to") return null
+
+  // Mailu 2024.06 adds two internal LMTP hops for aliases but its default
+  // Sieve template still reads Received index 2 (Mailu/Mailu#3587). Mirror the
+  // proposed upstream index-3 fix only after authenticating the complete local
+  // trace shape. Sender-added Received fields come after these three fields and
+  // are never searched, so a MIME sender cannot select another MoeMail inbox.
+  const received = headerValues(parsed, "received", 3).map(parseReceivedTrace)
+  if (received.length !== 3 || !received.every((value): value is ReceivedTrace => value !== null)) return null
+  const [delivery, forwarding, inbound] = received
+  const partitionedDelivery = delivery.deliveryId.match(/^(.+):P([1-9]\d*)$/u)
+  if (
+    delivery.byHost !== forwarding.byHost
+    || delivery.byHost !== inbound.byHost
+    || delivery.postfix
+    || forwarding.postfix
+    || !inbound.postfix
+    || !partitionedDelivery
+    || partitionedDelivery[1] !== forwarding.deliveryId
+    || !/^lmtps?$/u.test(delivery.protocol)
+    || !/^lmtps?$/u.test(forwarding.protocol)
+    || !/^(?:smtp|esmtp[a-z0-9.-]*)$/u.test(inbound.protocol)
+    || delivery.recipient !== integration.collector.address
+    || forwarding.recipient !== integration.collector.address
+    || inbound.recipient === integration.collector.address
+  ) return null
+  return inbound.recipient
 }
 
 async function ingestSource(raw: Buffer, integration: MailuIntegration) {
@@ -338,6 +409,7 @@ async function pollMailuIntegrationUnlocked(integration: MailuIntegration, lease
     const uidValidity = mailbox.uidValidity.toString()
     const upperUid = Math.max(0, mailbox.uidNext - 1)
     const currentFingerprint = fingerprint(integration)
+    const legacyFingerprint = fingerprint(integration, 1)
     const currentRetentionFingerprint = retentionFingerprint(integration)
     // Use the state snapshot carried by this lease token. Reading it outside
     // mutateState here would allow another process to replace the document
@@ -350,7 +422,30 @@ async function pollMailuIntegrationUnlocked(integration: MailuIntegration, lease
       return structuredClone(current)
     })
     if (!state) throw new Error("MAILU_IMAP_STATE_INVALID")
-    if (!state || state.fingerprint !== currentFingerprint) {
+    if (state.fingerprint === legacyFingerprint && legacyFingerprint !== currentFingerprint) {
+      // The previous parser advanced past messages whose Mailu 2024.06
+      // Delivered-To pointed at the collector. Keep the v1 document shape for
+      // rollback compatibility, but replay the old UID range once under the
+      // versioned parser fingerprint. Ingestion is idempotent and batching is
+      // bounded, so a large mailbox cannot monopolize the process.
+      const mailboxReset = state.uidValidity !== uidValidity
+      state = {
+        version: 1,
+        fingerprint: currentFingerprint,
+        retentionFingerprint: mailboxReset ? currentRetentionFingerprint : state.retentionFingerprint,
+        uidValidity,
+        lastUid: 0,
+        ...(upperUid > 0 ? { initialUpperUid: upperUid, initialFilter: "all" as const } : {}),
+        pending: mailboxReset ? {} : state.pending,
+      }
+      await saveLeasedState(state, leaseToken)
+      console.log(JSON.stringify({
+        event: "mailu.imap.recipient_trace_upgraded",
+        fromVersion: 1,
+        toVersion: MAILU_RECIPIENT_TRACE_VERSION,
+        replayThroughUid: upperUid,
+      }))
+    } else if (state.fingerprint !== currentFingerprint) {
       state = {
         version: 1,
         fingerprint: currentFingerprint,

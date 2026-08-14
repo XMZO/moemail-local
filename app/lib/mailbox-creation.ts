@@ -1,6 +1,10 @@
 import { nanoid } from "nanoid"
 import { getDatabaseDriver, getPostgresPool, getSqlite } from "./db"
-import { mailboxBlockAllowedRoles, mailboxUserBlockScope } from "./mailbox-block-scope"
+import {
+  ALL_MAILBOX_BLOCK_DOMAINS,
+  mailboxBlockAllowedRoles,
+  mailboxUserBlockScope,
+} from "./mailbox-block-scope"
 import { ROLES, type Role } from "./permissions"
 
 export type MailboxCreationFailure =
@@ -63,8 +67,8 @@ function sqliteCreateMailbox(input: MailboxCreationInput): MailboxCreationResult
       const address = `${localPart}@${input.domain}`
       const blocks = sqlite.prepare(`
         SELECT scope_key AS scopeKey FROM mailbox_name_block
-        WHERE local_part = ? AND domain = ?
-      `).all(localPart, input.domain) as Array<{ scopeKey: string }>
+        WHERE local_part = ? AND domain IN (?, ?)
+      `).all(localPart, input.domain, ALL_MAILBOX_BLOCK_DOMAINS) as Array<{ scopeKey: string }>
       if (blocks.some(block => mailboxBlockApplies(block.scopeKey, input.userId, roleNames))) {
         if (input.localPart) return { ok: false, code: "MAILBOX_NAME_BLOCKED" }
         continue
@@ -126,8 +130,8 @@ async function postgresCreateMailbox(input: MailboxCreationInput): Promise<Mailb
       const address = `${localPart}@${input.domain}`
       const blocks = await client.query<{ scopeKey: string }>(`
         SELECT scope_key AS "scopeKey" FROM mailbox_name_block
-        WHERE local_part = $1 AND domain = $2
-      `, [localPart, input.domain])
+        WHERE local_part = $1 AND domain IN ($2, $3)
+      `, [localPart, input.domain, ALL_MAILBOX_BLOCK_DOMAINS])
       if (blocks.rows.some(block => mailboxBlockApplies(block.scopeKey, input.userId, roleNames))) {
         if (input.localPart) {
           await client.query("ROLLBACK")

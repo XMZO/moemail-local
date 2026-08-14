@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
+import { createHash } from "node:crypto"
 import { createServer as createHttpServer } from "node:http"
 import { createServer as createNetServer, type Server as NetServer, type Socket } from "node:net"
 import { cpSync, mkdtempSync, rmSync, unwatchFile } from "node:fs"
@@ -11,6 +12,9 @@ import PostalMime from "postal-mime"
 
 const repositoryRoot = process.cwd()
 const temporaryRoot = mkdtempSync(join(tmpdir(), "moemail-mailu-integration-"))
+const postgresUrl = process.argv
+  .find(argument => argument.startsWith("--postgres-url="))
+  ?.slice("--postgres-url=".length) ?? null
 const integrationId = "7f1237d4-c6cf-4bea-8a93-12804a2e3d95"
 const apiToken = "mailu-api-validation-token"
 const collector = "moemail-collector@mailu-service.test"
@@ -372,6 +376,49 @@ const message = (to: string, subject: string) => Buffer.from([
   '<script>globalThis.pwned=true</script><img src=x onerror="globalThis.pwned=true"><p>safe marker</p>',
 ].join("\r\n"))
 
+function mailu2024AliasMessage(to: string, subject: string, options: {
+  deliveryHost?: string
+  forwardingHost?: string
+  inboundHost?: string
+  deliveryRecipient?: string
+  forwardingRecipient?: string
+  inboundRecipient?: string
+  inboundPostfix?: boolean
+  duplicateInboundRecipient?: string
+  deliveryId?: string
+  forwardingId?: string
+} = {}) {
+  const deliveryHost = options.deliveryHost ?? "mailu-validation.test"
+  const forwardingHost = options.forwardingHost ?? deliveryHost
+  const inboundHost = options.inboundHost ?? deliveryHost
+  const inboundRecipient = options.inboundRecipient ?? to
+  return Buffer.from([
+    "Return-Path: <sender@outside.test>",
+    `Delivered-To: <${collector}>`,
+    "Received: from mailu-validation.test ([192.168.203.5])",
+    `\tby ${deliveryHost} with LMTP`,
+    `\tid ${options.deliveryId ?? "validation:P1"}`,
+    "\t(envelope-from <sender@outside.test>)",
+    `\tfor <${options.deliveryRecipient ?? collector}>; Fri, 14 Aug 2026 18:59:55 +0000`,
+    "Received: from mailu-validation.test ([192.168.203.5])",
+    `\tby ${forwardingHost} with LMTP`,
+    `\tid ${options.forwardingId ?? "validation"}`,
+    "\t(envelope-from <sender@outside.test>)",
+    `\tfor <${options.forwardingRecipient ?? collector}>; Fri, 14 Aug 2026 18:59:55 +0000`,
+    "Received: from sender.outside.test ([192.0.2.10])",
+    `\tby ${inboundHost}${options.inboundPostfix === false ? "" : " (Postfix)"} with ESMTP id validation`,
+    `\tfor <${inboundRecipient}>;${options.duplicateInboundRecipient ? ` for <${options.duplicateInboundRecipient}>;` : ""} Fri, 14 Aug 2026 18:59:52 +0000 (UTC)`,
+    "Received: from forged.invalid by forged.invalid (Postfix) with ESMTP id forged",
+    `\tfor <${inboundOnlyAddress}>; Fri, 14 Aug 2026 18:59:40 +0000 (UTC)`,
+    `To: ${inboundOnlyAddress}`,
+    "From: sender@outside.test",
+    `Subject: ${subject}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "mailu 2024.06 compatibility marker",
+  ].join("\r\n"))
+}
+
 const imapMessages: MockImapMessage[] = [
   { uid: 1, raw: message(unknownAddress, "Unknown catch-all"), deleted: false },
   { uid: 2, raw: message(mailboxAddress, "Mailu durable message"), deleted: false },
@@ -424,11 +471,20 @@ try {
   const setupOutcome = await setup.completeSetup({
     config: {
       server: { baseUrl: "http://127.0.0.1:3000" },
-      database: { driver: "sqlite", sqlite: { path: "data/mailu-validation.db" } },
+      database: postgresUrl
+        ? { driver: "postgres", postgres: { url: postgresUrl, poolMax: 1 } }
+        : { driver: "sqlite", sqlite: { path: "data/mailu-validation.db" } },
     },
     admin: { username: "mailu-owner", password: "mailu-validation-password-123456" },
   })
   assert.equal(setupOutcome.ok, true)
+
+  if (postgresUrl) {
+    const driverGlobals = globalThis as typeof globalThis & {
+      __moemailBoundDriver?: "sqlite" | "postgres"
+    }
+    driverGlobals.__moemailBoundDriver = "postgres"
+  }
 
   const database = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/db.ts")).href)
   const schema = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/schema.ts")).href)
@@ -586,6 +642,27 @@ try {
   assert.equal(inbound.mailuEnvelopeRecipient(parsedForged, integration), mailboxAddress)
   const duplicatedTrace = await PostalMime.parse(Buffer.from(message(mailboxAddress, "Ambiguous").toString("utf8").replace(`Delivered-To: <${mailboxAddress}>`, `Delivered-To: <${mailboxAddress}>\r\nDelivered-To: <forged@${managedDomain}>`)))
   assert.equal(inbound.mailuEnvelopeRecipient(duplicatedTrace, integration), null)
+  const mailu2024Trace = await PostalMime.parse(mailu2024AliasMessage(mailboxAddress, "Mailu 2024.06 alias"))
+  assert.equal(
+    inbound.mailuEnvelopeRecipient(mailu2024Trace, integration),
+    mailboxAddress,
+    "the authenticated third Received hop must recover the envelope recipient hidden by Mailu 2024.06",
+  )
+  const explicitHeaderOnly = {
+    ...integration,
+    imap: { ...integration.imap, recipientHeader: "x-original-to" as const },
+  }
+  assert.equal(inbound.mailuEnvelopeRecipient(mailu2024Trace, explicitHeaderOnly), null)
+  for (const unsafeTrace of [
+    mailu2024AliasMessage(mailboxAddress, "Mismatched forwarding host", { forwardingHost: "other.mailu.test" }),
+    mailu2024AliasMessage(mailboxAddress, "Mismatched inbound host", { inboundHost: "other.mailu.test" }),
+    mailu2024AliasMessage(mailboxAddress, "Wrong internal recipient", { forwardingRecipient: inboundOnlyAddress }),
+    mailu2024AliasMessage(mailboxAddress, "Unrelated internal transactions", { deliveryId: "trusted-unpredictable", forwardingId: "attacker-chosen" }),
+    mailu2024AliasMessage(mailboxAddress, "Missing Postfix marker", { inboundPostfix: false }),
+    mailu2024AliasMessage(mailboxAddress, "Ambiguous inbound recipient", { duplicateInboundRecipient: inboundOnlyAddress }),
+  ]) {
+    assert.equal(inbound.mailuEnvelopeRecipient(await PostalMime.parse(unsafeTrace), integration), null)
+  }
 
   const firstPoll = await inbound.pollMailuIntegration(integration)
   assert.equal(firstPoll.processed, 2)
@@ -645,6 +722,47 @@ try {
   assert.equal(fallbackMessage.deleted, true)
   await inbound.stopMailuPoller()
 
+  const legacySkippedMessage: MockImapMessage = {
+    uid: 7,
+    raw: mailu2024AliasMessage(mailboxAddress, "Mailu 2024.06 replayed message"),
+    deleted: false,
+  }
+  imapMessages.push(legacySkippedMessage)
+  const compatibilityIntegration = configModule.mailuIntegrationSchema.parse({
+    ...integration,
+    imap: { ...integration.imap, initialSync: "new" },
+  })
+  await configModule.saveMailuIntegration(compatibilityIntegration)
+  const compatibilityBaseline = await inbound.pollMailuIntegration(compatibilityIntegration)
+  assert.equal(compatibilityBaseline.initialized, true)
+  assert.equal(legacySkippedMessage.deleted, false)
+  const configStore = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/config-store.ts")).href)
+  const legacyStateRaw = await configStore.getConfigValue(configStore.CONFIG_KEYS.MAILU_IMAP_STATE)
+  assert(legacyStateRaw)
+  const legacyState = JSON.parse(legacyStateRaw) as { version: number; fingerprint: string }
+  legacyState.fingerprint = createHash("sha256").update(JSON.stringify({
+    host: compatibilityIntegration.imap.host,
+    port: compatibilityIntegration.imap.port,
+    security: compatibilityIntegration.imap.security,
+    user: compatibilityIntegration.collector.address,
+    mailbox: compatibilityIntegration.imap.mailbox,
+    recipientHeader: compatibilityIntegration.imap.recipientHeader,
+    initialSync: compatibilityIntegration.imap.initialSync,
+  })).digest("hex")
+  await configStore.setConfigValues({
+    [configStore.CONFIG_KEYS.MAILU_IMAP_STATE]: JSON.stringify(legacyState),
+  })
+  const replay = await inbound.pollMailuIntegration(compatibilityIntegration)
+  assert.equal(replay.processed, 1)
+  assert.equal(legacySkippedMessage.deleted, true)
+  assert((await db.select().from(schema.messages)).some(
+    (item: { subject: string | null }) => item.subject === "Mailu 2024.06 replayed message",
+  ))
+  const upgradedStateRaw = await configStore.getConfigValue(configStore.CONFIG_KEYS.MAILU_IMAP_STATE)
+  assert(upgradedStateRaw)
+  const upgradedState = JSON.parse(upgradedStateRaw) as { version: number }
+  assert.equal(upgradedState.version, 1, "the parser upgrade must preserve the rollback-compatible state shape")
+
   await imap.close()
   const unsafeMessage: MockImapMessage = {
     uid: 1,
@@ -699,6 +817,7 @@ try {
   await database.closeDatabase()
   console.log(JSON.stringify({
     mailuApiContractFromLocalSource: true,
+    databaseDriver: postgresUrl ? "postgres" : "sqlite",
     exactAliasBeforeCatchAll: true,
     inboundOnlyAliasesCannotAuthorizeCollector: true,
     disabledOwnedAliasRecreated: true,
@@ -707,6 +826,10 @@ try {
     collectorCannotWildcardSpoof: true,
     catchAllAccountCannotAuthenticate: true,
     envelopeRecipientUsesDeliveredToOnly: true,
+    mailu2024AliasTraceCompatible: true,
+    mailu2024UntrustedTraceRejected: true,
+    mailu2024LegacyCursorReplayed: true,
+    mailuCursorRollbackCompatible: true,
     ambiguousTraceFailsClosed: true,
     unknownCatchAllDoesNotStarveQueue: true,
     retentionOnlyAfterDurableCommit: true,

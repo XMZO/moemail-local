@@ -894,6 +894,37 @@ try {
   )
   assert.equal(clearGlobalBlock.status, 200)
 
+  const allDomainBlockResponse = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "global", localPart: "all-domain-blocked", domain: "*" }),
+  })
+  assert.equal(allDomainBlockResponse.status, 201)
+  const allDomainBlock = await allDomainBlockResponse.json() as {
+    block?: { id?: string; domain?: string }
+  }
+  assert.ok(allDomainBlock.block?.id)
+  assert.equal(allDomainBlock.block?.domain, "*")
+  const blockedAcrossDomains = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("all-domain-blocked"),
+  })
+  assert.equal(blockedAcrossDomains.status, 403)
+  assert.equal((await blockedAcrossDomains.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
+  const invalidAllDomainBlock = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "global", localPart: "invalid-domain-sentinel", domain: "**" }),
+  })
+  assert.equal(invalidAllDomainBlock.status, 400)
+  assert.equal((await invalidAllDomainBlock.json() as { code?: string }).code, "INVALID_MAILBOX_BLOCK")
+  const clearAllDomainBlock = await request(
+    `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(allDomainBlock.block!.id!)}`,
+    { method: "DELETE" },
+  )
+  assert.equal(clearAllDomainBlock.status, 200)
+
   const userBlockResponse = await request("/api/access-policies/mailbox-blocks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1758,6 +1789,7 @@ try {
     sessionAndApiKeyPolicyParityE2e: true,
     atomicMailboxQuotaE2e: true,
     globalUserAndRoleMailboxBlocksE2e: true,
+    allDomainMailboxNameBlocksE2e: true,
     selfQuotaSummaryAndApiKeyBoundaryE2e: true,
     receiveLifetimeQuotaSurvivesRecreationE2e: true,
     emperorExactMailboxResetE2e: true,

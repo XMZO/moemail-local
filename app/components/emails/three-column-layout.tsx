@@ -29,7 +29,7 @@ export function ThreeColumnLayout() {
     checkPermission: refreshSendPermission,
   } = useSendPermission(selectedEmail?.id)
 
-  const columnClass = "border-2 border-primary/20 bg-background rounded-lg overflow-hidden flex flex-col"
+  const columnClass = "min-h-0 border-2 border-primary/20 bg-background rounded-lg overflow-hidden flex flex-col"
   const headerClass = "p-2 border-b-2 border-primary/20 flex items-center justify-between shrink-0"
   const titleClass = "text-sm font-bold px-2 w-full overflow-hidden"
 
@@ -57,14 +57,14 @@ export function ThreeColumnLayout() {
   }
 
   return (
-    <div className="pb-5 pt-20 h-full flex flex-col">
+    <div className="flex h-full min-h-0 flex-col pb-5 pt-20">
       {/* 桌面端三栏布局 */}
       <div className="hidden lg:grid grid-cols-12 gap-4 h-full min-h-0">
         <div className={cn("col-span-3", columnClass)}>
           <div className={headerClass}>
             <h2 className={titleClass}>{t("myEmails")}</h2>
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <EmailList
               onEmailSelect={(email) => {
                 setSelectedEmail(email)
@@ -101,7 +101,7 @@ export function ThreeColumnLayout() {
             </h2>
           </div>
           {selectedEmail && (
-            <div className="flex-1 overflow-auto">
+            <div className="min-h-0 flex-1 overflow-auto">
               <MessageListContainer
                 email={selectedEmail}
                 onMessageSelect={handleMessageSelect}
@@ -119,7 +119,7 @@ export function ThreeColumnLayout() {
             </h2>
           </div>
           {selectedEmail && selectedMessageId && (
-            <div className="flex-1 overflow-auto">
+            <div className="min-h-0 flex-1 overflow-auto">
               <MessageView
                 emailId={selectedEmail.id}
                 messageId={selectedMessageId}
@@ -139,7 +139,7 @@ export function ThreeColumnLayout() {
               <div className={headerClass}>
                 <h2 className={titleClass}>{t("myEmails")}</h2>
               </div>
-              <div className="flex-1 overflow-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <EmailList
                   onEmailSelect={(email) => {
                     setSelectedEmail(email)
@@ -151,7 +151,7 @@ export function ThreeColumnLayout() {
           )}
 
           {mobileView === "emails" && selectedEmail && (
-            <div className="h-full flex flex-col">
+            <div className="flex h-full min-h-0 flex-col">
               <div className={cn(headerClass, "gap-2")}>
                 <button
                   onClick={() => {
@@ -178,7 +178,7 @@ export function ThreeColumnLayout() {
                   )}
                 </div>
               </div>
-              <div className="flex-1 overflow-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <MessageListContainer
                   email={selectedEmail}
                   onMessageSelect={handleMessageSelect}
@@ -190,7 +190,7 @@ export function ThreeColumnLayout() {
           )}
 
           {mobileView === "message" && selectedEmail && selectedMessageId && (
-            <div className="h-full flex flex-col">
+            <div className="flex h-full min-h-0 flex-col">
               <div className={headerClass}>
                 <button
                   onClick={() => setSelectedMessageId(null)}
@@ -200,7 +200,7 @@ export function ThreeColumnLayout() {
                 </button>
                 <span className="text-sm font-medium">{t("messageContent")}</span>
               </div>
-              <div className="flex-1 overflow-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <MessageView
                   emailId={selectedEmail.id}
                   messageId={selectedMessageId}

@@ -12,6 +12,7 @@ const clusterRoot = mkdtempSync(join(tmpdir(), "moemail-setup-http-postgres-"))
 const tsxCli = resolve(repositoryRoot, "node_modules/tsx/dist/cli.mjs")
 const httpValidation = resolve(repositoryRoot, "scripts/validation/setup-http.ts")
 const imapValidation = resolve(repositoryRoot, "scripts/validation/imap-inbound.ts")
+const mailuValidation = resolve(repositoryRoot, "scripts/validation/mailu-integration.ts")
 let started = false
 
 async function freePort() {
@@ -83,6 +84,20 @@ try {
     cwd: repositoryRoot,
     stdio: "inherit",
   })
+  execFileSync("psql", [
+    "--dbname", url,
+    "--command", "CREATE DATABASE moemail_mailu_validation",
+  ], { stdio: "pipe" })
+  const mailuUrl = new URL(url)
+  mailuUrl.pathname = "/moemail_mailu_validation"
+  execFileSync(process.execPath, [
+    tsxCli,
+    mailuValidation,
+    `--postgres-url=${mailuUrl.toString()}`,
+  ], {
+    cwd: repositoryRoot,
+    stdio: "inherit",
+  })
   const verificationPool = new Pool({
     host: "127.0.0.1",
     port,
@@ -119,6 +134,7 @@ try {
     temporaryPostgresCluster: true,
     postgresSetupAndDriverRestartHttp: true,
     postgresPoolMaxOneImapLease: true,
+    postgresMailuStateAndReplay: true,
     dockerPostgresVerifier: true,
     postgresVerifierRejectsIndexDefinitionTampering: true,
     postgresMaintenanceBundle: true,

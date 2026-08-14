@@ -7,6 +7,7 @@ import {
 import { mailboxNameBlocks } from "./schema"
 import type { Role } from "./permissions"
 import {
+  ALL_MAILBOX_BLOCK_DOMAINS,
   GLOBAL_MAILBOX_BLOCK_SCOPE,
   RESERVABLE_MAILBOX_ROLES,
   mailboxBlockAllowedRoles,
@@ -14,7 +15,11 @@ import {
   mailboxUserBlockScope,
 } from "./mailbox-block-scope"
 
-export { GLOBAL_MAILBOX_BLOCK_SCOPE, mailboxBlockAllowedRoles } from "./mailbox-block-scope"
+export {
+  ALL_MAILBOX_BLOCK_DOMAINS,
+  GLOBAL_MAILBOX_BLOCK_SCOPE,
+  mailboxBlockAllowedRoles,
+} from "./mailbox-block-scope"
 
 export type MailboxNameBlockScope = "global" | "user" | "roles"
 
@@ -32,7 +37,9 @@ function userScopeKey(userId: string) {
 
 function normalizeInput(input: MailboxNameBlockInput) {
   const localPart = normalizeMailboxLocalPart(input.localPart)
-  const domain = normalizeMailboxDomain(input.domain)
+  const domain = input.domain.trim() === ALL_MAILBOX_BLOCK_DOMAINS
+    ? ALL_MAILBOX_BLOCK_DOMAINS
+    : normalizeMailboxDomain(input.domain)
   if (!localPart || !domain) throw new Error("INVALID_MAILBOX_BLOCK_ADDRESS")
   const userId = input.scope === "user" && typeof input.userId === "string" && input.userId.length > 0
     ? input.userId

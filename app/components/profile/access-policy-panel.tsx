@@ -36,6 +36,7 @@ import { readApiErrorCode } from "@/lib/api-error-client"
 import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 import { ROLES, type Permission, type Role } from "@/lib/permissions"
 import { normalizeMailboxCreationName } from "@/lib/email-address"
+import { ALL_MAILBOX_BLOCK_DOMAINS } from "@/lib/mailbox-block-scope"
 import { SearchableUserSelect, type SearchableUser } from "@/components/profile/searchable-user-select"
 
 const quotaKeys = ["maxActiveMailboxes", "maxMailboxLifetimeDays", "maxMessageBytes"] as const
@@ -179,13 +180,14 @@ export function AccessPolicyPanel() {
     if (!query) return blocks
     return blocks.filter(block => {
       const identity = block.user?.name || block.user?.username || block.user?.email || block.userId || ""
-      const rawMatch = `${block.localPart}@${block.domain} ${identity} ${block.allowedRoles?.join(" ") ?? ""}`
+      const domainLabel = block.domain === ALL_MAILBOX_BLOCK_DOMAINS ? t("blocks.allDomains") : block.domain
+      const rawMatch = `${block.localPart}@${block.domain} ${domainLabel} ${identity} ${block.allowedRoles?.join(" ") ?? ""}`
         .toLowerCase().includes(query)
       const localizedRoleMatch = block.allowedRoles
         ?.some(item => tRoles(roleTranslationKeys[item]).toLowerCase().includes(query)) ?? false
       return rawMatch || localizedRoleMatch
     })
-  }, [blockSearch, blocks, tRoles])
+  }, [blockSearch, blocks, t, tRoles])
 
   const loadPolicies = useCallback(async () => {
     setLoading(true)
@@ -320,6 +322,11 @@ export function AccessPolicyPanel() {
       ?? policies.roles[selectedUserRole].domainAccess.domains[domain]
       ?? policies.roles[selectedUserRole].domainAccess.default
   )
+  const blockAddress = (block: Pick<MailboxBlock, "localPart" | "domain">) => (
+    block.domain === ALL_MAILBOX_BLOCK_DOMAINS
+      ? t("blocks.allDomainsAddress", { localPart: block.localPart })
+      : `${block.localPart}@${block.domain}`
+  )
   return (
     <div className="min-w-0 rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-5">
       <div className="mb-4 flex min-w-0 items-start gap-2"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div className="min-w-0"><h2 className="font-semibold">{t("title")}</h2><p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("description")}</p></div></div>
@@ -351,7 +358,7 @@ export function AccessPolicyPanel() {
           <div className="space-y-3 rounded border p-3">
             <div className="grid min-w-0 gap-2 lg:grid-cols-2 xl:grid-cols-[minmax(7rem,1fr)_minmax(8rem,1fr)_minmax(8rem,.8fr)_minmax(10rem,1.2fr)_auto]">
               <Input className="h-8 min-w-0" value={blockLocalPart} onChange={event => setBlockLocalPart(event.target.value.split("@", 1)[0].slice(0, 64))} placeholder={t("blocks.localPart")} maxLength={64} pattern="[A-Za-z0-9._+-]+" autoCapitalize="none" autoComplete="off" spellCheck={false} />
-              <Select value={blockDomain} onValueChange={setBlockDomain}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("blocks.domain")} /></SelectTrigger><SelectContent>{domains.map(domain => <SelectItem key={domain} value={domain}>{domain}</SelectItem>)}</SelectContent></Select>
+              <Select value={blockDomain} onValueChange={setBlockDomain}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("blocks.domain")} /></SelectTrigger><SelectContent><SelectItem value={ALL_MAILBOX_BLOCK_DOMAINS}>{t("blocks.allDomains")}</SelectItem>{domains.map(domain => <SelectItem key={domain} value={domain}>{domain}</SelectItem>)}</SelectContent></Select>
               <Select value={blockScope} onValueChange={value => setBlockScope(value as "global" | "user" | "roles")}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="global">{t("blocks.global")}</SelectItem><SelectItem value="user">{t("blocks.user")}</SelectItem><SelectItem value="roles">{t("blocks.roles")}</SelectItem></SelectContent></Select>
               {blockScope === "user" ? <SearchableUserSelect value={blockUserId} onValueChange={setBlockUserId} knownUsers={users} onUserResolved={rememberUser} /> : <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1 text-xs">{blockScope === "roles" ? roles.filter(item => item !== ROLES.EMPEROR).map(item => <label key={item} className="flex items-center gap-1"><Checkbox checked={blockAllowedRoles.includes(item)} onChange={checked => setBlockAllowedRoles(previous => checked ? [...new Set([...previous, item])] : previous.filter(roleName => roleName !== item))} />{tRoles(roleTranslationKeys[item])}</label>) : <span className="min-w-0 leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("blocks.globalHint")}</span>}</div>}
               <Button type="button" size="sm" className="min-h-8 h-auto w-full whitespace-normal lg:col-span-2 lg:w-auto lg:justify-self-end xl:col-span-1" disabled={!normalizedBlockLocalPart || !blockDomain || (blockScope === "user" && !blockUserId)} onClick={() => void createBlock()}>{t("blocks.add")}</Button>
@@ -360,7 +367,7 @@ export function AccessPolicyPanel() {
             {invalidBlockLocalPart && <p className="text-xs text-destructive">{t("blocks.invalidLocalPart")}</p>}
           </div>
           <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={blockSearch} onChange={event => setBlockSearch(event.target.value)} placeholder={t("blocks.search")} className="pl-9" /></div>
-          {blocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.empty")}</div> : visibleBlocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.noSearchResults")}</div> : <div className="grid gap-2 sm:grid-cols-2">{visibleBlocks.map(block => <div key={block.id} className="flex items-center justify-between gap-3 rounded border p-3"><div className="min-w-0"><div className="truncate font-mono text-sm">{block.localPart}@{block.domain}</div><div className="truncate text-xs text-muted-foreground">{block.allowedRoles ? t("blocks.rolesScope", { roles: block.allowedRoles.length ? formatList.list(block.allowedRoles.map(item => tRoles(roleTranslationKeys[item])), { type: "unit" }) : t("blocks.emperorOnly") }) : block.userId ? t("blocks.userScope", { user: block.user?.name || block.user?.username || block.user?.email || block.userId }) : t("blocks.globalScope")}</div></div><AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" size="icon" className="shrink-0 text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("blocks.deleteTitle")}</AlertDialogTitle><AlertDialogDescription>{t("blocks.deleteDescription", { address: `${block.localPart}@${block.domain}` })}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("blocks.cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void deleteBlock(block.id)}>{t("blocks.delete")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)}</div>}
+          {blocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.empty")}</div> : visibleBlocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.noSearchResults")}</div> : <div className="grid gap-2 sm:grid-cols-2">{visibleBlocks.map(block => <div key={block.id} className="flex items-center justify-between gap-3 rounded border p-3"><div className="min-w-0"><div className="truncate font-mono text-sm">{blockAddress(block)}</div><div className="truncate text-xs text-muted-foreground">{block.allowedRoles ? t("blocks.rolesScope", { roles: block.allowedRoles.length ? formatList.list(block.allowedRoles.map(item => tRoles(roleTranslationKeys[item])), { type: "unit" }) : t("blocks.emperorOnly") }) : block.userId ? t("blocks.userScope", { user: block.user?.name || block.user?.username || block.user?.email || block.userId }) : t("blocks.globalScope")}</div></div><AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" size="icon" className="shrink-0 text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("blocks.deleteTitle")}</AlertDialogTitle><AlertDialogDescription>{t("blocks.deleteDescription", { address: blockAddress(block) })}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("blocks.cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void deleteBlock(block.id)}>{t("blocks.delete")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)}</div>}
         </TabsContent>
       </Tabs>
     </div>

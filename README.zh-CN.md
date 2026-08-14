@@ -190,7 +190,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.19.7 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.8 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -263,7 +263,7 @@ MoeMail 只协调一套已经能正常收发邮件的 Mailu，不会替你安装
 
 常见故障定位：API 返回 404 时检查 `WEB_API` 与 v1 基础地址；401/403 时检查 Token；连接超时先检查 MoeMail 容器内的 DNS、路由和防火墙；`MAILU_ALIAS_OWNERSHIP_CONFLICT` 表示同名用户或别名不是本集成创建的，MoeMail 会拒绝覆盖，需换用未占用的服务账号地址，或在确认对象用途后由管理员手工处理。
 
-收件只信任 Mailu Sieve 写入的 `Delivered-To` 真实 SMTP envelope 收件人，绝不使用 MIME `To`/`Cc` 路由。默认启用 `IMAP IDLE` 实时接收：新邮件写入 collector 后，Mailu 会在长连接上通知 MoeMail 立即入库；断线按指数退避自动重连，同时保留可配置的 15–86400 秒完整轮询作为漏通知和停机窗口的兜底。不支持 IDLE 时会安全退化为轮询。发件同时要求调用者拥有有效 MoeMail 邮箱，并且 Mailu 中存在对应的精确受管别名；catch-all 不会授权任意 From。密码只能通过专用随机轮换按钮更新。默认在 MoeMail 持久化成功 24 小时后删除上游邮件，也可选择保留、归档或更短延迟；只有已经提交或确认重复的邮件才进入删除/移动队列，且缺少安全的 UID 范围能力时会停止而不是普通 `EXPUNGE`。被拒绝或未知收件人的邮件留在 Mailu。
+收件人 Header 保持 `delivered-to`。正常情况下 MoeMail 信任 Mailu Sieve 写入的 `Delivered-To`；若 [Mailu 2024.06 别名缺陷](https://github.com/Mailu/Mailu/issues/3587)把它写成 collector，只有邮件开头严格符合“两条本机 LMTP 到 collector + 一条同主机 Postfix 到原收件人”的轨迹，而且两条 LMTP 的事务 ID 互相对应时，才恢复真实 envelope 收件人。后续由发件人控制的 `Received` 和 MIME `To`/`Cc` 永远不会参与路由。升级后的首次轮询会对旧 UID 范围做一次有界重扫，原先被解析器跳过的邮件会经同一幂等入库流程补收。默认启用 `IMAP IDLE` 实时接收：新邮件写入 collector 后，Mailu 会在长连接上通知 MoeMail 立即入库；断线按指数退避自动重连，同时保留可配置的 15–86400 秒完整轮询作为漏通知和停机窗口的兜底。不支持 IDLE 时会安全退化为轮询。发件同时要求调用者拥有有效 MoeMail 邮箱，并且 Mailu 中存在对应的精确受管别名；catch-all 不会授权任意 From。密码只能通过专用随机轮换按钮更新。默认在 MoeMail 持久化成功 24 小时后删除上游邮件，也可选择保留、归档或更短延迟；只有已经提交或确认重复的邮件才进入删除/移动队列，且缺少安全的 UID 范围能力时会停止而不是普通 `EXPUNGE`。被拒绝或未知收件人的邮件留在 Mailu。
 
 关闭集成会立即暂停 IMAP 实时接收与兜底轮询、SMTP 使用和自动协调，但不会擅自删除 Mailu 远端对象。若希望清理 MoeMail 所有的别名，应先把相关域切换到其他收发方式，再执行最后一次协调。Mailu 的 SMTP sender-login 授权与收件路由共用精确别名，因此只启用 Mailu 发件的域，外部来信仍可能进入 collector；建议同时启用 Mailu 收件，或单独监控和清理 collector。MoeMail 支持的生产拓扑是单 Web 实例；IMAP collector 另有数据库租约，防止实时通知和轮询任务重叠。
 
@@ -357,7 +357,7 @@ docker compose --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.19.7 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.8 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile

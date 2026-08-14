@@ -75,16 +75,28 @@ function frameDocument(html: string, dark: boolean) {
 
 export function HtmlMessageFrame({ html, title }: HtmlMessageFrameProps) {
   const { resolvedTheme } = useTheme()
-  const [source, setSource] = useState("")
+  const dark = resolvedTheme === "dark"
+  const [frame, setFrame] = useState<{
+    html: string
+    dark: boolean
+    source: string
+  } | null>(null)
 
   useEffect(() => {
-    setSource(frameDocument(html, resolvedTheme === "dark"))
-  }, [html, resolvedTheme])
+    setFrame({ html, dark, source: frameDocument(html, dark) })
+  }, [dark, html])
+
+  // Mount the sandbox only after srcDoc is ready. Creating an empty frame and
+  // mutating srcDoc on the next paint can leave Chromium displaying about:blank
+  // until an unrelated viewport resize forces a repaint.
+  if (!frame || frame.html !== html || frame.dark !== dark) {
+    return <div aria-hidden="true" className="h-full w-full bg-background" />
+  }
 
   return (
     <iframe
       title={title}
-      srcDoc={source}
+      srcDoc={frame.source}
       className="absolute inset-0 h-full w-full border-0 bg-transparent"
       sandbox="allow-popups allow-popups-to-escape-sandbox"
       referrerPolicy="no-referrer"

@@ -158,8 +158,9 @@ export function defaultMailuIntegration(): MailuIntegration {
       security: "tls",
       rejectUnauthorized: true,
       mailbox: "INBOX",
-      // Mailu's bundled default Sieve script removes any sender-provided
-      // Delivered-To field and writes the real SMTP envelope recipient back.
+      // Prefer Mailu's server-written Delivered-To. MoeMail also validates the
+      // three-hop trace produced when Mailu 2024.06 aliases expose the
+      // collector here instead of the original SMTP envelope recipient.
       recipientHeader: "delivered-to",
       initialSync: "new",
       connectionTimeoutSeconds: 15,

@@ -4,7 +4,7 @@
 
 选择 Cloudflare Email Routing 时，Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。选择外部 IMAP 时无需 Cloudflare，但邮局必须提供 catch-all/全域转发，并保留可识别原始收件地址的 Header。
 
-仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.19.7`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
+仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.19.8`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会同时刷新 `latest` 与应用维护用的 `latest-tools`。必须等待整个发布 Action 的四个 manifest 全部成功后再执行 `pull`；回滚时把所选方案的 Web、维护、数据库和数据库工具标签一起固定到同一旧版本或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -405,7 +405,7 @@ Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地
 
 协调只管理带当前随机 `integrationId` 所有权标记的对象：一个 IMAP/SMTP collector、一个禁用登录的转发账号、有效收件地址及当前获准发件地址的精确别名，以及可选的 `%@domain` catch-all 别名。只有地址所属用户同时拥有 MoeMail 发件权限和该域发件权时，精确别名才指向 collector；仅收件或被撤销发件权的地址指向禁用登录的转发账号。权限撤销、角色变化、用户/邮箱删除和过期都会触发或由周期协调收口；任何仍指向 collector 的失效受管别名都会删除，即使关闭了普通的“移除过期别名”。外部已有用户/别名同名时会拒绝，不覆盖。不要手工移除或改写这些 ownership comment。
 
-Mailu 默认 Sieve 会清洗来信自带的 `Delivered-To`，再从第二个 `Received ... for <recipient>` 写入真实 SMTP envelope 收件人。MoeMail 只接受这一个明确配置的投递 Header，不使用 MIME `To`/`Cc`；重复或畸形 Header 会安全跳过并让邮件留在 Mailu。发件时，MoeMail API 先校验调用者拥有仍有效的本地邮箱，再确认 Mailu 中有指向 collector 的精确受管别名；`allow_spoofing` 始终为 false，通配别名不会授权任意 From。
+收件人 Header 保持默认的 `Delivered-To`。Mailu 的默认 Sieve 会清洗来信自带的同名 Header，但 2024.06 的别名链会增加第二次内部 LMTP 投递，而 Sieve 仍读取第二条 `Received`，可能因此把 `Delivered-To` 写成 collector；这是 Mailu 上游仍未合并修复的 [#3587](https://github.com/Mailu/Mailu/issues/3587)。MoeMail 会先接受唯一、非 collector 的 `Delivered-To`；若它恰为 collector，则只检查最前面的三条轨迹，并要求前两条来自同一 Mailu 主机、均为投向 collector 的 LMTP、两者事务 ID 符合 `base:P…` 与 `base` 的同事务关系，第三条来自同一主机的 Postfix 且带唯一原始收件人。任一主机、事务、协议、收件人或条数不一致都安全跳过并把邮件留在 Mailu；后续 `Received` 与 MIME `To`/`Cc` 不参与路由。升级时旧版 IMAP 状态会对升级前 UID 范围执行一次有界重扫，内容摘要保证已入库邮件仍幂等，过去因该缺陷跳过的邮件可自动补收。发件时，MoeMail API 先校验调用者拥有仍有效的本地邮箱，再确认 Mailu 中有指向 collector 的精确受管别名；`allow_spoofing` 始终为 false，通配别名不会授权任意 From。
 
 收件默认使用 `IMAP IDLE` 长连接。Mailu/Dovecot 在新邮件写入 collector 后发送 `EXISTS` 通知，MoeMail 立即触发同一套数据库租约、UID 游标和幂等入库流程；连接断开时按可配置的指数退避范围自动重连。WebUI 可关闭实时模式或自动重连，并设置 15–86400 秒的完整轮询兜底；“高级连接与性能”还能调整连接超时、IDLE 续期、重连上下限和单轮批次。兜底会补偿通知丢失、短时断线和单轮批次上限。服务器未声明 IDLE 能力时自动保持纯轮询。IDLE 监听连接始终只读，删除/归档只由另一个持租约的短连接执行；不需要新增 Compose profile、入站端口或 Mailu 插件。
 
@@ -444,7 +444,7 @@ IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也�
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.19.7 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.19.8 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \

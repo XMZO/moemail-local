@@ -1,6 +1,6 @@
 # 本地化改造验证记录
 
-验证日期：2026-08-14。SQLite/Next.js 主开发验证环境为 Windows、Node.js 24.14.0、pnpm 11.21.0、better-sqlite3 12.4.1（SQLite 3.50.4）；PostgreSQL 使用独立临时 PostgreSQL 18 集群。另在 Debian 13 x86_64 VPS、Docker 29.7.2、Compose 5.4.0 上完成 SQLite 镜像实机部署。生产部署仍应在自己的目标机重做恢复演练。
+验证日期：2026-08-15。SQLite/Next.js 主开发验证环境为 Windows、Node.js 24.14.0、pnpm 11.21.0、better-sqlite3 12.4.1（SQLite 3.50.4）；PostgreSQL 使用独立临时 PostgreSQL 18 集群。另在 Debian 13 x86_64 VPS、Docker 29.7.2、Compose 5.4.0 上完成 SQLite 镜像实机部署。生产部署仍应在自己的目标机重做恢复演练。
 
 ## 构建与静态检查
 
@@ -20,9 +20,9 @@
 - `pnpm validate:send-quota` 通过：四种角色与单用户可分别配置收件/发件总量、单域名、每邮箱滚动窗口与每邮箱生命周期上限（秒、分、时、日、周、30 天月）；验证 `-1` 不限、`0` 禁止、总量与域名上限交集、角色共享/按用户统计、并发原子预留、未越过外部传输边界时的安全释放、崩溃租约回收、删除重建邮箱不能规避生命周期额度、管理员精确重置，以及用户删除后审计历史保留。发件在调用外部提供商前提交额度；超时、断线或私密批次部分成功等无法证明“完全未投递”的结果会保留全部收件人计数，避免通过重试绕过额度，管理员调查后可精确重置。
 - `pnpm validate:policy-migrations` 通过：从上一版仅发件额度的 SQLite schema 实际迁移到双向邮件额度和邮箱名封禁结构，旧审计事件完整保留并回填为 `send`，新增约束、索引、外键及 Drizzle journal 全部通过完整性检查。
 - `pnpm validate:imap-inbound` 通过：两个随机 TCP IMAP 服务分别声明和拒绝 IDLE 能力；验证器完成真实登录、只读 mailbox、UID SEARCH/FETCH，证明 IDLE `EXISTS` 可在兜底周期前入库、主动断线后自动重连、无通知邮件由定时扫描补回，且不支持 IDLE 的账号自动保持轮询，也不会形成能力重探测忙循环。旧策略默认仍为纯轮询，连接/IDLE/重连高级参数进入实际客户端。`X-Original-To` 正确映射到本地邮箱，伪造 MIME `To` 不会旁路投递，持久 UID 游标与 UIDVALIDITY 重置重扫保持幂等，客户端从未发送 STORE/MOVE/COPY/EXPUNGE。同一验证器已在临时 PostgreSQL 18 数据库、`poolMax=1` 下通过，短事务租约不会长期占住唯一连接。
-- `pnpm validate:mailu` 通过：验证器以本轮核对的 Mailu 源码快照 `a125b0cf8620941244563cc93c491ca0524af649` 的 v1 `domain`/`user`/`alias` 契约启动隔离 Mailu API、IMAP 与 SMTP mock，并在真实 SQLite setup 上完成服务账号及精确/catch-all 别名协调、仅收信域与可发信域隔离、禁用受管别名重建、独立密码轮换、`Delivered-To` 信封路由、未知收件人留存、同一原始邮件去重、数据库提交后延迟删除、私密多收件人逐封 SMTP 投递和发件人防伪。真实 IMAP 协议对话还验证 IDLE `EXISTS` 通知在 15 秒兜底轮询前完成入库、连接被主动切断后自动重连，以及刻意不发送通知的邮件最终由完整轮询补回。collector 强制 `allow_spoofing=false`；通配别名目标账号强制禁止登录；无 MoeMail 发件权限的有效邮箱只能指向禁用登录账号，过期邮箱的 collector 授权即使关闭普通 stale cleanup 也会撤销。缺少 `UIDPLUS`/安全 `MOVE` 时保留邮件并拒绝普通 `EXPUNGE`。外部同名对象不会被覆盖，API 令牌/服务密码不会进入错误响应。
+- `pnpm validate:mailu` 通过：验证器以本轮核对的 Mailu 源码快照 `a125b0cf8620941244563cc93c491ca0524af649` 的 v1 `domain`/`user`/`alias` 契约启动隔离 Mailu API、IMAP 与 SMTP mock，并在真实 SQLite setup 上完成服务账号及精确/catch-all 别名协调、仅收信域与可发信域隔离、禁用受管别名重建、独立密码轮换、`Delivered-To` 信封路由、未知收件人留存、同一原始邮件去重、数据库提交后延迟删除、私密多收件人逐封 SMTP 投递和发件人防伪。新增 Mailu 2024.06 `#3587` 真实形状夹具：仅在唯一 collector `Delivered-To`、两条同主机/同事务 LMTP-to-collector 和第三条同主机 Postfix-to-recipient 全部一致时接受原收件人；主机错配、LMTP 事务 ID 不相关、内部收件人错配、缺少 Postfix 标记、重复 `for`、显式选择其他 Header 以及更靠后的伪造 `Received` 均拒绝。解析器指纹升级时会一次性有界重扫旧 UID，并实际补收此前跳过的邮件；状态文档仍保持旧版可解析的 v1 结构，回滚不会因 strict schema 失效。同一验证器已在 SQLite 与临时 PostgreSQL 18（`poolMax=1`）下通过。真实 IMAP 协议对话还验证 IDLE `EXISTS` 通知在 15 秒兜底轮询前完成入库、连接被主动切断后自动重连，以及刻意不发送通知的邮件最终由完整轮询补回。collector 强制 `allow_spoofing=false`；通配别名目标账号强制禁止登录；无 MoeMail 发件权限的有效邮箱只能指向禁用登录账号，过期邮箱的 collector 授权即使关闭普通 stale cleanup 也会撤销。缺少 `UIDPLUS`/安全 `MOVE` 时保留邮件并拒绝普通 `EXPUNGE`。外部同名对象不会被覆盖，API 令牌/服务密码不会进入错误响应。
 - `pnpm validate:runtime-fields` 通过：视觉运行配置编辑器的 metadata 与当前 strict schema 的全部叶字段一一对应，无缺项或幽灵字段；视觉/YAML 切换会同步草稿，字段可单独恢复默认值。
-- `pnpm validate:i18n` 通过：`en`、`zh-CN`、`zh-TW`、`ja`、`ko` 的 11 个独立消息模块叶子键完全一致；59 个运行配置字段均有五语标签和说明，首次向导有五套完整词典。自动门禁扫描 91 个 UI/Hook 文件、41 个 API 路由与 58 个核心后端文件：禁止写死中日韩文案、英文 JSX/无障碍属性、自然语言 API 错误/日志、直接回显 `Error.message`，并禁止在翻译调用外拼接固定标点、列表分隔符或自然语言片段；API 只返回已注册机器码，客户端从五语 `api.json` 翻译。角色名只在 `profile.card.roles` 词典中维护，验证代码不再复制任何语言的译文；语言导航保留路径、查询参数、锚点和管理面板 `tab` 状态，Auth.js 登录与错误兜底页同样由五语词典渲染。
+- `pnpm validate:i18n` 通过：`en`、`zh-CN`、`zh-TW`、`ja`、`ko` 的 11 个独立消息模块叶子键完全一致；59 个运行配置字段均有五语标签和说明，首次向导有五套完整词典。自动门禁扫描 92 个 UI/Hook 文件、41 个 API 路由与 60 个核心后端文件：禁止写死中日韩文案、英文 JSX/无障碍属性、自然语言 API 错误/日志、直接回显 `Error.message`，并禁止在翻译调用外拼接固定标点、列表分隔符或自然语言片段；API 只返回已注册机器码，客户端从五语 `api.json` 翻译。角色名只在 `profile.card.roles` 词典中维护，验证代码不再复制任何语言的译文；语言导航保留路径、查询参数、锚点和管理面板 `tab` 状态，Auth.js 登录与错误兜底页同样由五语词典渲染。邮箱名黑名单的“全部域名”入口、显示与说明全部来自同一五语模块；HTML 邮件 frame 的空 `srcDoc` 禁止挂载和收发/分享详情高度链也有结构回归。
 - `pnpm validate:runtime-config` 通过：损坏 YAML、未知字段、不可打开或没有站主的 SQLite 目标均被拒绝且旧值继续生效；有效直接文件修改由约 1 秒 watcher 自动应用。进程内 revision 竞争、外部文件 fingerprint 失效，以及两个真实 Node 进程同时持同一 fingerprint 保存都恰好一个成功；跨进程保存锁在退出后无残留。
 - `pnpm validate:runtime-config:cold` 通过：首份配置、主文件与 LKG 相同、以及仅剩 LKG 三种路径都必须重新验证数据库中恰有一个站主后才开放完成态；不可读目标、空库与无站主 LKG 均被拒绝且不会创建目标文件。坏 PostgreSQL 主配置回退 SQLite LKG 时，实际绑定 driver 与维护 CLI 也只使用已验证的 SQLite 配置。坏配置仍允许 Web 恢复入口启动。
 - `pnpm validate:setup` 通过：首次 SQLite setup、已暂存 pepper 的同账号续跑、不同既有站主 409、两个真实 Node 进程争用同一 setup operation lock，以及坏 YAML/非对象 payload 拒绝均通过；另覆盖进程 A 完成后进程 B 持旧内存 token 的顺序竞争，B 在取锁后重新加载并以 409 拒绝。该测试构造等价的 staged 状态，不冒充进程崩溃注入测试。
@@ -76,7 +76,7 @@
 
 在真实 `next start` 上完成回归：
 
-- `pnpm validate:setup:http` 在隔离临时目录验证首次 `/zh-CN → /zh-CN/setup`、setup token、SQLite 探测/migration、唯一皇帝、token 删除、Credentials 登录、皇帝运行配置读取/保存、旧 fingerprint 409、直接文件 watcher 和坏字段不应用；完成后还验证域策略保存、真实 RFC822 Worker 入库、独立关闭出站、角色策略保存、皇帝自覆盖拒绝以及字体安全校验。
+- `pnpm validate:setup:http` 在隔离临时目录验证首次 `/zh-CN → /zh-CN/setup`、setup token、SQLite 探测/migration、唯一皇帝、token 删除、Credentials 登录、皇帝运行配置读取/保存、旧 fingerprint 409、直接文件 watcher 和坏字段不应用；完成后还验证域策略保存、真实 RFC822 Worker 入库、独立关闭出站、角色策略保存、皇帝自覆盖拒绝、邮箱名“全部域名”规则的新增/拦截/删除与非法哨兵拒绝，以及字体安全校验。同一黑名单场景也由临时 PostgreSQL 18 HTTP 回归复跑。
 - `pnpm validate:setup:http:redaction` 从仅有 staged LKG 的恢复状态启动，确认未鉴权 setup HTML 不含已存 rclone 凭据；随后删除主配置和 LKG、只保留 runtime 内存副本时仍不回显，空高级 YAML 提交后该值继续由服务端保留。
 - `pnpm validate:setup:http:postgres` 启动独立临时 PostgreSQL 18 集群，复跑同一 HTTP 链路并额外验证 driver 自动退出/重启恢复；临时 Next、数据库集群和派生文件均在测试结束后删除。
 - 未初始化时 auth 与公开分享 API 返回 `SETUP_REQUIRED`，health 返回 200 `setup-required`；坏冷启动配置同样保留 200 的 Web 恢复入口。损坏 secret 行使用 canary 实测，匿名 health 只返回通用错误码，响应和 runtime 错误日志均不含原始配置行。

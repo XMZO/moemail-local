@@ -75,7 +75,7 @@ export function SharedMessageDetail({
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="p-4 space-y-3 border-b border-primary/20">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-base font-bold flex-1">{message.subject || t.noSubject}</h3>
@@ -123,7 +123,7 @@ export function SharedMessageDetail({
         </div>
       )}
 
-      <div className="flex-1 overflow-auto relative">
+      <div className="relative min-h-0 flex-1 overflow-auto">
         {viewMode === "html" && message.html ? (
           <HtmlMessageFrame html={message.html} title={t.htmlFormat} />
         ) : message.content ? (
