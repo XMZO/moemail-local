@@ -41,11 +41,19 @@ assert.match(setupPageSource, /<SetupHeader \/>/u)
 const authSource = readFileSync(join(process.cwd(), "app/lib/auth.ts"), "utf8")
 const authErrorSource = readFileSync(join(process.cwd(), "app/[locale]/auth-error/page.tsx"), "utf8")
 const authErrorContentSource = readFileSync(join(process.cwd(), "app/components/auth/auth-error-content.tsx"), "utf8")
+const signButtonSource = readFileSync(join(process.cwd(), "app/components/auth/sign-button.tsx"), "utf8")
+const currentOriginSignOutSource = readFileSync(join(process.cwd(), "app/hooks/use-current-origin-sign-out.ts"), "utf8")
 assert.match(authSource, /signIn:\s*"\/login"/u)
 assert.match(authSource, /error:\s*"\/auth-error"/u)
 assert.match(authErrorSource, /<AuthErrorContent\s*\/>/u)
 assert.match(authErrorContentSource, /useTranslations\("auth\.authError"\)/u)
 assert.match(authErrorContentSource, /useLocale\(\)/u)
+assert.match(signButtonSource, /useCurrentOriginSignOut\(locale\)/u)
+assert.match(profileSource, /useCurrentOriginSignOut\(locale\)/u)
+assert.match(currentOriginSignOutSource, /signOut\(\{ redirect: false \}\)/u)
+assert.match(currentOriginSignOutSource, /new URL\(`\/\$\{locale\}`, window\.location\.origin\)/u)
+assert.match(currentOriginSignOutSource, /window\.location\.replace\(localizedHome\.href\)/u)
+assert.doesNotMatch(`${signButtonSource}\n${profileSource}`, /callbackUrl/u)
 
 const userPanelSource = readFileSync(join(process.cwd(), "app/components/profile/promote-panel.tsx"), "utf8")
 assert.doesNotMatch(userPanelSource, /<RoleIcon/u)
@@ -118,6 +126,7 @@ console.log(JSON.stringify({
   visitedProfileTabsPreserved: true,
   setupControlsPresent: true,
   authFallbackPagesLocalized: true,
+  signOutPreservesCurrentBrowserOrigin: true,
   duplicateRoleIconRemoved: true,
   userRoleEditorResponsive: true,
   accessPolicyLayoutCovered: true,
