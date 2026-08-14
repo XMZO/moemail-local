@@ -72,6 +72,18 @@ assert.match(searchableUserSource, /setTimeout\(\(\) =>/u)
 assert.match(searchableUserSource, /\/api\/roles\/users\?\$\{params\}/u)
 assert.match(searchableUserSource, /AbortController/u)
 
+const mailuPanelSource = readFileSync(join(process.cwd(), "app/components/profile/mailu-integration-panel.tsx"), "utf8")
+assert.equal([...mailuPanelSource.matchAll(/<MailuSettingsSection\b/gu)].length, 6)
+assert.match(mailuPanelSource, /type SectionId = "api" \| "accounts" \| "imap" \| "smtp" \| "retention" \| "reconcile"/u)
+assert.match(mailuPanelSource, /aria-expanded=\{open\}/u)
+assert.match(mailuPanelSource, /hidden=\{!open\}/u)
+assert.match(mailuPanelSource, /setOpenSection\(body\.configured \? null : "api"\)/u)
+assert.match(mailuPanelSource, /sm:grid-cols-2 xl:grid-cols-4/u)
+assert.match(mailuPanelSource, /integration\.imap\.realtime\.enabled/u)
+assert.match(mailuPanelSource, /integration\.imap\.realtime\.reconnect/u)
+assert.match(mailuPanelSource, /imap\.fallbackPollInterval/u)
+assert.doesNotMatch(mailuPanelSource, /<fieldset/u)
+
 console.log(JSON.stringify({
   localeNavigationPreservesPath: true,
   queryAndHashPreserved: true,
@@ -87,4 +99,6 @@ console.log(JSON.stringify({
   bidirectionalMailQuotaUiLocalized: true,
   quotaUsageRefreshAfterSave: true,
   quotaUserSearchLiveAndAbortable: true,
+  mailuSettingsAccordionResponsive: true,
+  mailuRealtimeControlsLocalized: true,
 }))

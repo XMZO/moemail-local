@@ -164,12 +164,16 @@ function quote(value: string) {
 
 function createMockImap(messages: MockImapMessage[], options: { safeRetention?: boolean } = {}) {
   const safeRetention = options.safeRetention ?? true
-  const capabilityLine = `IMAP4rev1 ID ENABLE NAMESPACE${safeRetention ? " UIDPLUS MOVE" : ""}`
+  const capabilityLine = `IMAP4rev1 ID ENABLE NAMESPACE IDLE${safeRetention ? " UIDPLUS MOVE" : ""}`
   const commands: string[] = []
   const sockets = new Set<Socket>()
+  const idleSockets = new Map<Socket, string>()
   const server = createNetServer(socket => {
     sockets.add(socket)
-    socket.on("close", () => sockets.delete(socket))
+    socket.on("close", () => {
+      sockets.delete(socket)
+      idleSockets.delete(socket)
+    })
     socket.setNoDelay(true)
     socket.write(`* OK [CAPABILITY ${capabilityLine}] Mailu validation ready\r\n`)
     let input = ""
@@ -182,6 +186,14 @@ function createMockImap(messages: MockImapMessage[], options: { safeRetention?: 
         input = input.slice(end + 2)
         if (!line) continue
         commands.push(line)
+        if (line.toUpperCase() === "DONE") {
+          const idleTag = idleSockets.get(socket)
+          if (idleTag) {
+            idleSockets.delete(socket)
+            socket.write(`${idleTag} OK IDLE completed\r\n`)
+          }
+          continue
+        }
         const [tag = "", commandName = ""] = line.split(" ", 2)
         const command = commandName.toUpperCase()
         const ok = (message: string) => socket.write(`${tag} OK ${message}\r\n`)
@@ -206,6 +218,9 @@ function createMockImap(messages: MockImapMessage[], options: { safeRetention?: 
           socket.write("* OK [UIDVALIDITY 99001] UIDs valid\r\n")
           socket.write(`* OK [UIDNEXT ${Math.max(0, ...messages.map(message => message.uid)) + 1}] next UID\r\n`)
           ok(command === "SELECT" ? "[READ-WRITE] selected" : "[READ-ONLY] selected")
+        } else if (command === "IDLE") {
+          idleSockets.set(socket, tag)
+          socket.write("+ idling\r\n")
         } else if (command === "UID") {
           const upper = line.toUpperCase()
           if (upper.includes(" SEARCH ")) {
@@ -248,7 +263,14 @@ function createMockImap(messages: MockImapMessage[], options: { safeRetention?: 
       }
     })
   })
-  return new Promise<{ server: NetServer; port: number; commands: string[]; close: () => Promise<void> }>((resolvePromise, reject) => {
+  return new Promise<{
+    server: NetServer
+    port: number
+    commands: string[]
+    deliver: (message: MockImapMessage) => void
+    dropIdleConnections: () => void
+    close: () => Promise<void>
+  }>((resolvePromise, reject) => {
     server.once("error", reject)
     server.listen(0, "127.0.0.1", () => {
       const address = server.address()
@@ -257,6 +279,16 @@ function createMockImap(messages: MockImapMessage[], options: { safeRetention?: 
         server,
         port: address.port,
         commands,
+        deliver: message => {
+          messages.push(message)
+          const exists = messages.filter(item => !item.deleted).length
+          for (const socket of idleSockets.keys()) {
+            if (!socket.destroyed) socket.write(`* ${exists} EXISTS\r\n`)
+          }
+        },
+        dropIdleConnections: () => {
+          for (const socket of idleSockets.keys()) socket.destroy()
+        },
         close: async () => {
           for (const socket of sockets) socket.destroy()
           await new Promise<void>(resolveClose => server.close(() => resolveClose()))
@@ -320,6 +352,15 @@ function createMockSmtp() {
   })
 }
 
+async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMilliseconds = 10_000) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    if (await predicate()) return
+    await new Promise<void>(resolvePromise => setTimeout(resolvePromise, 50))
+  }
+  throw new Error(`condition not met within ${timeoutMilliseconds}ms`)
+}
+
 const message = (to: string, subject: string) => Buffer.from([
   "Return-Path: <sender@outside.test>",
   `Delivered-To: <${to}>`,
@@ -340,6 +381,7 @@ const imapMessages: MockImapMessage[] = [
 let mailuApi: Awaited<ReturnType<typeof createMockMailuApi>> | null = null
 let imap: Awaited<ReturnType<typeof createMockImap>> | null = null
 let smtp: Awaited<ReturnType<typeof createMockSmtp>> | null = null
+let stopMailuPoller: (() => Promise<void>) | null = null
 
 try {
   cpSync(resolve(repositoryRoot, "drizzle-local"), join(temporaryRoot, "drizzle-local"), { recursive: true })
@@ -365,6 +407,7 @@ try {
   const domains = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/domain-policies.ts")).href)
   const reconciliation = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/mailu/reconcile.ts")).href)
   const inbound = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/mailu/inbound.ts")).href)
+  stopMailuPoller = inbound.stopMailuPoller
   const outbound = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/mailu/outbound.ts")).href)
 
   const integration = configModule.mailuIntegrationSchema.parse({
@@ -397,6 +440,16 @@ try {
     retention: { action: "delete", delaySeconds: 0 },
   })
   assert.equal(configModule.defaultMailuIntegration().imap.recipientHeader, "delivered-to")
+  assert.deepEqual(configModule.defaultMailuIntegration().imap.realtime, {
+    enabled: true,
+    mode: "idle",
+    reconnect: true,
+  })
+  assert.deepEqual(integration.imap.realtime, {
+    enabled: true,
+    mode: "idle",
+    reconnect: true,
+  }, "stored v1 Mailu settings without realtime fields must migrate to safe defaults")
   assert.equal(configModule.mailuIntegrationSchema.safeParse({ ...integration, api: { ...integration.api, token: "replace-me" } }).success, false)
   assert.equal(configModule.mailuIntegrationSchema.safeParse({ ...integration, api: { ...integration.api, token: "abc" } }).success, false)
   await configModule.saveMailuIntegration(integration)
@@ -497,6 +550,49 @@ try {
   assert(imap.commands.some(command => /\bSTORE\b/iu.test(command)))
   assert(imap.commands.some(command => /\bUID EXPUNGE\b/iu.test(command)))
 
+  const idleCommandCount = () => imap!.commands.filter(command => /^\S+ IDLE$/iu.test(command)).length
+  inbound.startMailuPoller()
+  await waitUntil(() => idleCommandCount() >= 1)
+  const realtimeStartedAt = Date.now()
+  const realtimeMessage: MockImapMessage = {
+    uid: 4,
+    raw: message(mailboxAddress, "Mailu IDLE realtime message"),
+    deleted: false,
+  }
+  imap.deliver(realtimeMessage)
+  await waitUntil(async () => (await db.select().from(schema.messages))
+    .some((item: { subject: string | null }) => item.subject === "Mailu IDLE realtime message"))
+  assert(
+    Date.now() - realtimeStartedAt < integration.imap.pollIntervalSeconds * 1_000,
+    "IDLE notification must ingest before the polling fallback becomes due",
+  )
+  assert.equal(realtimeMessage.deleted, true)
+
+  const idleCommandsBeforeDisconnect = idleCommandCount()
+  imap.dropIdleConnections()
+  await waitUntil(() => idleCommandCount() > idleCommandsBeforeDisconnect)
+  const reconnectedMessage: MockImapMessage = {
+    uid: 5,
+    raw: message(mailboxAddress, "Mailu IDLE reconnect message"),
+    deleted: false,
+  }
+  imap.deliver(reconnectedMessage)
+  await waitUntil(async () => (await db.select().from(schema.messages))
+    .some((item: { subject: string | null }) => item.subject === "Mailu IDLE reconnect message"))
+  assert.equal(reconnectedMessage.deleted, true)
+
+  const fallbackMessage: MockImapMessage = {
+    uid: 6,
+    raw: message(mailboxAddress, "Mailu fallback polling message"),
+    deleted: false,
+  }
+  // Persist without emitting EXISTS to reproduce a lost IDLE notification.
+  imapMessages.push(fallbackMessage)
+  await waitUntil(async () => (await db.select().from(schema.messages))
+    .some((item: { subject: string | null }) => item.subject === "Mailu fallback polling message"), 20_000)
+  assert.equal(fallbackMessage.deleted, true)
+  await inbound.stopMailuPoller()
+
   await imap.close()
   const unsafeMessage: MockImapMessage = {
     uid: 1,
@@ -564,6 +660,9 @@ try {
     retentionOnlyAfterDurableCommit: true,
     unsafePlainExpungeRejected: true,
     imapCursorDeduplicates: true,
+    imapIdleRealtimeIngest: true,
+    imapIdleReconnect: true,
+    imapFallbackPolling: true,
     privateSmtpRecipientsIsolated: true,
     deniedMailboxCannotAuthorizeCollector: true,
     expiredMailboxCollectorAuthorizationRevoked: true,
@@ -571,6 +670,7 @@ try {
     existingHtmlSandboxReused: true,
   }))
 } finally {
+  if (stopMailuPoller) await stopMailuPoller().catch(() => undefined)
   if (smtp) await new Promise<void>(resolveClose => smtp!.server.close(() => resolveClose())).catch(() => undefined)
   if (imap) await imap.close().catch(() => undefined)
   if (mailuApi) await new Promise<void>(resolveClose => mailuApi!.server.close(() => resolveClose())).catch(() => undefined)

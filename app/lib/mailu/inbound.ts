@@ -34,6 +34,11 @@ const storedStateSchema = z.object({ ...stateFields, lease: leaseSchema.optional
 type State = z.infer<typeof storedStateSchema>
 const pollerInstanceId = randomUUID()
 const LEASE_MS = 300_000
+const CONFIG_CHECK_MS = 5_000
+const IDLE_RENEW_MS = 25 * 60_000
+const IDLE_SOCKET_TIMEOUT_MS = 30 * 60_000
+const RECONNECT_MIN_MS = 1_000
+const RECONNECT_MAX_MS = 30_000
 let stateMutationTail: Promise<void> = Promise.resolve()
 
 function fingerprint(integration: MailuIntegration) {
@@ -158,7 +163,7 @@ async function saveLeasedState(state: State, token: string) {
   })
 }
 
-export function mailuImapClientOptions(integration: MailuIntegration): ImapFlowOptions {
+export function mailuImapClientOptions(integration: MailuIntegration, realtime = false): ImapFlowOptions {
   return {
     host: integration.imap.host,
     port: integration.imap.port,
@@ -168,10 +173,11 @@ export function mailuImapClientOptions(integration: MailuIntegration): ImapFlowO
     tls: { rejectUnauthorized: integration.imap.rejectUnauthorized },
     logger: false,
     disableAutoIdle: true,
+    ...(realtime ? { maxIdleTime: IDLE_RENEW_MS } : {}),
     disableCompression: true,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
-    socketTimeout: 30_000,
+    socketTimeout: realtime ? IDLE_SOCKET_TIMEOUT_MS : 30_000,
     maxLineLength: 1024 * 1024,
     maxLiteralSize: MAX_RAW_EMAIL_SIZE + 1,
     maxResponseSize: MAX_RAW_EMAIL_SIZE + 2 * 1024 * 1024,
@@ -179,8 +185,8 @@ export function mailuImapClientOptions(integration: MailuIntegration): ImapFlowO
   }
 }
 
-function clientFor(integration: MailuIntegration) {
-  const client = new ImapFlow(mailuImapClientOptions(integration))
+function clientFor(integration: MailuIntegration, realtime = false) {
+  const client = new ImapFlow(mailuImapClientOptions(integration, realtime))
   client.on("error", () => {})
   return client
 }
@@ -347,7 +353,7 @@ async function pollMailuIntegrationUnlocked(integration: MailuIntegration, lease
         pending: {},
       }
       await saveLeasedState(state, leaseToken)
-      if (integration.imap.initialSync === "new") return { processed: 0, initialized: true }
+      if (integration.imap.initialSync === "new") return { processed: 0, initialized: true, hasMore: false }
     }
     if (state.uidValidity !== uidValidity) {
       state = { version: 1, fingerprint: currentFingerprint, retentionFingerprint: currentRetentionFingerprint, uidValidity, lastUid: 0, initialUpperUid: upperUid, initialFilter: "all", pending: {} }
@@ -365,7 +371,7 @@ async function pollMailuIntegrationUnlocked(integration: MailuIntegration, lease
 
     if (integration.retention.action !== "keep") await applyRetention(client, state, integration, leaseToken)
     const scanUpper = state.initialUpperUid ?? upperUid
-    if (state.lastUid >= scanUpper) return { processed: 0, initialized: false }
+    if (state.lastUid >= scanUpper) return { processed: 0, initialized: false, hasMore: false }
     const batch = await searchBatch(client, state.lastUid + 1, scanUpper, state.initialFilter === "unseen", integration.imap.maxMessagesPerPoll)
     let processed = 0
     for (const uid of batch.uids) {
@@ -402,7 +408,7 @@ async function pollMailuIntegrationUnlocked(integration: MailuIntegration, lease
     }
     await saveLeasedState(state, leaseToken)
     if (integration.retention.action !== "keep") await applyRetention(client, state, integration, leaseToken)
-    return { processed, initialized: false }
+    return { processed, initialized: false, hasMore: state.lastUid < scanUpper }
   } finally {
     await closeClient(client)
   }
@@ -421,7 +427,7 @@ export async function pollMailuIntegration(integration: MailuIntegration) {
     pending: {},
   }
   const leaseToken = await acquireLease(seed)
-  if (!leaseToken) return { processed: 0, initialized: false, skipped: true }
+  if (!leaseToken) return { processed: 0, initialized: false, hasMore: false, skipped: true }
   try {
     return await pollMailuIntegrationUnlocked(integration, leaseToken)
   } finally {
@@ -429,45 +435,284 @@ export async function pollMailuIntegration(integration: MailuIntegration) {
   }
 }
 
-const globalState = globalThis as typeof globalThis & { __moemailMailuPoller?: AbortController }
+type PollerRuntime = { controller: AbortController; promise: Promise<void> }
+type RealtimeOutcome = {
+  reason: "aborted" | "changed" | "disconnected" | "unsupported"
+  connectedMilliseconds: number
+}
+
+const globalState = globalThis as typeof globalThis & { __moemailMailuPoller?: PollerRuntime }
+
+function integrationSignature(integration: MailuIntegration) {
+  return JSON.stringify(integration)
+}
 
 function wait(milliseconds: number, signal: AbortSignal) {
   return new Promise<void>(resolve => {
     if (signal.aborted) return resolve()
-    const timer = setTimeout(resolve, milliseconds)
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      signal.removeEventListener("abort", finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, Math.max(0, milliseconds))
     timer.unref()
-    signal.addEventListener("abort", () => { clearTimeout(timer); resolve() }, { once: true })
+    signal.addEventListener("abort", finish, { once: true })
   })
 }
 
-async function loop(signal: AbortSignal) {
+function logPollError(error: unknown, integration: MailuIntegration, trigger: string) {
+  console.error(JSON.stringify({
+    event: "mailu.imap.failed",
+    incidentId: randomUUID(),
+    trigger,
+    message: safeMailuError(error, integration),
+  }))
+}
+
+async function pollAndLog(integration: MailuIntegration, trigger: string) {
+  const result = await pollMailuIntegration(integration)
+  if (result.processed > 0) {
+    console.log(JSON.stringify({
+      event: "mailu.imap.poll.completed",
+      trigger,
+      processed: result.processed,
+    }))
+  }
+  return result
+}
+
+function createPollTrigger(integration: MailuIntegration, signal: AbortSignal) {
+  const expectedSignature = integrationSignature(integration)
+  let pending = false
+  let running = false
+  let pendingTrigger = "startup"
+  let active = Promise.resolve()
+
+  const request = (trigger: string): Promise<void> => {
+    pending = true
+    pendingTrigger = trigger
+    if (running) return active
+    running = true
+    active = (async () => {
+      try {
+        while (pending && !signal.aborted) {
+          pending = false
+          const currentTrigger = pendingTrigger
+          try {
+            const current = await getMailuIntegration()
+            if (!current?.enabled || integrationSignature(current) !== expectedSignature) return
+            const result = await pollAndLog(current, currentTrigger)
+            if (result.hasMore) {
+              pending = true
+              pendingTrigger = "backlog"
+            }
+          } catch (error) {
+            logPollError(error, integration, currentTrigger)
+          }
+        }
+      } finally {
+        running = false
+        // An EXISTS response can arrive after the loop observed `pending=false`
+        // but before this finally block runs. Start one more serialized pass so
+        // that edge can never wait for the periodic fallback.
+        if (pending && !signal.aborted) void request(pendingTrigger)
+      }
+    })()
+    return active
+  }
+
+  return { request, settle: () => active }
+}
+
+async function runPollingFallback(integration: MailuIntegration, signal: AbortSignal) {
+  const expectedSignature = integrationSignature(integration)
+  let nextPollAt = 0
   while (!signal.aborted) {
-    let delay = 5_000
+    try {
+      const current = await getMailuIntegration()
+      if (!current?.enabled || integrationSignature(current) !== expectedSignature) return
+      const now = Date.now()
+      if (now >= nextPollAt) {
+        await pollAndLog(current, "fallback")
+        nextPollAt = Date.now() + current.imap.pollIntervalSeconds * 1_000
+      }
+    } catch (error) {
+      logPollError(error, integration, "fallback")
+      nextPollAt = Date.now() + integration.imap.pollIntervalSeconds * 1_000
+    }
+    await wait(Math.min(CONFIG_CHECK_MS, Math.max(1, nextPollAt - Date.now())), signal)
+  }
+}
+
+async function runRealtimeSession(integration: MailuIntegration, signal: AbortSignal): Promise<RealtimeOutcome> {
+  const expectedSignature = integrationSignature(integration)
+  const client = clientFor(integration, true)
+  const connectedAt = Date.now()
+  let connectionError: unknown = null
+  let sessionEnded = false
+  let resolveSessionEnd = () => {}
+  const sessionEnd = new Promise<void>(resolve => { resolveSessionEnd = resolve })
+  const endSession = () => {
+    if (sessionEnded) return
+    sessionEnded = true
+    resolveSessionEnd()
+  }
+  client.on("error", error => {
+    connectionError = error
+    endSession()
+  })
+  client.on("close", endSession)
+
+  let trigger: ReturnType<typeof createPollTrigger> | null = null
+  try {
+    // Establish the persistent UID baseline before opening the listener. Once
+    // IDLE is active, the second serialized pass below closes the small gap
+    // between this snapshot and SELECT without ever treating gap mail as the
+    // initial `new` baseline.
+    await pollAndLog(integration, "startup")
+    await client.connect()
+    // The long-lived listener never mutates the mailbox. A separate leased
+    // worker connection performs ingestion and retention, keeping IDLE itself
+    // read-only and safe to duplicate across supervised Web processes.
+    await client.mailboxOpen(integration.imap.mailbox, { readOnly: true })
+    if (!client.capabilities.has("IDLE")) {
+      console.warn(JSON.stringify({
+        event: "mailu.imap.realtime.unsupported",
+        mode: "idle",
+      }))
+      return { reason: "unsupported", connectedMilliseconds: Date.now() - connectedAt }
+    }
+
+    trigger = createPollTrigger(integration, signal)
+    client.on("exists", event => {
+      if (event.count > event.prevCount) void trigger?.request("idle")
+    })
+    void client.idle()
+      .then(result => {
+        if (result === false && !connectionError) connectionError = new Error("MAILU_IMAP_IDLE_ENDED")
+        endSession()
+      })
+      .catch(error => {
+        connectionError = error
+        endSession()
+      })
+
+    console.log(JSON.stringify({
+      event: "mailu.imap.realtime.connected",
+      mode: "idle",
+      mailbox: integration.imap.mailbox,
+    }))
+    void trigger.request("startup-gap")
+    let nextFallbackAt = Date.now() + integration.imap.pollIntervalSeconds * 1_000
+
+    while (!signal.aborted && !sessionEnded) {
+      const current = await getMailuIntegration()
+      if (!current?.enabled || integrationSignature(current) !== expectedSignature) {
+        return { reason: "changed", connectedMilliseconds: Date.now() - connectedAt }
+      }
+      if (Date.now() >= nextFallbackAt) {
+        void trigger.request("fallback")
+        nextFallbackAt = Date.now() + current.imap.pollIntervalSeconds * 1_000
+      }
+      await Promise.race([
+        wait(Math.min(CONFIG_CHECK_MS, Math.max(1, nextFallbackAt - Date.now())), signal),
+        sessionEnd,
+      ])
+    }
+
+    if (signal.aborted) return { reason: "aborted", connectedMilliseconds: Date.now() - connectedAt }
+    if (connectionError) logPollError(connectionError, integration, "idle")
+    return { reason: "disconnected", connectedMilliseconds: Date.now() - connectedAt }
+  } finally {
+    await closeClient(client)
+    await trigger?.settle()
+  }
+}
+
+async function loop(signal: AbortSignal) {
+  let reconnectDelay = RECONNECT_MIN_MS
+  while (!signal.aborted) {
     let integration: MailuIntegration | null = null
     try {
       if (!isSetupCompleted()) {
-        await wait(delay, signal)
+        await wait(CONFIG_CHECK_MS, signal)
         continue
       }
       integration = await getMailuIntegration()
-      if (integration?.enabled) {
-        await pollMailuIntegration(integration)
-        delay = integration.imap.pollIntervalSeconds * 1_000
+      if (!integration?.enabled) {
+        reconnectDelay = RECONNECT_MIN_MS
+        await wait(CONFIG_CHECK_MS, signal)
+        continue
       }
+      if (!integration.imap.realtime.enabled) {
+        reconnectDelay = RECONNECT_MIN_MS
+        await runPollingFallback(integration, signal)
+        continue
+      }
+
+      let outcome: RealtimeOutcome
+      try {
+        outcome = await runRealtimeSession(integration, signal)
+      } catch (error) {
+        logPollError(error, integration, "idle-connect")
+        outcome = { reason: "disconnected", connectedMilliseconds: 0 }
+      }
+      if (outcome.reason === "aborted") return
+      if (outcome.reason === "changed") {
+        reconnectDelay = RECONNECT_MIN_MS
+        continue
+      }
+      if (outcome.reason === "unsupported" || !integration.imap.realtime.reconnect) {
+        reconnectDelay = RECONNECT_MIN_MS
+        await runPollingFallback(integration, signal)
+        continue
+      }
+
+      if (outcome.connectedMilliseconds >= 60_000) reconnectDelay = RECONNECT_MIN_MS
+      console.warn(JSON.stringify({
+        event: "mailu.imap.realtime.reconnect_scheduled",
+        delayMilliseconds: reconnectDelay,
+      }))
+      await wait(reconnectDelay, signal)
+      reconnectDelay = Math.min(RECONNECT_MAX_MS, reconnectDelay * 2)
     } catch (error) {
       console.error(JSON.stringify({
         event: "mailu.imap.failed",
         incidentId: randomUUID(),
+        trigger: "supervisor",
         message: safeMailuError(error, integration),
       }))
+      await wait(CONFIG_CHECK_MS, signal)
     }
-    await wait(delay, signal)
   }
 }
 
 export function startMailuPoller() {
   if (globalState.__moemailMailuPoller) return
   const controller = new AbortController()
-  globalState.__moemailMailuPoller = controller
-  void loop(controller.signal)
+  const runtime: PollerRuntime = { controller, promise: loop(controller.signal) }
+  globalState.__moemailMailuPoller = runtime
+  const clearRuntime = () => {
+    if (globalState.__moemailMailuPoller === runtime) delete globalState.__moemailMailuPoller
+  }
+  void runtime.promise.then(clearRuntime, error => {
+    clearRuntime()
+    console.error(JSON.stringify({
+      event: "mailu.imap.supervisor_terminated",
+      incidentId: randomUUID(),
+      message: safeMailuError(error, null),
+    }))
+  })
+}
+
+export async function stopMailuPoller() {
+  const runtime = globalState.__moemailMailuPoller
+  if (!runtime) return
+  runtime.controller.abort()
+  await runtime.promise
+  if (globalState.__moemailMailuPoller === runtime) delete globalState.__moemailMailuPoller
 }

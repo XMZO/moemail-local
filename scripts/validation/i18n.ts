@@ -122,6 +122,7 @@ const invariantCatalogValues = new Set([
   "Envelope-To",
   "X-Envelope-To",
   "HTML",
+  "IMAP IDLE",
 ])
 const localeFormats = {
   en: { label: "{label}:", labelValue: "{label}: {value}", labelCodeValue: "{label}: <code>{value}</code>", identityRole: "{identity} ({role})" },

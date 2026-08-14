@@ -69,6 +69,11 @@ export const mailuIntegrationSchema = z.object({
     mailbox,
     recipientHeader: z.enum(["x-original-to", "delivered-to", "envelope-to", "x-envelope-to"]),
     initialSync: z.enum(["new", "unseen"]),
+    realtime: z.object({
+      enabled: z.boolean(),
+      mode: z.literal("idle"),
+      reconnect: z.boolean(),
+    }).strict().default({ enabled: true, mode: "idle", reconnect: true }),
     pollIntervalSeconds: z.number().int().min(15).max(86_400),
     maxMessagesPerPoll: z.number().int().min(1).max(1_000),
   }).strict(),
@@ -153,6 +158,7 @@ export function defaultMailuIntegration(): MailuIntegration {
       // Delivered-To field and writes the real SMTP envelope recipient back.
       recipientHeader: "delivered-to",
       initialSync: "new",
+      realtime: { enabled: true, mode: "idle", reconnect: true },
       pollIntervalSeconds: 60,
       maxMessagesPerPoll: 100,
     },

@@ -98,6 +98,7 @@
     "title": "Mailu integration",
     "description": "Use the Mailu v1 API to reconcile exact aliases, ingest through one IMAP collector, and send through the same collector without granting wildcard sender spoofing.",
     "enabled": "Enable Mailu",
+    "status": { "enabled": "Enabled", "disabled": "Disabled" },
     "showSecret": "Show secret",
     "hideSecret": "Hide secret",
     "host": "Host",
@@ -116,7 +117,7 @@
       "catchAllPassword": "Catch-all account password",
       "safety": "They must be two distinct Mailu users. MoeMail forces allow_spoofing off and disables login for the catch-all account; it only forwards to the collector and cannot authenticate to SMTP."
     },
-    "imap": { "title": "IMAP collection", "mailbox": "Source mailbox", "recipientHeader": "Trusted recipient header", "initialSync": "Initial synchronization", "initialSyncOptions": { "new": "Only messages arriving after save", "unseen": "Also import unread messages" }, "pollInterval": "Polling interval (seconds)", "maxMessages": "Maximum messages per poll" },
+    "imap": { "title": "IMAP collection", "summaryRealtime": "{endpoint} · Real-time IDLE", "summaryPolling": "{endpoint} · Polling", "realtimeEnabled": "Real-time receiving", "realtimeMode": "Mode", "modeIdle": "IMAP IDLE", "reconnect": "Reconnect automatically", "fallbackPollInterval": "Fallback poll (seconds)", "realtimeHelp": "MoeMail keeps an IMAP IDLE connection open. Mailu notifies it as soon as a message reaches the collector; a periodic full scan covers missed notifications and connection outages.", "mailbox": "Source mailbox", "recipientHeader": "Trusted recipient header", "initialSync": "Initial synchronization", "initialSyncOptions": { "new": "Only messages arriving after save", "unseen": "Also import unread messages" }, "maxMessages": "Maximum messages per poll" },
     "smtp": { "title": "SMTP delivery", "authMethod": "Authentication method", "fromName": "Sender name (optional)" },
     "retention": {
       "title": "Upstream retention",

@@ -98,6 +98,7 @@
     "title": "Mailu 集成",
     "description": "通过 Mailu v1 API 协调精确别名，用一个 IMAP collector 收件并用同一账号 SMTP 发件，同时不给通配别名发件人伪造权限。",
     "enabled": "启用 Mailu",
+    "status": { "enabled": "已启用", "disabled": "已停用" },
     "showSecret": "显示密钥",
     "hideSecret": "隐藏密钥",
     "host": "主机",
@@ -116,7 +117,7 @@
       "catchAllPassword": "Catch-all 账号密码",
       "safety": "必须是两个不同的 Mailu 用户。MoeMail 会强制关闭 allow_spoofing，并禁用 catch-all 账号登录；它只负责向 collector 转发，不能用于 SMTP 鉴权。"
     },
-    "imap": { "title": "IMAP 收取", "mailbox": "来源文件夹", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步范围", "initialSyncOptions": { "new": "只收取保存后到达的邮件", "unseen": "同时导入未读邮件" }, "pollInterval": "轮询间隔（秒）", "maxMessages": "每轮最多处理邮件数" },
+    "imap": { "title": "IMAP 收取", "summaryRealtime": "{endpoint} · IDLE 实时接收", "summaryPolling": "{endpoint} · 定时轮询", "realtimeEnabled": "实时接收", "realtimeMode": "模式", "modeIdle": "IMAP IDLE", "reconnect": "断线自动重连", "fallbackPollInterval": "轮询兜底（秒）", "realtimeHelp": "MoeMail 会保持 IMAP IDLE 长连接；新邮件落入 collector 后由 Mailu 立即通知，定时完整扫描用于补偿漏通知和断线窗口。", "mailbox": "来源文件夹", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步范围", "initialSyncOptions": { "new": "只收取保存后到达的邮件", "unseen": "同时导入未读邮件" }, "maxMessages": "每轮最多处理邮件数" },
     "smtp": { "title": "SMTP 投递", "authMethod": "鉴权方式", "fromName": "发件人名称（可选）" },
     "retention": {
       "title": "上游保留策略",

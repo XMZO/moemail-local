@@ -190,7 +190,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.19.0 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.1 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -234,9 +234,9 @@ MoeMail 可以在不修改 Mailu 的前提下协调已有 Mailu。先在 Mailu �
 - 每个有效收件地址及当前获准发件的地址各一个精确别名：只有邮箱所属用户同时拥有 MoeMail 发件权限和该域发件权时才指向 collector；仅收件或被撤销发件权的地址指向禁用登录的转发账号；
 - 可选的 `%@domain` catch-all 别名，目标是上述转发账号。
 
-收件只信任 Mailu Sieve 写入的 `Delivered-To` 真实 SMTP envelope 收件人，绝不使用 MIME `To`/`Cc` 路由。发件同时要求调用者拥有有效 MoeMail 邮箱，并且 Mailu 中存在对应的精确受管别名；catch-all 不会授权任意 From。密码只能通过专用随机轮换按钮更新。默认在 MoeMail 持久化成功 24 小时后删除上游邮件，也可选择保留、归档或更短延迟；只有已经提交或确认重复的邮件才进入删除/移动队列，且缺少安全的 UID 范围能力时会停止而不是普通 `EXPUNGE`。被拒绝或未知收件人的邮件留在 Mailu。
+收件只信任 Mailu Sieve 写入的 `Delivered-To` 真实 SMTP envelope 收件人，绝不使用 MIME `To`/`Cc` 路由。默认启用 `IMAP IDLE` 实时接收：新邮件写入 collector 后，Mailu 会在长连接上通知 MoeMail 立即入库；断线按指数退避自动重连，同时保留可配置的 15–86400 秒完整轮询作为漏通知和停机窗口的兜底。不支持 IDLE 时会安全退化为轮询。发件同时要求调用者拥有有效 MoeMail 邮箱，并且 Mailu 中存在对应的精确受管别名；catch-all 不会授权任意 From。密码只能通过专用随机轮换按钮更新。默认在 MoeMail 持久化成功 24 小时后删除上游邮件，也可选择保留、归档或更短延迟；只有已经提交或确认重复的邮件才进入删除/移动队列，且缺少安全的 UID 范围能力时会停止而不是普通 `EXPUNGE`。被拒绝或未知收件人的邮件留在 Mailu。
 
-关闭集成会立即暂停 IMAP 轮询、SMTP 使用和自动协调，但不会擅自删除 Mailu 远端对象。若希望清理 MoeMail 所有的别名，应先把相关域切换到其他收发方式，再执行最后一次协调。Mailu 的 SMTP sender-login 授权与收件路由共用精确别名，因此只启用 Mailu 发件的域，外部来信仍可能进入 collector；建议同时启用 Mailu 收件，或单独监控和清理 collector。MoeMail 支持的生产拓扑是单 Web 实例；IMAP collector 另有数据库租约，防止轮询任务重叠。
+关闭集成会立即暂停 IMAP 实时接收与兜底轮询、SMTP 使用和自动协调，但不会擅自删除 Mailu 远端对象。若希望清理 MoeMail 所有的别名，应先把相关域切换到其他收发方式，再执行最后一次协调。Mailu 的 SMTP sender-login 授权与收件路由共用精确别名，因此只启用 Mailu 发件的域，外部来信仍可能进入 collector；建议同时启用 Mailu 收件，或单独监控和清理 collector。MoeMail 支持的生产拓扑是单 Web 实例；IMAP collector 另有数据库租约，防止实时通知和轮询任务重叠。
 
 Mailu 是独立邮件服务器，MX、TLS、DKIM/SPF/DMARC、反垃圾、存储和备份仍按 Mailu 文档部署。尽量只允许 MoeMail 主机或私网访问 Mailu API。API Token 和服务账号密码保存在 MoeMail 所选数据库中，因此也会进入数据库备份。
 
@@ -328,7 +328,7 @@ docker compose --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.19.0 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.1 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
