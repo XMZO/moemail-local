@@ -225,14 +225,43 @@ pnpm exec wrangler tail --config wrangler.email.json
 
 ### Option B: Mailu-managed inbound and outbound
 
-MoeMail can coordinate an existing Mailu installation without modifying Mailu. In Mailu, enable the REST API (`API=true`), expose its configured `WEB_API` path over HTTPS, and set a strong `API_TOKEN`. In **Profile → Domain mail → Mailu integration**, enter the complete v1 base URL (normally `https://mail.example.com/api/v1`), API token, IMAP/SMTP endpoints, and two distinct service-account addresses with strong generated passwords. The service-account domains and every domain selected for Mailu must already exist in Mailu.
+MoeMail coordinates an existing, working Mailu installation; it does not install Mailu or take over its MX, TLS, or spam policy. Use this order for the initial connection.
 
-Use **Discover domains** to review Mailu domains, explicitly add the wanted domains to the MoeMail draft, choose Mailu for inbound and/or outbound, save, then run **Reconcile now**. MoeMail creates only objects carrying its integration ownership marker:
+1. Create in Mailu every mail domain that MoeMail will manage, including the domain used by the service accounts. Do not manually create the collector or catch-all users below; reconciliation creates and marks them.
+2. Enable the REST API in **Mailu's own** `mailu.env`. Generate a token with `openssl rand -hex 32`, add the following settings, and redeploy Mailu using its existing procedure. This is not a MoeMail configuration file.
+
+   ```dotenv
+   API=true
+   WEB_API=/api
+   API_TOKEN=<random token generated above>
+   ```
+
+   With this path, Swagger UI is at `https://mail.example.com/api/`, while MoeMail's v1 base URL is `https://mail.example.com/api/v1`. See the [Mailu REST API documentation](https://mailu.io/master/api.html). Restrict API access to the MoeMail host or a trusted private network.
+3. Ensure the MoeMail container can reach Mailu over HTTPS, IMAPS, and Submission/SMTPS. Use a Mailu FQDN or private DNS name that resolves inside the container. Never enter `127.0.0.1` or `localhost`, because those point back to the MoeMail container. Typical values are:
+
+   | MoeMail field | Recommended value |
+   | --- | --- |
+   | API base URL | `https://mail.example.com/api/v1` |
+   | API token | exactly the same value as Mailu `API_TOKEN` |
+   | Collector | `moemail-collector@service-domain.example` |
+   | Catch-all forwarder | `moemail-catchall@service-domain.example`; it must differ from the collector |
+   | IMAP | `mail.example.com:993`, TLS, `INBOX`, recipient header `delivered-to` |
+   | SMTP | `mail.example.com:465` with TLS, or STARTTLS on 587 when enabled in Mailu |
+   | Certificate verification | keep enabled for a publicly trusted certificate |
+
+4. Sign in as the Emperor and open **Profile → Domain mail → Mailu integration**. Enable and expand Mailu, then fill the API, two service-account addresses, and IMAP/SMTP endpoints. Use both **Generate random password** buttons; never leave `replace-me`. The domains of both addresses must already exist in Mailu.
+5. Run **Test API** and **Discover domains**. After confirming the expected Mailu instance, import or manually add the wanted domains. Importing adds them to the MoeMail draft; it does not silently enable mail flow.
+6. Save the Mailu integration, select **Mailu inbound**, **Mailu outbound**, or both for each domain and save the domain policy, then run **Reconcile now**. Only successful reconciliation creates the two service users and the exact/catch-all aliases.
+7. After reconciliation, run **Test IMAP** and **Test SMTP**. Deliver a real message to an active MoeMail address and watch `docker compose logs -f moemail` for `mailu.imap.realtime.connected` and ingestion events. Testing IMAP/SMTP before reconciliation must fail because the service account does not exist yet.
+
+Reconciliation creates only objects carrying this integration's ownership marker:
 
 - an IMAP-enabled collector with `allow_spoofing=false`;
 - a disabled-login catch-all forwarding account that cannot authenticate to SMTP;
 - one exact alias for each active inbound address and each currently authorized sender: only a mailbox whose owner has MoeMail send permission and domain send access points to the collector; inbound-only or send-denied addresses point to the disabled forwarding account;
 - optionally `%@domain` catch-all aliases pointing to the forwarding account.
+
+For common failures: a 404 from the API usually means `WEB_API` and the v1 base URL do not match; 401/403 means the token is wrong; a timeout calls for checking DNS, routing, and firewall access from inside the MoeMail container. `MAILU_ALIAS_OWNERSHIP_CONFLICT` means a same-name user or alias is not owned by this integration, so MoeMail refuses to overwrite it. Choose unused service-account addresses or have an administrator inspect and handle the existing object explicitly.
 
 Mailu's Sieve-generated `Delivered-To` is treated as the true SMTP envelope recipient; MIME `To`/`Cc` is never used for routing. Real-time `IMAP IDLE` receiving is enabled by default: Mailu notifies MoeMail over the long-lived connection as soon as a message reaches the collector, disconnections reconnect with exponential backoff, and a configurable 15–86400 second full poll covers missed notifications and downtime. Servers without IDLE safely fall back to polling. SMTP sending requires both an active mailbox owned by the caller and its exact managed alias, so the catch-all never authorizes arbitrary From addresses. Password rotation is available only through the dedicated random-rotation buttons. By default, upstream messages are deleted 24 hours after MoeMail durably commits them; choose Keep, Archive, or a shorter delay if preferred. Deletion/move is queued only for committed messages or proven duplicates, requires safe UID-scoped IMAP capabilities, and leaves rejected or unknown-recipient mail upstream.
 

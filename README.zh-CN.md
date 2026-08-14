@@ -225,14 +225,43 @@ pnpm exec wrangler tail --config wrangler.email.json
 
 ### 方式 B：由 Mailu 管理收信与发信
 
-MoeMail 可以在不修改 Mailu 的前提下协调已有 Mailu。先在 Mailu 启用 REST API（`API=true`），通过 HTTPS 暴露所配置的 `WEB_API` 路径，并设置强随机 `API_TOKEN`。然后在 **个人中心 → 域名收发 → Mailu 集成** 填入完整 v1 基础地址（通常为 `https://mail.example.com/api/v1`）、API Token、IMAP/SMTP 端点，以及两个不同的服务账号地址和强随机密码。服务账号所在域及准备交给 Mailu 的每个域都必须已经在 Mailu 中创建。
+MoeMail 只协调一套已经能正常收发邮件的 Mailu，不会替你安装 Mailu，也不会接管它的 MX、TLS 或垃圾邮件策略。完整接入顺序如下。
 
-先用“发现域名”审阅 Mailu 域名，再明确添加所需域到 MoeMail 草稿，为其选择 Mailu 收件和/或发件，保存后点击“立即协调”。MoeMail 只创建带本集成所有权标记的对象：
+1. 在 Mailu 管理界面先创建服务账号将使用的域，以及准备交给 MoeMail 的所有邮箱域名。不要手工创建下面的 collector/catch-all 用户，MoeMail 会在协调时创建并标记它们。
+2. 在 **Mailu 自己的** `mailu.env` 中启用 REST API。先运行 `openssl rand -hex 32` 生成 Token，再写入以下配置，并按原有方式重新部署 Mailu。这里不是 MoeMail 的配置文件。
+
+   ```dotenv
+   API=true
+   WEB_API=/api
+   API_TOKEN=<上一步生成的随机 Token>
+   ```
+
+   使用上述路径时，Swagger UI 是 `https://mail.example.com/api/`，MoeMail 要填写的 v1 基础地址则是 `https://mail.example.com/api/v1`。可同时参考 [Mailu REST API 文档](https://mailu.io/master/api.html)。只允许 MoeMail 主机或可信私网访问 API。
+3. 确认 MoeMail 容器能访问 Mailu 的 HTTPS、IMAPS 和 Submission/SMTPS 端口。推荐使用容器内可解析的 Mailu FQDN 或私网 DNS；不要填写 `127.0.0.1` 或 `localhost`，它们在 MoeMail 容器里指向 MoeMail 自己。常用组合如下：
+
+   | MoeMail 字段 | 推荐值 |
+   | --- | --- |
+   | API 基础地址 | `https://mail.example.com/api/v1` |
+   | API Token | 与 Mailu `API_TOKEN` 完全相同 |
+   | Collector | `moemail-collector@service-domain.example` |
+   | Catch-all 转发账号 | `moemail-catchall@service-domain.example`，必须与 Collector 不同 |
+   | IMAP | `mail.example.com:993`、TLS、`INBOX`、收件人 Header 选 `delivered-to` |
+   | SMTP | `mail.example.com:465` + TLS；或 Mailu 已启用 587 时使用 STARTTLS |
+   | 证书校验 | 公网有效证书保持开启 |
+
+4. 使用皇帝账号进入 **个人中心 → 域名收发 → Mailu 集成**，打开“启用 Mailu”并展开设置。填完 API、两个服务账号地址和 IMAP/SMTP 端点；两个密码都点击“随机生成”，不要保留 `replace-me`。这两个地址所属的域必须已存在于 Mailu。
+5. 点击“测试 API”和“发现域名”。确认返回的是预期 Mailu 实例后，导入或手工添加需要的域；此时只是加入 MoeMail 草稿，不会自动启用收发。
+6. 保存 Mailu 集成，再为每个域分别选择 **Mailu 收件**、**Mailu 发件**或两者并保存域名设置，最后点击“立即协调”。协调成功后，MoeMail 才会创建两个服务账号及精确/catch-all 别名。
+7. 账号创建后再点击“测试 IMAP”和“测试 SMTP”。最后向一个当前有效的 MoeMail 地址投递测试邮件，并用 `docker compose logs -f moemail` 检查 `mailu.imap.realtime.connected` 和入库日志。测试顺序不能反过来，否则服务账号尚不存在，IMAP/SMTP 鉴权必然失败。
+
+协调过程只创建带本集成所有权标记的对象：
 
 - 一个启用 IMAP 且 `allow_spoofing=false` 的 collector；
 - 一个禁止登录、不能进行 SMTP 鉴权、只负责转发的 catch-all 账号；
 - 每个有效收件地址及当前获准发件的地址各一个精确别名：只有邮箱所属用户同时拥有 MoeMail 发件权限和该域发件权时才指向 collector；仅收件或被撤销发件权的地址指向禁用登录的转发账号；
 - 可选的 `%@domain` catch-all 别名，目标是上述转发账号。
+
+常见故障定位：API 返回 404 时检查 `WEB_API` 与 v1 基础地址；401/403 时检查 Token；连接超时先检查 MoeMail 容器内的 DNS、路由和防火墙；`MAILU_ALIAS_OWNERSHIP_CONFLICT` 表示同名用户或别名不是本集成创建的，MoeMail 会拒绝覆盖，需换用未占用的服务账号地址，或在确认对象用途后由管理员手工处理。
 
 收件只信任 Mailu Sieve 写入的 `Delivered-To` 真实 SMTP envelope 收件人，绝不使用 MIME `To`/`Cc` 路由。默认启用 `IMAP IDLE` 实时接收：新邮件写入 collector 后，Mailu 会在长连接上通知 MoeMail 立即入库；断线按指数退避自动重连，同时保留可配置的 15–86400 秒完整轮询作为漏通知和停机窗口的兜底。不支持 IDLE 时会安全退化为轮询。发件同时要求调用者拥有有效 MoeMail 邮箱，并且 Mailu 中存在对应的精确受管别名；catch-all 不会授权任意 From。密码只能通过专用随机轮换按钮更新。默认在 MoeMail 持久化成功 24 小时后删除上游邮件，也可选择保留、归档或更短延迟；只有已经提交或确认重复的邮件才进入删除/移动队列，且缺少安全的 UID 范围能力时会停止而不是普通 `EXPUNGE`。被拒绝或未知收件人的邮件留在 Mailu。
 
