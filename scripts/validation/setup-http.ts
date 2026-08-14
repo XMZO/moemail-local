@@ -715,8 +715,12 @@ try {
     body: JSON.stringify({ username: memberUsername, password: memberPassword }),
   })
   assert.equal(registerMember.status, 201)
-  const member = await registerMember.json() as { user?: { id?: string } }
+  const member = await registerMember.json() as {
+    user?: { id?: string }
+    registrationTicket?: string
+  }
   assert.ok(member.user?.id)
+  assert.ok(member.registrationTicket)
 
   accessPoliciesBody.policies.roles.duke.quotas = {
     ...accessPoliciesBody.policies.roles.duke.quotas,
@@ -754,6 +758,7 @@ try {
       csrfToken: memberCsrfToken,
       username: memberUsername,
       password: memberPassword,
+      registrationTicket: member.registrationTicket,
       callbackUrl: `${baseUrl}/zh-CN`,
     }),
   })
@@ -1386,8 +1391,13 @@ try {
     201,
     `deletion fixture registration failed: ${await deletionRegistration.clone().text()}`,
   )
-  const deletionUserId = (await deletionRegistration.json() as { user?: { id?: string } }).user?.id
+  const deletionRegistrationBody = await deletionRegistration.json() as {
+    user?: { id?: string }
+    registrationTicket?: string
+  }
+  const deletionUserId = deletionRegistrationBody.user?.id
   assert.ok(deletionUserId)
+  assert.ok(deletionRegistrationBody.registrationTicket)
   const promoteDeletionTarget = await request("/api/roles/promote", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1408,6 +1418,7 @@ try {
       csrfToken: deletionCsrfToken,
       username: deletionUsername,
       password: deletionPassword,
+      registrationTicket: deletionRegistrationBody.registrationTicket,
       callbackUrl: `${baseUrl}/zh-CN`,
     }),
   })
@@ -1669,6 +1680,7 @@ try {
     setupTokenGate: true,
     databaseProbeAndSetup: true,
     uniqueEmperorLogin: true,
+    registrationTicketAutoLogin: true,
     authFallbackPagesLocalized: true,
     webUiYamlSaveApplied: true,
     staleWebUiSaveRejected: true,

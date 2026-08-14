@@ -81,6 +81,17 @@ export function LoginForm({ turnstile }: LoginFormProps) {
     setErrors({})
   }
 
+  const showAutoLoginFailure = () => {
+    setActiveTab("login")
+    toast({
+      title: t("toast.loginFailed"),
+      description: t("toast.autoLoginFailed"),
+      variant: "destructive",
+    })
+    setLoading(false)
+    resetTurnstile()
+  }
+
   const handleTabChange = (value: string) => {
     setActiveTab(value as "login" | "register")
     clearForm()
@@ -150,6 +161,7 @@ export function LoginForm({ turnstile }: LoginFormProps) {
     if (!ensureTurnstileSolved()) return
 
     setLoading(true)
+    let registrationCompleted = false
     try {
       const response = await fetch("/api/auth/register", {
         method: "POST",
@@ -169,28 +181,33 @@ export function LoginForm({ turnstile }: LoginFormProps) {
         return
       }
 
+      registrationCompleted = true
+      const registration = await response.json() as { registrationTicket?: string }
+      if (!registration.registrationTicket) {
+        showAutoLoginFailure()
+        return
+      }
+
       // 注册成功后自动登录
       const result = await signIn("credentials", {
         username,
         password,
-        turnstileToken,
+        registrationTicket: registration.registrationTicket,
         redirect: false,
       })
 
       if (result?.error) {
-        toast({
-          title: t("toast.loginFailed"),
-          description: t("toast.autoLoginFailed"),
-          variant: "destructive",
-        })
-        setLoading(false)
-        resetTurnstile()
+        showAutoLoginFailure()
         return
       }
 
       window.location.href = "/"
     } catch (error) {
       console.error("auth.registration_request_failed", error)
+      if (registrationCompleted) {
+        showAutoLoginFailure()
+        return
+      }
       toast({
         title: t("toast.registerFailed"),
         description: t("toast.registerFailedDesc"),

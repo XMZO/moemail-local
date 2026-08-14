@@ -13,3 +13,9 @@ export const authSchema = z.object({
 })
 
 export type AuthSchema = z.infer<typeof authSchema>
+
+export const credentialsAuthSchema = authSchema.extend({
+  registrationTicket: z.string().min(1).max(2_048).optional(),
+})
+
+export type CredentialsAuthSchema = z.infer<typeof credentialsAuthSchema>

@@ -93,11 +93,11 @@
 - 过期邮箱在 cleanup 物理删除前收信返回 ignored，数据库中没有新增消息；Unicode envelope recipient 返回 400，不会依赖 SQLite 的 ASCII-only `LOWER()` 行为。
 - 新建 `Mixed.Case@LOCAL.TEST` 返回规范化的 `mixed.case@local.test`；Unicode local-part 返回 400，20 路大小写变体并发得到 1 个 200、19 个 409。
 - 邮箱分享列表与详情都排除 `type=sent`：接收消息详情返回 200，同邮箱已发送消息 ID 返回 404。
-- 注册成功返回 201 且响应无 password，重复用户名返回 409；数据库密码为带随机 salt 的 `$scrypt$v1$`。`pnpm validate:password` 另验证错误密码、旧 SHA-256 兼容/惰性升级、`auth.secret` 解耦与可选 pepper。
+- 注册成功返回 201 且响应无 password，重复用户名返回 409；数据库密码为带随机 salt 的 `$scrypt$v1$`。注册接口校验 Turnstile 后签发与新用户绑定、两分钟有效的自动登录凭证，Credentials 登录不会重复消费一次性 Turnstile token；`pnpm validate:registration-login` 验证用户名/实例绑定、过期与篡改拒绝。`pnpm validate:password` 另验证错误密码、旧 SHA-256 兼容/惰性升级、`auth.secret` 解耦与可选 pepper。
 - 较早的真实 production HTTP 曾将注册/登录客户端上限临时设为 2，注册依次返回 `201/409/429`，Credentials callback 依次返回 `302/302/429`；两种 429 都带 `Retry-After` 和 `AUTH_RATE_LIMITED`。当前 `pnpm validate:auth-abuse` 已按配置对象覆盖进程全局上限、有界客户端 Map、代理头 opt-in、忽略 `X-User-Id` 与 scrypt 并发快速失败。
 - Webhook 保存前和发送时均执行 SSRF 校验；loopback、private、link-local、metadata、localhost 与 IPv4-mapped IPv6 被拒绝，发送时使用已验证 IP 且不跟随重定向。
 
-可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:maintenance-bundle`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:send-quota`、`pnpm validate:policy-migrations`、`pnpm validate:imap-inbound`、`pnpm validate:mailu`、`pnpm validate:runtime-fields`、`pnpm validate:i18n`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
+可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:maintenance-bundle`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:send-quota`、`pnpm validate:policy-migrations`、`pnpm validate:imap-inbound`、`pnpm validate:mailu`、`pnpm validate:runtime-fields`、`pnpm validate:i18n`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`、`pnpm validate:registration-login`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
 
 ## SQLite 轮询基线
 

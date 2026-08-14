@@ -345,6 +345,7 @@ pnpm validate:imap-inbound
 pnpm validate:mailu
 pnpm validate:runtime-fields
 pnpm validate:i18n
+pnpm validate:registration-login
 ```
 
 开发服务器使用 `pnpm dev`。本地运行也必须完成首次初始化，之后应用路由才可正常使用。

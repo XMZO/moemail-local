@@ -15,12 +15,13 @@ import { ROLES, Role } from "./permissions"
 import { getEffectiveAccessPolicy } from "./access-policies"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { hashPassword, verifyPassword } from "@/lib/password"
-import { authSchema, AuthSchema } from "@/lib/validation"
+import { credentialsAuthSchema, CredentialsAuthSchema } from "@/lib/validation"
 import { generateAvatarUrl } from "./avatar"
 import { verifyTurnstileToken } from "./turnstile"
 import { CONFIG_KEYS, getConfigValue } from "./config-store"
 import { AuthWorkloadOverloadedError } from "./auth-abuse-guard"
 import { getConfig } from "./config/runtime"
+import { verifyRegistrationLoginTicket } from "./registration-login-ticket"
 
 class AuthenticationTemporarilyUnavailableError extends CredentialsSignin {
   code = "temporarily_unavailable"
@@ -179,28 +180,46 @@ export const {
       credentials: {
         username: { label: "USERNAME", type: "text", placeholder: "USERNAME" },
         password: { label: "PASSWORD", type: "password", placeholder: "PASSWORD" },
+        turnstileToken: { label: "TURNSTILE_TOKEN", type: "hidden" },
+        registrationTicket: { label: "REGISTRATION_TICKET", type: "hidden" },
       },
       async authorize(credentials) {
         if (!credentials) {
           throw new Error("CREDENTIALS_REQUIRED")
         }
 
-        const { username, password, turnstileToken } = credentials as Record<string, string | undefined>
+        const {
+          username,
+          password,
+          turnstileToken,
+          registrationTicket,
+        } = credentials as Record<string, string | undefined>
 
-        let parsedCredentials: AuthSchema
+        let parsedCredentials: CredentialsAuthSchema
         try {
-          parsedCredentials = authSchema.parse({ username, password, turnstileToken })
+          parsedCredentials = credentialsAuthSchema.parse({
+            username,
+            password,
+            turnstileToken,
+            registrationTicket,
+          })
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (error) {
           throw new Error("INVALID_CREDENTIALS_INPUT")
         }
 
-        const verification = await verifyTurnstileToken(parsedCredentials.turnstileToken)
-        if (!verification.success) {
-          if (verification.reason === "missing-token") {
-            throw new Error("TURNSTILE_REQUIRED")
+        const registrationLogin = verifyRegistrationLoginTicket(
+          parsedCredentials.registrationTicket,
+          parsedCredentials.username,
+        )
+        if (!registrationLogin) {
+          const verification = await verifyTurnstileToken(parsedCredentials.turnstileToken)
+          if (!verification.success) {
+            if (verification.reason === "missing-token") {
+              throw new Error("TURNSTILE_REQUIRED")
+            }
+            throw new Error("TURNSTILE_FAILED")
           }
-          throw new Error("TURNSTILE_FAILED")
         }
 
         const db = createDb()
@@ -210,6 +229,10 @@ export const {
         })
 
         if (!user) {
+          throw new Error("INVALID_CREDENTIALS")
+        }
+
+        if (registrationLogin && registrationLogin.userId !== user.id) {
           throw new Error("INVALID_CREDENTIALS")
         }
 

@@ -39,6 +39,7 @@
     "validate:ingest": "tsx scripts/validation/ingest-fixtures.ts",
     "validate:password": "tsx scripts/validation/password-security.ts",
     "validate:auth-abuse": "tsx scripts/validation/auth-abuse-guard.ts",
+    "validate:registration-login": "tsx scripts/validation/registration-login-ticket.ts",
     "validate:runtime-config": "tsx scripts/validation/runtime-config.ts",
     "validate:runtime-config:cold": "tsx scripts/validation/runtime-config-cold-start.ts",
     "validate:setup": "tsx scripts/validation/setup-recovery.ts",

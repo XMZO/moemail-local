@@ -119,6 +119,7 @@ jobs:
         run: |
           pnpm validate:password
           pnpm validate:auth-abuse
+          pnpm validate:registration-login
           pnpm validate:runtime-config
           pnpm validate:runtime-config:cold
           pnpm validate:setup

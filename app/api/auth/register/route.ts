@@ -53,8 +53,16 @@ export async function POST(request: Request) {
     }
 
     const user = await register(username, password)
+    const { issueRegistrationLoginTicket } = await import("@/lib/registration-login-ticket")
+    const registrationTicket = issueRegistrationLoginTicket(username, user.id)
 
-    return NextResponse.json({ user }, { status: 201 })
+    return NextResponse.json(
+      { user, registrationTicket },
+      {
+        status: 201,
+        headers: { "Cache-Control": "no-store" },
+      },
+    )
   } catch (error) {
     if (error instanceof AuthWorkloadOverloadedError) {
       return apiError("AUTH_CAPACITY_EXCEEDED", 503, {

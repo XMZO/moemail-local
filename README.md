@@ -345,6 +345,7 @@ pnpm validate:imap-inbound
 pnpm validate:mailu
 pnpm validate:runtime-fields
 pnpm validate:i18n
+pnpm validate:registration-login
 ```
 
 Start a development server with `pnpm dev`. The local runtime still needs its first-run setup before application routes are usable.
