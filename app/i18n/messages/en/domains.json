@@ -13,7 +13,7 @@
   "success": {
     "saved": "Domain mail policies saved",
     "imapTitle": "IMAP connection succeeded",
-    "imapDescription": "{mailbox}: {messages, plural, one {# message} other {# messages}}",
+    "imapDescription": "{mailbox}: {messages, plural, one {# message} other {# messages}} · {capability}",
     "smtpTitle": "SMTP connection and authentication succeeded"
   },
   "summary": "Inbound: {inbound} · Outbound: {outbound}",
@@ -67,11 +67,25 @@
       "unseen": "Also import unread messages"
     },
     "pollInterval": "Polling interval (seconds)",
+    "realtimeEnabled": "Real-time receiving",
+    "realtimeMode": "Mode",
+    "modeIdleAuto": "Automatic: IDLE, then polling",
+    "capabilityIdle": "IDLE available",
+    "capabilityPolling": "IDLE unavailable; polling fallback",
+    "reconnect": "Reconnect automatically",
+    "fallbackPollInterval": "Fallback poll (seconds)",
+    "realtimeHelp": "MoeMail checks CAPABILITY first. Servers with IDLE notify the read-only listener immediately; servers without it automatically stay on the same complete polling fallback, which also recovers missed notifications and downtime.",
+    "advanced": "Advanced connection and performance",
+    "connectionTimeout": "Connection timeout (seconds)",
+    "idleRenew": "IDLE renewal (seconds)",
+    "reconnectMin": "Initial reconnect delay (seconds)",
+    "reconnectMax": "Maximum reconnect delay (seconds)",
+    "advancedHelp": "IDLE is renewed before common provider timeouts, and reconnect delay grows exponentially within the selected range. At most 32 read-only listeners run at once; every additional account remains covered by bounded polling.",
     "maxMessages": "Maximum messages per poll",
     "certificateHelp": "Keep this enabled for public email providers.",
     "test": "Test IMAP connection",
     "testing": "Connecting",
-    "readOnlyHelp": "Polling accesses the mailbox read-only: it does not mark messages as read, move them, or delete them. Alias or catch-all forwarding must preserve a header that identifies the original recipient."
+    "readOnlyHelp": "IDLE and polling access the mailbox read-only: they do not mark messages as read, move them, or delete them. Alias or catch-all forwarding must preserve a header that identifies the original recipient."
   },
   "smtp": {
     "host": "SMTP host",
@@ -117,7 +131,7 @@
       "catchAllPassword": "Catch-all account password",
       "safety": "They must be two distinct Mailu users. MoeMail forces allow_spoofing off and disables login for the catch-all account; it only forwards to the collector and cannot authenticate to SMTP."
     },
-    "imap": { "title": "IMAP collection", "summaryRealtime": "{endpoint} · Real-time IDLE", "summaryPolling": "{endpoint} · Polling", "realtimeEnabled": "Real-time receiving", "realtimeMode": "Mode", "modeIdle": "IMAP IDLE", "reconnect": "Reconnect automatically", "fallbackPollInterval": "Fallback poll (seconds)", "realtimeHelp": "MoeMail keeps an IMAP IDLE connection open. Mailu notifies it as soon as a message reaches the collector; a periodic full scan covers missed notifications and connection outages.", "mailbox": "Source mailbox", "recipientHeader": "Trusted recipient header", "initialSync": "Initial synchronization", "initialSyncOptions": { "new": "Only messages arriving after save", "unseen": "Also import unread messages" }, "maxMessages": "Maximum messages per poll" },
+    "imap": { "title": "IMAP collection", "summaryRealtime": "{endpoint} · Real-time IDLE", "summaryPolling": "{endpoint} · Polling", "realtimeEnabled": "Real-time receiving", "realtimeMode": "Mode", "modeIdle": "IMAP IDLE", "modeIdleAuto": "Automatic: IDLE, then polling", "reconnect": "Reconnect automatically", "fallbackPollInterval": "Fallback poll (seconds)", "realtimeHelp": "MoeMail checks CAPABILITY and keeps a read-only IDLE listener when available. Mailu then notifies it immediately; the complete periodic scan still covers missed notifications, unsupported servers, and connection outages.", "advanced": "Advanced connection and performance", "connectionTimeout": "Connection timeout (seconds)", "idleRenew": "IDLE renewal (seconds)", "reconnectMin": "Initial reconnect delay (seconds)", "reconnectMax": "Maximum reconnect delay (seconds)", "advancedHelp": "IDLE renews before common provider cutoffs. Automatic reconnect uses exponential backoff within the selected range; polling remains active independently.", "mailbox": "Source mailbox", "recipientHeader": "Trusted recipient header", "initialSync": "Initial synchronization", "initialSyncOptions": { "new": "Only messages arriving after save", "unseen": "Also import unread messages" }, "maxMessages": "Maximum messages per poll" },
     "smtp": { "title": "SMTP delivery", "authMethod": "Authentication method", "fromName": "Sender name (optional)" },
     "retention": {
       "title": "Upstream retention",
@@ -137,7 +151,7 @@
     },
     "actions": { "testApi": "Test API", "discover": "Discover domains", "importDomains": "Add {count} domains to draft", "testImap": "Test IMAP", "testSmtp": "Test SMTP", "reconcile": "Reconcile now", "generateCollector": "Generate collector secret", "generateCatchAll": "Generate catch-all secret", "rotateCollector": "Generate and rotate collector secret", "rotateCatchAll": "Generate and rotate catch-all secret", "save": "Save Mailu settings", "saving": "Saving" },
     "errors": { "load": "Failed to load Mailu settings", "save": "Failed to save Mailu settings", "testApi": "Mailu API test failed", "discover": "Mailu inventory discovery failed", "testImap": "Mailu IMAP test failed", "testSmtp": "Mailu SMTP test failed", "reconcile": "Mailu reconciliation failed", "rotateCollector": "Collector secret rotation failed", "rotateCatchAll": "Catch-all secret rotation failed" },
-    "success": { "saved": "Mailu settings saved", "testApi": "Mailu API connected", "discover": "Mailu domains discovered", "testImap": "Mailu IMAP connected", "testSmtp": "Mailu SMTP authenticated", "reconcile": "Mailu reconciliation completed", "rotateCollector": "Collector secret rotated", "rotateCatchAll": "Catch-all secret rotated", "reconcileCounts": "Created {created}, updated {updated}, removed {removed}", "domainsAdded": "Added {count} Mailu domains to the draft" }
+    "success": { "saved": "Mailu settings saved", "testApi": "Mailu API connected", "discover": "Mailu domains discovered", "testImap": "Mailu IMAP connected", "testImapRealtime": "The server advertises IDLE; real-time receiving is available.", "testImapPolling": "The server does not advertise IDLE; complete polling fallback will be used.", "testSmtp": "Mailu SMTP authenticated", "reconcile": "Mailu reconciliation completed", "rotateCollector": "Collector secret rotated", "rotateCatchAll": "Catch-all secret rotated", "reconcileCounts": "Created {created}, updated {updated}, removed {removed}", "domainsAdded": "Added {count} Mailu domains to the draft" }
   },
   "deleteConfirm": {
     "title": "Remove this domain?",

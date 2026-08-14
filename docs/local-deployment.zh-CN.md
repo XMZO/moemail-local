@@ -4,7 +4,7 @@
 
 选择 Cloudflare Email Routing 时，Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。选择外部 IMAP 时无需 Cloudflare，但邮局必须提供 catch-all/全域转发，并保留可识别原始收件地址的 Header。
 
-仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.19.2`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
+仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.19.3`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会同时刷新 `latest` 与应用维护用的 `latest-tools`。必须等待整个发布 Action 的四个 manifest 全部成功后再执行 `pull`；回滚时把所选方案的 Web、维护、数据库和数据库工具标签一起固定到同一旧版本或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -407,7 +407,7 @@ Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地
 
 Mailu 默认 Sieve 会清洗来信自带的 `Delivered-To`，再从第二个 `Received ... for <recipient>` 写入真实 SMTP envelope 收件人。MoeMail 只接受这一个明确配置的投递 Header，不使用 MIME `To`/`Cc`；重复或畸形 Header 会安全跳过并让邮件留在 Mailu。发件时，MoeMail API 先校验调用者拥有仍有效的本地邮箱，再确认 Mailu 中有指向 collector 的精确受管别名；`allow_spoofing` 始终为 false，通配别名不会授权任意 From。
 
-收件默认使用 `IMAP IDLE` 长连接。Mailu/Dovecot 在新邮件写入 collector 后发送 `EXISTS` 通知，MoeMail 立即触发同一套数据库租约、UID 游标和幂等入库流程；连接断开时按 1–30 秒指数退避自动重连。WebUI 可关闭实时模式或自动重连，并设置 15–86400 秒的完整轮询兜底；兜底会补偿通知丢失、短时断线和单轮批次上限。服务器未声明 IDLE 能力时自动保持纯轮询。IDLE 监听连接始终只读，删除/归档只由另一个持租约的短连接执行；不需要新增 Compose profile、入站端口或 Mailu 插件。
+收件默认使用 `IMAP IDLE` 长连接。Mailu/Dovecot 在新邮件写入 collector 后发送 `EXISTS` 通知，MoeMail 立即触发同一套数据库租约、UID 游标和幂等入库流程；连接断开时按可配置的指数退避范围自动重连。WebUI 可关闭实时模式或自动重连，并设置 15–86400 秒的完整轮询兜底；“高级连接与性能”还能调整连接超时、IDLE 续期、重连上下限和单轮批次。兜底会补偿通知丢失、短时断线和单轮批次上限。服务器未声明 IDLE 能力时自动保持纯轮询。IDLE 监听连接始终只读，删除/归档只由另一个持租约的短连接执行；不需要新增 Compose profile、入站端口或 Mailu 插件。
 
 默认上游策略是在 MoeMail 数据库成功提交邮件 24 小时后从 Mailu 删除，也可改为保留、移动到归档文件夹或设更短延迟。只有 `created` 或已由内容摘要证明的 `duplicate` 才会进入删除/移动队列；未知邮箱、权限/额度拒绝、格式错误和超大邮件均留在上游。游标、待处理保留动作和短租约存储在数据库中，多进程不会并行处理同一 collector。删除要求 `UIDPLUS`，移动要求原生 `MOVE` 或 `UIDPLUS`；缺少安全 UID 范围能力时任务会失败并保留邮件，不会发送可能清除其他客户端邮件的普通 `EXPUNGE`。
 
@@ -420,9 +420,11 @@ Mailu 默认 Sieve 会清洗来信自带的 `Delivered-To`，再从第二个 `Re
 1. 在域名 DNS/MX 与邮局控制台启用 catch-all/全域收件，或配置覆盖所有 MoeMail 地址的别名规则，让邮件进入一个专用外部邮箱。
 2. 确认邮局会清洗同名入站 Header，并把可信的 `X-Original-To`、`Envelope-To`、`X-Envelope-To` 或 `Delivered-To` 放在最前。应用不接受发件人可控的普通 MIME `To`；若邮局不保证投递追踪 Header 的来源和顺序，就不能安全确定实际临时地址，应改用 Worker。
 3. 在 WebUI 把目标域改为“外部邮箱 IMAP”，填写主机、端口、`TLS`/`STARTTLS`、用户名、密码或应用专用密码、文件夹和收件 Header；公共邮局应保持严格证书校验。
-4. 点击“测试 IMAP 连接”并保存。默认首次建立当前 UID 水位，只接收后续新邮件；确需导入现有邮件时选择“同时导入未读邮件”。
+4. 点击“测试 IMAP 连接”；结果会明确显示服务器是否声明 `IDLE`。保存后默认首次建立当前 UID 水位，只接收后续新邮件；确需导入现有邮件时选择“同时导入未读邮件”。WebUI 新建策略默认启用实时接收，既有普通 IMAP 策略保持纯轮询，需管理员主动打开开关。
 
-Web 进程每 5 秒检查策略，按各域设置的 15–86400 秒间隔调度，最多并行轮询 4 个账号。每个账号单轮上限可设置为 1–1000 封。读取使用只读 `EXAMINE` 和 `BODY.PEEK`，不会设置 `\\Seen`、移动或删除上游邮件；单封原始邮件硬限制 25 MiB，连接、问候和空闲读取都有超时及响应内存上限。
+Web 进程每 5 秒检查策略并先建立一次 UID 基线。启用实时模式时会检查 IMAP `CAPABILITY`：有 `IDLE` 就保持只读监听，新 `EXISTS` 通知只负责唤醒原有的受限轮询/幂等入库路径；无 `IDLE` 则不反复探测，自动维持纯轮询。连接断开可在 1–300 秒的可配置范围内指数退避重连；连接超时可设 5–120 秒，IDLE 续期可设 60–1740 秒。
+
+每个账号设置的 15–86400 秒完整轮询始终运行，确保漏通知、服务器不支持 IDLE、断线和 MoeMail 停机窗口最终都会被扫描。最多同时运行 32 个只读 IDLE 监听和 4 个账号轮询；超过监听上限的账号继续由轮询完整覆盖，不会无限增加连接或并发。每个账号单轮上限可设置为 1–1000 封，积压批次会立即继续排队。读取使用只读 `EXAMINE` 和 `BODY.PEEK`，不会设置 `\\Seen`、移动或删除上游邮件；单封原始邮件硬限制 25 MiB，连接、问候和空闲读取都有超时及响应内存上限。
 
 进度以账号指纹、IMAP `UIDVALIDITY` 和最后完成的 UID 保存在数据库。进程在“下载后、更新游标前”退出时会再次看到同一 UID，但原始内容摘要会阻止重复入库/Webhook。修改账号、主机或文件夹会建立新游标；删除或停用域会清理对应游标。两种部署都使用 `docker compose logs -f moemail` 查看日志。
 
@@ -442,7 +444,7 @@ IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也�
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.19.2 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.19.3 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \

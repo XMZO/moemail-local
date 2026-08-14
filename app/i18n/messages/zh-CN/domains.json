@@ -13,7 +13,7 @@
   "success": {
     "saved": "域名收发策略已保存",
     "imapTitle": "IMAP 连接成功",
-    "imapDescription": "{mailbox}：{messages} 封邮件",
+    "imapDescription": "{mailbox}：{messages} 封邮件 · {capability}",
     "smtpTitle": "SMTP 连接与鉴权成功"
   },
   "summary": "收件：{inbound} · 发件：{outbound}",
@@ -67,11 +67,25 @@
       "unseen": "同时导入未读邮件"
     },
     "pollInterval": "轮询间隔（秒）",
+    "realtimeEnabled": "实时接收",
+    "realtimeMode": "模式",
+    "modeIdleAuto": "自动：优先 IDLE，否则轮询",
+    "capabilityIdle": "支持 IDLE 实时通知",
+    "capabilityPolling": "不支持 IDLE，将使用轮询兜底",
+    "reconnect": "断线自动重连",
+    "fallbackPollInterval": "轮询兜底（秒）",
+    "realtimeHelp": "MoeMail 会先检测 CAPABILITY。支持 IDLE 时由只读长连接立即接收通知；不支持时自动保持完整轮询。同一轮询也会补回漏通知和停机窗口中的邮件。",
+    "advanced": "高级连接与性能",
+    "connectionTimeout": "连接超时（秒）",
+    "idleRenew": "IDLE 续期（秒）",
+    "reconnectMin": "首次重连延迟（秒）",
+    "reconnectMax": "最大重连延迟（秒）",
+    "advancedHelp": "IDLE 会在常见服务商超时前主动续期，重连延迟在所选范围内指数增长。最多同时运行 32 个只读监听连接，超出的账号仍由受限并发轮询完整覆盖。",
     "maxMessages": "每轮最多邮件数",
     "certificateHelp": "使用公共邮箱服务商时请保持开启。",
     "test": "测试 IMAP 连接",
     "testing": "连接中",
-    "readOnlyHelp": "轮询以只读方式访问邮箱，不会标记已读、移动或删除邮件。别名或全域转发必须保留能识别原始收件人的 Header。"
+    "readOnlyHelp": "IDLE 与轮询都以只读方式访问邮箱，不会标记已读、移动或删除邮件。别名或全域转发必须保留能识别原始收件人的 Header。"
   },
   "smtp": {
     "host": "SMTP 主机",
@@ -117,7 +131,7 @@
       "catchAllPassword": "Catch-all 账号密码",
       "safety": "必须是两个不同的 Mailu 用户。MoeMail 会强制关闭 allow_spoofing，并禁用 catch-all 账号登录；它只负责向 collector 转发，不能用于 SMTP 鉴权。"
     },
-    "imap": { "title": "IMAP 收取", "summaryRealtime": "{endpoint} · IDLE 实时接收", "summaryPolling": "{endpoint} · 定时轮询", "realtimeEnabled": "实时接收", "realtimeMode": "模式", "modeIdle": "IMAP IDLE", "reconnect": "断线自动重连", "fallbackPollInterval": "轮询兜底（秒）", "realtimeHelp": "MoeMail 会保持 IMAP IDLE 长连接；新邮件落入 collector 后由 Mailu 立即通知，定时完整扫描用于补偿漏通知和断线窗口。", "mailbox": "来源文件夹", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步范围", "initialSyncOptions": { "new": "只收取保存后到达的邮件", "unseen": "同时导入未读邮件" }, "maxMessages": "每轮最多处理邮件数" },
+    "imap": { "title": "IMAP 收取", "summaryRealtime": "{endpoint} · IDLE 实时接收", "summaryPolling": "{endpoint} · 定时轮询", "realtimeEnabled": "实时接收", "realtimeMode": "模式", "modeIdle": "IMAP IDLE", "modeIdleAuto": "自动：优先 IDLE，否则轮询", "reconnect": "断线自动重连", "fallbackPollInterval": "轮询兜底（秒）", "realtimeHelp": "MoeMail 会检测 CAPABILITY，并在可用时保持只读 IDLE 监听；Mailu 新邮件会立即通知，完整定时扫描仍会覆盖漏通知、不支持 IDLE 和连接中断。", "advanced": "高级连接与性能", "connectionTimeout": "连接超时（秒）", "idleRenew": "IDLE 续期（秒）", "reconnectMin": "首次重连延迟（秒）", "reconnectMax": "最大重连延迟（秒）", "advancedHelp": "IDLE 会在常见服务商断开前主动续期；自动重连在所选范围内指数退避，轮询始终独立保留。", "mailbox": "来源文件夹", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步范围", "initialSyncOptions": { "new": "只收取保存后到达的邮件", "unseen": "同时导入未读邮件" }, "maxMessages": "每轮最多处理邮件数" },
     "smtp": { "title": "SMTP 投递", "authMethod": "鉴权方式", "fromName": "发件人名称（可选）" },
     "retention": {
       "title": "上游保留策略",
@@ -137,7 +151,7 @@
     },
     "actions": { "testApi": "测试 API", "discover": "发现域名", "importDomains": "向草稿添加 {count} 个域名", "testImap": "测试 IMAP", "testSmtp": "测试 SMTP", "reconcile": "立即协调", "generateCollector": "随机生成 Collector 密钥", "generateCatchAll": "随机生成 Catch-all 密钥", "rotateCollector": "随机生成并轮换 Collector 密钥", "rotateCatchAll": "随机生成并轮换 Catch-all 密钥", "save": "保存 Mailu 配置", "saving": "保存中" },
     "errors": { "load": "读取 Mailu 配置失败", "save": "保存 Mailu 配置失败", "testApi": "Mailu API 测试失败", "discover": "读取 Mailu 资源失败", "testImap": "Mailu IMAP 测试失败", "testSmtp": "Mailu SMTP 测试失败", "reconcile": "Mailu 协调失败", "rotateCollector": "Collector 密钥轮换失败", "rotateCatchAll": "Catch-all 密钥轮换失败" },
-    "success": { "saved": "Mailu 配置已保存", "testApi": "Mailu API 连接成功", "discover": "已发现 Mailu 域名", "testImap": "Mailu IMAP 连接成功", "testSmtp": "Mailu SMTP 鉴权成功", "reconcile": "Mailu 协调完成", "rotateCollector": "Collector 密钥已轮换", "rotateCatchAll": "Catch-all 密钥已轮换", "reconcileCounts": "新建 {created}、更新 {updated}、移除 {removed}", "domainsAdded": "已向草稿添加 {count} 个 Mailu 域名" }
+    "success": { "saved": "Mailu 配置已保存", "testApi": "Mailu API 连接成功", "discover": "已发现 Mailu 域名", "testImap": "Mailu IMAP 连接成功", "testImapRealtime": "服务器声明支持 IDLE，可以实时接收。", "testImapPolling": "服务器未声明 IDLE，将自动使用完整轮询兜底。", "testSmtp": "Mailu SMTP 鉴权成功", "reconcile": "Mailu 协调完成", "rotateCollector": "Collector 密钥已轮换", "rotateCatchAll": "Catch-all 密钥已轮换", "reconcileCounts": "新建 {created}、更新 {updated}、移除 {removed}", "domainsAdded": "已向草稿添加 {count} 个 Mailu 域名" }
   },
   "deleteConfirm": {
     "title": "移除此域名？",

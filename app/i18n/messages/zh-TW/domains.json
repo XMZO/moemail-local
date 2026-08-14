@@ -13,7 +13,7 @@
   "success": {
     "saved": "網域收發策略已儲存",
     "imapTitle": "IMAP 連線成功",
-    "imapDescription": "{mailbox}：{messages} 封郵件",
+    "imapDescription": "{mailbox}：{messages} 封郵件 · {capability}",
     "smtpTitle": "SMTP 連線與驗證成功"
   },
   "summary": "收件：{inbound} · 寄件：{outbound}",
@@ -67,11 +67,25 @@
       "unseen": "同時匯入未讀郵件"
     },
     "pollInterval": "輪詢間隔（秒）",
+    "realtimeEnabled": "即時接收",
+    "realtimeMode": "模式",
+    "modeIdleAuto": "自動：優先 IDLE，否則輪詢",
+    "capabilityIdle": "支援 IDLE 即時通知",
+    "capabilityPolling": "不支援 IDLE，將使用輪詢備援",
+    "reconnect": "斷線自動重新連線",
+    "fallbackPollInterval": "輪詢備援（秒）",
+    "realtimeHelp": "MoeMail 會先偵測 CAPABILITY。支援 IDLE 時由唯讀長連線立即接收通知；不支援時自動維持完整輪詢。同一輪詢也會補回漏失通知與停機空窗中的郵件。",
+    "advanced": "進階連線與效能",
+    "connectionTimeout": "連線逾時（秒）",
+    "idleRenew": "IDLE 續期（秒）",
+    "reconnectMin": "首次重新連線延遲（秒）",
+    "reconnectMax": "最大重新連線延遲（秒）",
+    "advancedHelp": "IDLE 會在常見服務商逾時前主動續期，重新連線延遲在所選範圍內指數增加。最多同時執行 32 個唯讀監聽連線，超出的帳號仍由受限並行輪詢完整涵蓋。",
     "maxMessages": "每輪最多郵件數",
     "certificateHelp": "使用公共信箱服務商時請保持開啟。",
     "test": "測試 IMAP 連線",
     "testing": "連線中",
-    "readOnlyHelp": "輪詢以唯讀方式存取信箱，不會標示為已讀、移動或刪除郵件。別名或全域轉寄必須保留可識別原始收件人的 Header。"
+    "readOnlyHelp": "IDLE 與輪詢都以唯讀方式存取信箱，不會標示為已讀、移動或刪除郵件。別名或全域轉寄必須保留可識別原始收件人的 Header。"
   },
   "smtp": {
     "host": "SMTP 主機",
@@ -104,13 +118,13 @@
     "senderSafety": "Mailu 寄件同時要求有效的 MoeMail 信箱及指向 collector 的精確受管別名；catch-all 別名不會授權任何 From 地址。",
     "api": { "title": "Mailu 介面", "baseUrl": "v1 介面基礎網址", "token": "介面權杖", "timeout": "逾時（秒）" },
     "accounts": { "title": "受管服務帳號", "collector": "Collector 地址", "collectorPassword": "Collector 密碼", "catchAll": "Catch-all 轉寄帳號", "catchAllPassword": "Catch-all 帳號密碼", "safety": "必須是兩個不同的 Mailu 使用者。MoeMail 會強制關閉 allow_spoofing，並停用 catch-all 帳號登入；它只轉寄給 collector，不能用於 SMTP 驗證。" },
-    "imap": { "title": "IMAP 收取", "summaryRealtime": "{endpoint} · IDLE 即時接收", "summaryPolling": "{endpoint} · 定時輪詢", "realtimeEnabled": "即時接收", "realtimeMode": "模式", "modeIdle": "IMAP IDLE", "reconnect": "斷線自動重新連線", "fallbackPollInterval": "輪詢備援（秒）", "realtimeHelp": "MoeMail 會維持 IMAP IDLE 長連線；新郵件寫入 collector 後由 Mailu 立即通知，定時完整掃描用於補償漏失通知與斷線空窗。", "mailbox": "來源資料夾", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步範圍", "initialSyncOptions": { "new": "只收取儲存後到達的郵件", "unseen": "同時匯入未讀郵件" }, "maxMessages": "每輪最多處理郵件數" },
+    "imap": { "title": "IMAP 收取", "summaryRealtime": "{endpoint} · IDLE 即時接收", "summaryPolling": "{endpoint} · 定時輪詢", "realtimeEnabled": "即時接收", "realtimeMode": "模式", "modeIdle": "IMAP IDLE", "modeIdleAuto": "自動：優先 IDLE，否則輪詢", "reconnect": "斷線自動重新連線", "fallbackPollInterval": "輪詢備援（秒）", "realtimeHelp": "MoeMail 會偵測 CAPABILITY，並在可用時維持唯讀 IDLE 監聽；Mailu 的新郵件會立即通知，完整定時掃描仍會涵蓋漏失通知、不支援 IDLE 與連線中斷。", "advanced": "進階連線與效能", "connectionTimeout": "連線逾時（秒）", "idleRenew": "IDLE 續期（秒）", "reconnectMin": "首次重新連線延遲（秒）", "reconnectMax": "最大重新連線延遲（秒）", "advancedHelp": "IDLE 會在常見服務商中斷前主動續期；自動重新連線會在所選範圍內指數退避，輪詢始終獨立保留。", "mailbox": "來源資料夾", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步範圍", "initialSyncOptions": { "new": "只收取儲存後到達的郵件", "unseen": "同時匯入未讀郵件" }, "maxMessages": "每輪最多處理郵件數" },
     "smtp": { "title": "SMTP 投遞", "authMethod": "驗證方式", "fromName": "寄件者名稱（選用）" },
     "retention": { "title": "上游保留策略", "action": "MoeMail 持久化成功後", "actions": { "keep": "保留在 Mailu", "delete": "從 Mailu 刪除", "archive": "移至封存資料夾" }, "delay": "延遲時間（秒）", "mailbox": "封存資料夾", "safety": "只有 MoeMail 已提交郵件或確認既有重複項後才會排程刪除或移動；被拒絕或未知收件人的郵件仍保留在上游。" },
     "reconcile": { "title": "Mailu 協調", "enabled": "自動協調", "createCatchAll": "建立 catch-all 別名", "removeStaleAliases": "移除過期受管別名", "interval": "間隔（秒）", "safety": "只更新或刪除帶有本整合所有權標記的物件；遇到外部使用者或別名衝突時會安全拒絕。" },
     "actions": { "testApi": "測試 API", "discover": "探索網域", "importDomains": "將 {count} 個網域加入草稿", "testImap": "測試 IMAP", "testSmtp": "測試 SMTP", "reconcile": "立即協調", "generateCollector": "隨機產生 Collector 密鑰", "generateCatchAll": "隨機產生 Catch-all 密鑰", "rotateCollector": "隨機產生並輪替 Collector 密鑰", "rotateCatchAll": "隨機產生並輪替 Catch-all 密鑰", "save": "儲存 Mailu 設定", "saving": "儲存中" },
     "errors": { "load": "讀取 Mailu 設定失敗", "save": "儲存 Mailu 設定失敗", "testApi": "Mailu API 測試失敗", "discover": "讀取 Mailu 資源失敗", "testImap": "Mailu IMAP 測試失敗", "testSmtp": "Mailu SMTP 測試失敗", "reconcile": "Mailu 協調失敗", "rotateCollector": "Collector 密鑰輪替失敗", "rotateCatchAll": "Catch-all 密鑰輪替失敗" },
-    "success": { "saved": "Mailu 設定已儲存", "testApi": "Mailu API 連線成功", "discover": "已探索 Mailu 網域", "testImap": "Mailu IMAP 連線成功", "testSmtp": "Mailu SMTP 驗證成功", "reconcile": "Mailu 協調完成", "rotateCollector": "Collector 密鑰已輪替", "rotateCatchAll": "Catch-all 密鑰已輪替", "reconcileCounts": "新增 {created}、更新 {updated}、移除 {removed}", "domainsAdded": "已將 {count} 個 Mailu 網域加入草稿" }
+    "success": { "saved": "Mailu 設定已儲存", "testApi": "Mailu API 連線成功", "discover": "已探索 Mailu 網域", "testImap": "Mailu IMAP 連線成功", "testImapRealtime": "伺服器宣告支援 IDLE，可以即時接收。", "testImapPolling": "伺服器未宣告支援 IDLE，將自動使用完整輪詢備援。", "testSmtp": "Mailu SMTP 驗證成功", "reconcile": "Mailu 協調完成", "rotateCollector": "Collector 密鑰已輪替", "rotateCatchAll": "Catch-all 密鑰已輪替", "reconcileCounts": "新增 {created}、更新 {updated}、移除 {removed}", "domainsAdded": "已將 {count} 個 Mailu 網域加入草稿" }
   },
   "deleteConfirm": {
     "title": "移除此網域？",

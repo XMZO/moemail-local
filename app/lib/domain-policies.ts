@@ -21,6 +21,40 @@ export const IMAP_RECIPIENT_HEADERS = [
   "x-envelope-to",
 ] as const
 
+export const IMAP_REALTIME_DEFAULTS = Object.freeze({
+  mode: "idle" as const,
+  reconnect: true,
+  idleRenewSeconds: 1_500,
+  reconnectMinSeconds: 1,
+  reconnectMaxSeconds: 30,
+})
+
+export function defaultImapRealtime(enabled: boolean) {
+  return { enabled, ...IMAP_REALTIME_DEFAULTS }
+}
+
+export const imapRealtimeSchema = z.object({
+  enabled: z.boolean(),
+  mode: z.literal("idle"),
+  reconnect: z.boolean(),
+  // RFC 2177 recommends ending IDLE before the common 30-minute server
+  // timeout. ImapFlow renews the command without reconnecting the socket.
+  idleRenewSeconds: z.number().int().min(60).max(1_740)
+    .default(IMAP_REALTIME_DEFAULTS.idleRenewSeconds),
+  reconnectMinSeconds: z.number().int().min(1).max(60)
+    .default(IMAP_REALTIME_DEFAULTS.reconnectMinSeconds),
+  reconnectMaxSeconds: z.number().int().min(5).max(300)
+    .default(IMAP_REALTIME_DEFAULTS.reconnectMaxSeconds),
+}).strict().superRefine((realtime, ctx) => {
+  if (realtime.reconnectMinSeconds > realtime.reconnectMaxSeconds) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["reconnectMaxSeconds"],
+      message: "IMAP_RECONNECT_RANGE_INVALID",
+    })
+  }
+})
+
 const optionalText = (maximum: number) => z
   .union([z.string(), z.null(), z.undefined()])
   .transform(value => {
@@ -64,6 +98,10 @@ export const imapInboundSchema = z.object({
     .refine(value => !/[\r\n\0]/.test(value), "IMAP_MAILBOX_INVALID"),
   recipientHeader: z.enum(IMAP_RECIPIENT_HEADERS),
   initialSync: z.enum(IMAP_INITIAL_SYNC_MODES),
+  connectionTimeoutSeconds: z.number().int().min(5).max(120).default(15),
+  // Existing policies remain polling-only until an administrator opts in;
+  // newly created policies enable this explicitly in the WebUI defaults.
+  realtime: imapRealtimeSchema.default(defaultImapRealtime(false)),
   pollIntervalSeconds: z.number().int().min(15).max(86_400),
   maxMessagesPerPoll: z.number().int().min(1).max(1_000),
 }).strict()

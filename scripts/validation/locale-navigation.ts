@@ -55,6 +55,7 @@ assert.match(userPanelSource, /<SelectTrigger className="h-8 w-full min-w-0 text
 const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profile/access-policy-panel.tsx"), "utf8")
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
 const searchableUserSource = readFileSync(join(process.cwd(), "app/components/profile/searchable-user-select.tsx"), "utf8")
+const domainPolicySource = readFileSync(join(process.cwd(), "app/components/profile/domain-policy-panel.tsx"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
 assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
 assert.match(accessPanelSource, /mailQuotaRules/u)
@@ -71,6 +72,15 @@ assert.match(sendQuotaSource, /<SearchableUserSelect/u)
 assert.match(searchableUserSource, /setTimeout\(\(\) =>/u)
 assert.match(searchableUserSource, /\/api\/roles\/users\?\$\{params\}/u)
 assert.match(searchableUserSource, /AbortController/u)
+assert.match(domainPolicySource, /current\.inbound\.realtime\.enabled/u)
+assert.match(domainPolicySource, /current\.inbound\.realtime\.reconnect/u)
+assert.match(domainPolicySource, /connectionTimeoutSeconds/u)
+assert.match(domainPolicySource, /idleRenewSeconds/u)
+assert.match(domainPolicySource, /reconnectMinSeconds/u)
+assert.match(domainPolicySource, /reconnectMaxSeconds/u)
+assert.match(domainPolicySource, /imap\.capabilityIdle/u)
+assert.match(domainPolicySource, /sm:grid-cols-2/u)
+assert.match(domainPolicySource, /<details className="group overflow-hidden rounded border/u)
 
 const mailuPanelSource = readFileSync(join(process.cwd(), "app/components/profile/mailu-integration-panel.tsx"), "utf8")
 assert.equal([...mailuPanelSource.matchAll(/<MailuSettingsSection\b/gu)].length, 6)
@@ -82,6 +92,11 @@ assert.match(mailuPanelSource, /sm:grid-cols-2 xl:grid-cols-4/u)
 assert.match(mailuPanelSource, /integration\.imap\.realtime\.enabled/u)
 assert.match(mailuPanelSource, /integration\.imap\.realtime\.reconnect/u)
 assert.match(mailuPanelSource, /imap\.fallbackPollInterval/u)
+assert.match(mailuPanelSource, /integration\.imap\.connectionTimeoutSeconds/u)
+assert.match(mailuPanelSource, /integration\.imap\.realtime\.idleRenewSeconds/u)
+assert.match(mailuPanelSource, /integration\.imap\.realtime\.reconnectMinSeconds/u)
+assert.match(mailuPanelSource, /integration\.imap\.realtime\.reconnectMaxSeconds/u)
+assert.match(mailuPanelSource, /sm:grid-cols-2 xl:grid-cols-5/u)
 assert.doesNotMatch(mailuPanelSource, /<fieldset/u)
 
 console.log(JSON.stringify({
@@ -101,4 +116,6 @@ console.log(JSON.stringify({
   quotaUserSearchLiveAndAbortable: true,
   mailuSettingsAccordionResponsive: true,
   mailuRealtimeControlsLocalized: true,
+  genericImapRealtimeControlsLocalized: true,
+  imapAdvancedSettingsResponsive: true,
 }))

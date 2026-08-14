@@ -35,10 +35,6 @@ type State = z.infer<typeof storedStateSchema>
 const pollerInstanceId = randomUUID()
 const LEASE_MS = 300_000
 const CONFIG_CHECK_MS = 5_000
-const IDLE_RENEW_MS = 25 * 60_000
-const IDLE_SOCKET_TIMEOUT_MS = 30 * 60_000
-const RECONNECT_MIN_MS = 1_000
-const RECONNECT_MAX_MS = 30_000
 let stateMutationTail: Promise<void> = Promise.resolve()
 
 function fingerprint(integration: MailuIntegration) {
@@ -164,6 +160,8 @@ async function saveLeasedState(state: State, token: string) {
 }
 
 export function mailuImapClientOptions(integration: MailuIntegration, realtime = false): ImapFlowOptions {
+  const connectionTimeout = integration.imap.connectionTimeoutSeconds * 1_000
+  const idleRenew = integration.imap.realtime.idleRenewSeconds * 1_000
   return {
     host: integration.imap.host,
     port: integration.imap.port,
@@ -173,11 +171,13 @@ export function mailuImapClientOptions(integration: MailuIntegration, realtime =
     tls: { rejectUnauthorized: integration.imap.rejectUnauthorized },
     logger: false,
     disableAutoIdle: true,
-    ...(realtime ? { maxIdleTime: IDLE_RENEW_MS } : {}),
+    ...(realtime ? { maxIdleTime: idleRenew } : {}),
     disableCompression: true,
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: realtime ? IDLE_SOCKET_TIMEOUT_MS : 30_000,
+    connectionTimeout,
+    greetingTimeout: connectionTimeout,
+    socketTimeout: realtime
+      ? Math.max(idleRenew + 60_000, connectionTimeout * 2)
+      : Math.max(30_000, connectionTimeout),
     maxLineLength: 1024 * 1024,
     maxLiteralSize: MAX_RAW_EMAIL_SIZE + 1,
     maxResponseSize: MAX_RAW_EMAIL_SIZE + 2 * 1024 * 1024,
@@ -209,7 +209,13 @@ export async function testMailuImapConnection(integration: MailuIntegration) {
       && !client.capabilities.has("MOVE")
       && !client.capabilities.has("UIDPLUS")
     ) throw new Error("MAILU_IMAP_SAFE_MOVE_UNAVAILABLE")
-    return { ok: true as const, mailbox: mailbox.path, messages: mailbox.exists, uidValidity: mailbox.uidValidity.toString() }
+    return {
+      ok: true as const,
+      mailbox: mailbox.path,
+      messages: mailbox.exists,
+      uidValidity: mailbox.uidValidity.toString(),
+      idleSupported: client.capabilities.has("IDLE"),
+    }
   } finally {
     await closeClient(client)
   }
@@ -561,11 +567,16 @@ async function runRealtimeSession(integration: MailuIntegration, signal: AbortSi
     sessionEnded = true
     resolveSessionEnd()
   }
+  const onAbort = () => {
+    endSession()
+    client.close()
+  }
   client.on("error", error => {
     connectionError = error
     endSession()
   })
   client.on("close", endSession)
+  signal.addEventListener("abort", onAbort, { once: true })
 
   let trigger: ReturnType<typeof createPollTrigger> | null = null
   try {
@@ -628,13 +639,14 @@ async function runRealtimeSession(integration: MailuIntegration, signal: AbortSi
     if (connectionError) logPollError(connectionError, integration, "idle")
     return { reason: "disconnected", connectedMilliseconds: Date.now() - connectedAt }
   } finally {
+    signal.removeEventListener("abort", onAbort)
     await closeClient(client)
     await trigger?.settle()
   }
 }
 
 async function loop(signal: AbortSignal) {
-  let reconnectDelay = RECONNECT_MIN_MS
+  let reconnectDelay = 1_000
   while (!signal.aborted) {
     let integration: MailuIntegration | null = null
     try {
@@ -644,12 +656,15 @@ async function loop(signal: AbortSignal) {
       }
       integration = await getMailuIntegration()
       if (!integration?.enabled) {
-        reconnectDelay = RECONNECT_MIN_MS
+        reconnectDelay = 1_000
         await wait(CONFIG_CHECK_MS, signal)
         continue
       }
+      const reconnectMin = integration.imap.realtime.reconnectMinSeconds * 1_000
+      const reconnectMax = integration.imap.realtime.reconnectMaxSeconds * 1_000
+      reconnectDelay = Math.max(reconnectMin, Math.min(reconnectMax, reconnectDelay))
       if (!integration.imap.realtime.enabled) {
-        reconnectDelay = RECONNECT_MIN_MS
+        reconnectDelay = reconnectMin
         await runPollingFallback(integration, signal)
         continue
       }
@@ -663,22 +678,22 @@ async function loop(signal: AbortSignal) {
       }
       if (outcome.reason === "aborted") return
       if (outcome.reason === "changed") {
-        reconnectDelay = RECONNECT_MIN_MS
+        reconnectDelay = reconnectMin
         continue
       }
       if (outcome.reason === "unsupported" || !integration.imap.realtime.reconnect) {
-        reconnectDelay = RECONNECT_MIN_MS
+        reconnectDelay = reconnectMin
         await runPollingFallback(integration, signal)
         continue
       }
 
-      if (outcome.connectedMilliseconds >= 60_000) reconnectDelay = RECONNECT_MIN_MS
+      if (outcome.connectedMilliseconds >= 60_000) reconnectDelay = reconnectMin
       console.warn(JSON.stringify({
         event: "mailu.imap.realtime.reconnect_scheduled",
         delayMilliseconds: reconnectDelay,
       }))
       await wait(reconnectDelay, signal)
-      reconnectDelay = Math.min(RECONNECT_MAX_MS, reconnectDelay * 2)
+      reconnectDelay = Math.min(reconnectMax, reconnectDelay * 2)
     } catch (error) {
       console.error(JSON.stringify({
         event: "mailu.imap.failed",

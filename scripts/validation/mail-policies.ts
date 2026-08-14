@@ -53,6 +53,23 @@ const domainPolicies = domainPoliciesSchema.parse([
   },
 ])
 assert.equal(domainPolicies[0].domain, "resend.example")
+const legacyImapInbound = domainPolicies[1].inbound as Extract<DomainPolicy["inbound"], { mode: "imap" }>
+assert.equal(legacyImapInbound.connectionTimeoutSeconds, 15)
+assert.equal(legacyImapInbound.realtime.enabled, false)
+assert.equal(legacyImapInbound.realtime.idleRenewSeconds, 1_500)
+assert.throws(() => domainPoliciesSchema.parse([{
+  domain: "invalid-reconnect.example",
+  inbound: {
+    ...legacyImapInbound,
+    realtime: {
+      ...legacyImapInbound.realtime,
+      enabled: true,
+      reconnectMinSeconds: 30,
+      reconnectMaxSeconds: 5,
+    },
+  },
+  outbound: { mode: "disabled" },
+}]), /IMAP_RECONNECT_RANGE_INVALID/u)
 assert.throws(() => domainPoliciesSchema.parse([
   { domain: "same.example", inbound: { mode: "worker" }, outbound: { mode: "disabled" } },
   { domain: "SAME.example", inbound: { mode: "worker" }, outbound: { mode: "disabled" } },

@@ -20,8 +20,9 @@ import { normalizeMailboxAddress } from "./email-address"
 type ImapPolicy = Extract<DomainPolicy["inbound"], { mode: "imap" }>
 type ImapDomainPolicy = DomainPolicy & { inbound: ImapPolicy }
 
-const POLLER_TICK_MS = 5_000
+const CONFIG_CHECK_MS = 5_000
 const MAX_CONCURRENT_ACCOUNTS = 4
+const MAX_REALTIME_ACCOUNTS = 32
 // Covers the connection, bounded SEARCH/FETCH, MIME parsing and the configured
 // webhook retry window for one message. A crashed worker is reclaimed later.
 const ACCOUNT_LEASE_MS = 300_000
@@ -208,7 +209,9 @@ async function pruneAccountStates(domains: Set<string>) {
   })
 }
 
-export function createImapClientOptions(policy: ImapPolicy): ImapFlowOptions {
+export function createImapClientOptions(policy: ImapPolicy, realtime = false): ImapFlowOptions {
+  const connectionTimeout = policy.connectionTimeoutSeconds * 1_000
+  const idleRenew = policy.realtime.idleRenewSeconds * 1_000
   return {
     host: policy.host,
     port: policy.port,
@@ -218,10 +221,13 @@ export function createImapClientOptions(policy: ImapPolicy): ImapFlowOptions {
     tls: { rejectUnauthorized: policy.rejectUnauthorized },
     logger: false,
     disableAutoIdle: true,
+    ...(realtime ? { maxIdleTime: idleRenew } : {}),
     disableCompression: true,
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 30_000,
+    connectionTimeout,
+    greetingTimeout: connectionTimeout,
+    socketTimeout: realtime
+      ? Math.max(idleRenew + 60_000, connectionTimeout * 2)
+      : Math.max(30_000, connectionTimeout),
     maxLineLength: 1024 * 1024,
     maxLiteralSize: MAX_RAW_EMAIL_SIZE + 1,
     maxResponseSize: MAX_RAW_EMAIL_SIZE + 2 * 1024 * 1024,
@@ -229,8 +235,8 @@ export function createImapClientOptions(policy: ImapPolicy): ImapFlowOptions {
   }
 }
 
-function createClient(policy: ImapPolicy) {
-  const client = new ImapFlow(createImapClientOptions(policy))
+function createClient(policy: ImapPolicy, realtime = false) {
+  const client = new ImapFlow(createImapClientOptions(policy, realtime))
   // ImapFlow is an EventEmitter. Keep transport errors on the promise/log path
   // instead of allowing an unhandled `error` event to terminate Next.js.
   client.on("error", () => {})
@@ -259,6 +265,7 @@ export async function testImapConnection(policy: ImapPolicy) {
       mailbox: mailbox.path,
       messages: mailbox.exists,
       uidValidity: mailbox.uidValidity.toString(),
+      idleSupported: client.capabilities.has("IDLE"),
     }
   } finally {
     await closeClient(client)
@@ -474,7 +481,7 @@ async function pollImapDomainUnlocked(policy: ImapDomainPolicy, leaseToken?: str
         initialSync: policy.inbound.initialSync,
       }))
       if (policy.inbound.initialSync === "new" || !account.initialUpperUid) {
-        return { processed: 0, initialized: true }
+        return { processed: 0, initialized: true, hasMore: false }
       }
     }
     if (account.uidValidity !== uidValidity) {
@@ -500,7 +507,7 @@ async function pollImapDomainUnlocked(policy: ImapDomainPolicy, leaseToken?: str
         delete account.initialFilter
         await saveAccountState(policy.domain, account, leaseToken)
       }
-      return { processed: 0, initialized: false }
+      return { processed: 0, initialized: false, hasMore: false }
     }
 
     const batch = await searchUidBatch(
@@ -572,7 +579,11 @@ async function pollImapDomainUnlocked(policy: ImapDomainPolicy, leaseToken?: str
       await saveAccountState(policy.domain, account, leaseToken)
     }
 
-    return { processed, initialized: false }
+    return {
+      processed,
+      initialized: false,
+      hasMore: account.lastUid < scanUpperUid,
+    }
   } finally {
     await closeClient(client)
   }
@@ -581,7 +592,7 @@ async function pollImapDomainUnlocked(policy: ImapDomainPolicy, leaseToken?: str
 export async function pollImapDomain(policy: ImapDomainPolicy) {
   if (getDatabaseDriver() !== "postgres") return pollImapDomainUnlocked(policy)
   const leaseToken = await acquireAccountLease(policy.domain)
-  if (!leaseToken) return { processed: 0, initialized: false, skipped: true }
+  if (!leaseToken) return { processed: 0, initialized: false, hasMore: false, skipped: true }
   try {
     return await pollImapDomainUnlocked(policy, leaseToken)
   } finally {
@@ -589,95 +600,413 @@ export async function pollImapDomain(policy: ImapDomainPolicy) {
   }
 }
 
+type PollerRuntime = { controller: AbortController; promise: Promise<void> }
+type RealtimeRuntime = {
+  signature: string
+  controller: AbortController
+  promise: Promise<void>
+}
+type RealtimeOutcome = {
+  reason: "aborted" | "disconnected" | "unsupported"
+  connectedMilliseconds: number
+}
+
 function wait(milliseconds: number, signal: AbortSignal) {
   return new Promise<void>(resolve => {
     if (signal.aborted) return resolve()
-    const timer = setTimeout(resolve, milliseconds)
-    timer.unref()
-    signal.addEventListener("abort", () => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
+      signal.removeEventListener("abort", finish)
       resolve()
-    }, { once: true })
+    }
+    const timer = setTimeout(finish, Math.max(0, milliseconds))
+    timer.unref()
+    signal.addEventListener("abort", finish, { once: true })
   })
+}
+
+function createWakeSignal() {
+  const waiters = new Set<() => void>()
+  return {
+    notify() {
+      for (const resolve of waiters) resolve()
+      waiters.clear()
+    },
+    async wait(milliseconds: number, signal: AbortSignal) {
+      if (signal.aborted || milliseconds <= 0) return
+      await new Promise<void>(resolve => {
+        let settled = false
+        const finish = () => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          waiters.delete(finish)
+          signal.removeEventListener("abort", finish)
+          resolve()
+        }
+        const timer = setTimeout(finish, milliseconds)
+        timer.unref()
+        waiters.add(finish)
+        signal.addEventListener("abort", finish, { once: true })
+      })
+    },
+  }
+}
+
+function realtimeSignature(policy: ImapDomainPolicy) {
+  return JSON.stringify(policy.inbound)
+}
+
+function logPollFailure(error: unknown, policy: ImapDomainPolicy, trigger: string) {
+  console.error(JSON.stringify({
+    event: "imap.poll.failed",
+    domain: policy.domain,
+    trigger,
+    message: safeError(error, [policy.inbound.password, policy.inbound.username]),
+  }))
+}
+
+async function runRealtimeSession(
+  policy: ImapDomainPolicy,
+  signal: AbortSignal,
+  requestImmediate: (domain: string, trigger: string) => void,
+): Promise<RealtimeOutcome> {
+  const client = createClient(policy.inbound, true)
+  const connectedAt = Date.now()
+  let connectionError: unknown = null
+  let sessionEnded = false
+  let resolveSessionEnd = () => {}
+  const sessionEnd = new Promise<void>(resolve => { resolveSessionEnd = resolve })
+  const endSession = () => {
+    if (sessionEnded) return
+    sessionEnded = true
+    resolveSessionEnd()
+  }
+  const onError = (error: unknown) => {
+    connectionError = error
+    endSession()
+  }
+  const onExists = (event: { count: number; prevCount: number }) => {
+    if (event.count > event.prevCount) requestImmediate(policy.domain, "idle")
+  }
+  const onAbort = () => {
+    endSession()
+    client.close()
+  }
+  client.on("error", onError)
+  client.on("close", endSession)
+  signal.addEventListener("abort", onAbort, { once: true })
+
+  try {
+    await requireCurrentPolicy(policy)
+    await client.connect()
+    await client.mailboxOpen(policy.inbound.mailbox, { readOnly: true })
+    await requireCurrentPolicy(policy)
+    if (!client.capabilities.has("IDLE")) {
+      console.warn(JSON.stringify({
+        event: "imap.realtime.unsupported",
+        domain: policy.domain,
+        mode: "idle",
+      }))
+      return { reason: "unsupported", connectedMilliseconds: Date.now() - connectedAt }
+    }
+
+    client.on("exists", onExists)
+    void client.idle()
+      .then(result => {
+        if (result === false && !connectionError) connectionError = new Error("IMAP_IDLE_ENDED")
+        endSession()
+      })
+      .catch(onError)
+
+    console.log(JSON.stringify({
+      event: "imap.realtime.connected",
+      domain: policy.domain,
+      mode: "idle",
+      mailbox: policy.inbound.mailbox,
+    }))
+    // The periodic scheduler established the UID baseline before opening this
+    // listener. This pass closes the small gap between that snapshot and
+    // EXAMINE without changing the initial-sync semantics.
+    requestImmediate(policy.domain, "startup-gap")
+    await sessionEnd
+
+    if (signal.aborted) {
+      return { reason: "aborted", connectedMilliseconds: Date.now() - connectedAt }
+    }
+    if (connectionError) logPollFailure(connectionError, policy, "idle")
+    return { reason: "disconnected", connectedMilliseconds: Date.now() - connectedAt }
+  } finally {
+    signal.removeEventListener("abort", onAbort)
+    client.off("exists", onExists)
+    client.off("error", onError)
+    client.off("close", endSession)
+    await closeClient(client)
+  }
+}
+
+async function runRealtimeSupervisor(
+  policy: ImapDomainPolicy,
+  signal: AbortSignal,
+  requestImmediate: (domain: string, trigger: string) => void,
+  markDormant: (domain: string, signature: string) => void,
+) {
+  const reconnectMin = policy.inbound.realtime.reconnectMinSeconds * 1_000
+  const reconnectMax = policy.inbound.realtime.reconnectMaxSeconds * 1_000
+  let reconnectDelay = reconnectMin
+
+  while (!signal.aborted) {
+    let outcome: RealtimeOutcome
+    try {
+      outcome = await runRealtimeSession(policy, signal, requestImmediate)
+    } catch (error) {
+      logPollFailure(error, policy, "idle-connect")
+      outcome = { reason: "disconnected", connectedMilliseconds: 0 }
+    }
+    if (outcome.reason === "aborted") return
+    if (outcome.reason === "unsupported") {
+      // Remember the exact policy instead of repeatedly probing a capability
+      // the server denied. Do not consume one of the bounded listener slots;
+      // the central periodic scheduler remains active for this account.
+      markDormant(policy.domain, realtimeSignature(policy))
+      return
+    }
+
+    requestImmediate(policy.domain, "reconnect-gap")
+    if (!policy.inbound.realtime.reconnect) {
+      // An administrator-disabled reconnect must not reserve an empty listener
+      // slot after the socket closes. Any policy edit makes it eligible again.
+      markDormant(policy.domain, realtimeSignature(policy))
+      return
+    }
+    if (outcome.connectedMilliseconds >= 60_000) reconnectDelay = reconnectMin
+    console.warn(JSON.stringify({
+      event: "imap.realtime.reconnect_scheduled",
+      domain: policy.domain,
+      delayMilliseconds: reconnectDelay,
+    }))
+    await wait(reconnectDelay, signal)
+    reconnectDelay = Math.min(reconnectMax, reconnectDelay * 2)
+  }
 }
 
 async function runPoller(signal: AbortSignal) {
   const nextPollAt = new Map<string, number>()
+  const immediatePolls = new Map<string, string>()
+  const baselineReady = new Set<string>()
+  const realtimeRuntimes = new Map<string, RealtimeRuntime>()
+  const dormantRealtimeSignatures = new Map<string, string>()
+  const trackedRuntimePromises = new Set<Promise<void>>()
+  const wake = createWakeSignal()
+  let policies: ImapDomainPolicy[] = []
   let previousPolicySignature = ""
-  while (!signal.aborted) {
-    if (!isSetupCompleted()) {
-      await wait(POLLER_TICK_MS, signal)
-      continue
-    }
+  let nextConfigCheckAt = 0
 
-    try {
-      const policies = (await getDomainPolicies())
-        .filter((policy): policy is ImapDomainPolicy => policy.inbound.mode === "imap")
-      const policySignature = JSON.stringify(policies.map(policy => ({
-        domain: policy.domain,
-        inbound: policy.inbound,
-      })))
-      if (policySignature !== previousPolicySignature) {
-        previousPolicySignature = policySignature
-        const activeDomains = new Set(policies.map(policy => policy.domain))
-        // A new installation has no IMAP state. Avoid creating an otherwise
-        // meaningless site_config row during every ordinary Worker-only boot.
-        if (activeDomains.size > 0 || await getConfigValue(CONFIG_KEYS.IMAP_SYNC_STATE)) {
-          await pruneAccountStates(activeDomains)
-        }
+  const requestImmediate = (domain: string, trigger: string) => {
+    immediatePolls.set(domain, trigger)
+    wake.notify()
+  }
+
+  const markRealtimeDormant = (domain: string, signature: string) => {
+    dormantRealtimeSignatures.set(domain, signature)
+  }
+
+  const stopRealtimeRuntime = (domain: string) => {
+    const runtime = realtimeRuntimes.get(domain)
+    if (!runtime) return
+    realtimeRuntimes.delete(domain)
+    runtime.controller.abort()
+  }
+
+  const syncRealtimeRuntimes = () => {
+    const candidates = policies
+      .filter(policy => (
+        policy.inbound.realtime.enabled
+        && baselineReady.has(policy.domain)
+        && dormantRealtimeSignatures.get(policy.domain) !== realtimeSignature(policy)
+      ))
+      .slice(0, MAX_REALTIME_ACCOUNTS)
+    const desired = new Map(candidates.map(policy => [policy.domain, policy]))
+
+    for (const [domain, runtime] of realtimeRuntimes) {
+      const policy = desired.get(domain)
+      if (!policy || runtime.signature !== realtimeSignature(policy)) stopRealtimeRuntime(domain)
+    }
+    for (const policy of candidates) {
+      if (realtimeRuntimes.has(policy.domain)) continue
+      const controller = new AbortController()
+      const runtime = {
+        signature: realtimeSignature(policy),
+        controller,
+        promise: Promise.resolve(),
+      } as RealtimeRuntime
+      runtime.promise = runRealtimeSupervisor(
+        policy,
+        controller.signal,
+        requestImmediate,
+        markRealtimeDormant,
+      )
+        .catch(error => {
+          console.error(JSON.stringify({
+            event: "imap.realtime.supervisor_terminated",
+            domain: policy.domain,
+            message: safeError(error, [policy.inbound.password, policy.inbound.username]),
+          }))
+        })
+        .finally(() => {
+          trackedRuntimePromises.delete(runtime.promise)
+          if (realtimeRuntimes.get(policy.domain) === runtime) {
+            realtimeRuntimes.delete(policy.domain)
+          }
+          wake.notify()
+        })
+      realtimeRuntimes.set(policy.domain, runtime)
+      trackedRuntimePromises.add(runtime.promise)
+    }
+  }
+
+  try {
+    while (!signal.aborted) {
+      if (!isSetupCompleted()) {
+        for (const domain of [...realtimeRuntimes.keys()]) stopRealtimeRuntime(domain)
+        policies = []
+        previousPolicySignature = ""
         nextPollAt.clear()
+        immediatePolls.clear()
+        baselineReady.clear()
+        dormantRealtimeSignatures.clear()
+        await wake.wait(CONFIG_CHECK_MS, signal)
+        continue
       }
 
       const now = Date.now()
-      const due = policies.filter(policy => now >= (nextPollAt.get(policy.domain) ?? 0))
+      if (now >= nextConfigCheckAt) {
+        try {
+          const loaded = (await getDomainPolicies())
+            .filter((policy): policy is ImapDomainPolicy => policy.inbound.mode === "imap")
+          const policySignature = JSON.stringify(loaded.map(policy => ({
+            domain: policy.domain,
+            inbound: policy.inbound,
+          })))
+          policies = loaded
+          if (policySignature !== previousPolicySignature) {
+            previousPolicySignature = policySignature
+            const activeDomains = new Set(policies.map(policy => policy.domain))
+            const activePolicyByDomain = new Map(policies.map(policy => [policy.domain, policy]))
+            for (const [domain, signature] of dormantRealtimeSignatures) {
+              const policy = activePolicyByDomain.get(domain)
+              if (!policy || realtimeSignature(policy) !== signature) {
+                dormantRealtimeSignatures.delete(domain)
+              }
+            }
+            if (activeDomains.size > 0 || await getConfigValue(CONFIG_KEYS.IMAP_SYNC_STATE)) {
+              await pruneAccountStates(activeDomains)
+            }
+            for (const domain of [...realtimeRuntimes.keys()]) stopRealtimeRuntime(domain)
+            nextPollAt.clear()
+            immediatePolls.clear()
+            baselineReady.clear()
+            const requestedRealtime = policies.filter(policy => policy.inbound.realtime.enabled).length
+            if (requestedRealtime > MAX_REALTIME_ACCOUNTS) {
+              console.warn(JSON.stringify({
+                event: "imap.realtime.capacity_fallback",
+                requested: requestedRealtime,
+                active: MAX_REALTIME_ACCOUNTS,
+              }))
+            }
+          }
+        } catch (error) {
+          console.error(JSON.stringify({
+            event: "imap.poller.failed",
+            message: safeError(error),
+          }))
+        }
+        nextConfigCheckAt = Date.now() + CONFIG_CHECK_MS
+      }
+
+      const policyByDomain = new Map(policies.map(policy => [policy.domain, policy]))
+      for (const domain of [...immediatePolls.keys()]) {
+        if (!policyByDomain.has(domain)) immediatePolls.delete(domain)
+      }
+      const due = policies.filter(policy => (
+        immediatePolls.has(policy.domain)
+        || Date.now() >= (nextPollAt.get(policy.domain) ?? 0)
+      ))
       for (let offset = 0; offset < due.length; offset += MAX_CONCURRENT_ACCOUNTS) {
         const batch = due.slice(offset, offset + MAX_CONCURRENT_ACCOUNTS)
         await Promise.all(batch.map(async policy => {
+          const trigger = immediatePolls.get(policy.domain) ?? "fallback"
+          immediatePolls.delete(policy.domain)
           try {
             const result = await pollImapDomain(policy)
+            baselineReady.add(policy.domain)
             if (result.processed > 0) {
               console.log(JSON.stringify({
                 event: "imap.poll.completed",
                 domain: policy.domain,
+                trigger,
                 processed: result.processed,
               }))
             }
+            if (result.hasMore) requestImmediate(policy.domain, "backlog")
           } catch (error) {
-            console.error(JSON.stringify({
-              event: "imap.poll.failed",
-              domain: policy.domain,
-              message: safeError(error, [policy.inbound.password, policy.inbound.username]),
-            }))
+            logPollFailure(error, policy, trigger)
           } finally {
+            const fallbackDelay = policy.inbound.pollIntervalSeconds * 1_000
+            const bootstrapRetry = policy.inbound.realtime.reconnectMinSeconds * 1_000
             nextPollAt.set(
               policy.domain,
-              Date.now() + policy.inbound.pollIntervalSeconds * 1_000,
+              Date.now() + (baselineReady.has(policy.domain)
+                ? fallbackDelay
+                : Math.min(fallbackDelay, bootstrapRetry)),
             )
           }
         }))
       }
-    } catch (error) {
-      console.error(JSON.stringify({
-        event: "imap.poller.failed",
-        message: safeError(error),
-      }))
+      syncRealtimeRuntimes()
+
+      let wakeAt = nextConfigCheckAt
+      for (const policy of policies) {
+        wakeAt = Math.min(wakeAt, nextPollAt.get(policy.domain) ?? Date.now())
+      }
+      if (immediatePolls.size > 0) wakeAt = Date.now()
+      await wake.wait(Math.max(0, wakeAt - Date.now()), signal)
     }
-    await wait(POLLER_TICK_MS, signal)
+  } finally {
+    for (const runtime of realtimeRuntimes.values()) runtime.controller.abort()
+    realtimeRuntimes.clear()
+    await Promise.allSettled([...trackedRuntimePromises])
   }
 }
 
 const globalPoller = globalThis as typeof globalThis & {
-  __moemailImapPoller?: AbortController
+  __moemailImapPoller?: PollerRuntime
 }
 
 export function startImapPoller() {
   if (globalPoller.__moemailImapPoller) return
   const controller = new AbortController()
-  globalPoller.__moemailImapPoller = controller
-  void runPoller(controller.signal)
+  const runtime: PollerRuntime = { controller, promise: runPoller(controller.signal) }
+  globalPoller.__moemailImapPoller = runtime
+  const clearRuntime = () => {
+    if (globalPoller.__moemailImapPoller === runtime) delete globalPoller.__moemailImapPoller
+  }
+  void runtime.promise.then(clearRuntime, error => {
+    clearRuntime()
+    console.error(JSON.stringify({
+      event: "imap.poller.terminated",
+      message: safeError(error),
+    }))
+  })
 }
 
-export function stopImapPoller() {
-  globalPoller.__moemailImapPoller?.abort()
-  delete globalPoller.__moemailImapPoller
+export async function stopImapPoller() {
+  const runtime = globalPoller.__moemailImapPoller
+  if (!runtime) return
+  runtime.controller.abort()
+  await runtime.promise
+  if (globalPoller.__moemailImapPoller === runtime) delete globalPoller.__moemailImapPoller
 }

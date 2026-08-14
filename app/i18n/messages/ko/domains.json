@@ -13,7 +13,7 @@
   "success": {
     "saved": "도메인 메일 정책을 저장했습니다",
     "imapTitle": "IMAP 연결에 성공했습니다",
-    "imapDescription": "{mailbox}: 메일 {messages}개",
+    "imapDescription": "{mailbox}: 메일 {messages}개 · {capability}",
     "smtpTitle": "SMTP 연결 및 인증에 성공했습니다"
   },
   "summary": "수신: {inbound} · 발신: {outbound}",
@@ -67,11 +67,25 @@
       "unseen": "읽지 않은 메일도 가져오기"
     },
     "pollInterval": "폴링 간격(초)",
+    "realtimeEnabled": "실시간 수신",
+    "realtimeMode": "모드",
+    "modeIdleAuto": "자동: IDLE 우선, 미지원 시 폴링",
+    "capabilityIdle": "IDLE 실시간 알림 지원",
+    "capabilityPolling": "IDLE 미지원: 폴링으로 보완",
+    "reconnect": "연결 끊김 시 자동 재연결",
+    "fallbackPollInterval": "보완 폴링(초)",
+    "realtimeHelp": "MoeMail은 먼저 CAPABILITY를 확인합니다. IDLE을 지원하면 읽기 전용 장기 연결이 즉시 알림을 받고, 지원하지 않으면 자동으로 전체 폴링을 유지합니다. 동일한 폴링이 누락된 알림과 중단 시간의 메일도 복구합니다.",
+    "advanced": "고급 연결 및 성능",
+    "connectionTimeout": "연결 시간 제한(초)",
+    "idleRenew": "IDLE 갱신 주기(초)",
+    "reconnectMin": "최초 재연결 지연(초)",
+    "reconnectMax": "최대 재연결 지연(초)",
+    "advancedHelp": "IDLE은 일반 제공업체의 시간 제한 전에 갱신되고, 재연결 지연은 선택한 범위 안에서 지수적으로 증가합니다. 읽기 전용 리스너는 최대 32개이며, 초과 계정도 제한된 동시 폴링으로 완전히 보완됩니다.",
     "maxMessages": "폴링당 최대 메일 수",
     "certificateHelp": "공용 메일 제공업체에서는 활성화 상태를 유지하세요.",
     "test": "IMAP 연결 테스트",
     "testing": "연결 중",
-    "readOnlyHelp": "폴링은 메일함을 읽기 전용으로 이용하며 읽음 표시, 이동 또는 삭제를 하지 않습니다. 별칭이나 전체 주소 전달은 원래 수신자를 식별할 수 있는 Header를 보존해야 합니다."
+    "readOnlyHelp": "IDLE과 폴링은 메일함을 읽기 전용으로 이용하며 읽음 표시, 이동 또는 삭제를 하지 않습니다. 별칭이나 전체 주소 전달은 원래 수신자를 식별할 수 있는 Header를 보존해야 합니다."
   },
   "smtp": {
     "host": "SMTP 호스트",
@@ -104,13 +118,13 @@
     "senderSafety": "Mailu 발신에는 활성 MoeMail 메일함과 collector를 대상으로 하는 정확한 관리 별칭이 모두 필요합니다. catch-all은 어떤 From 주소도 허용하지 않습니다.",
     "api": { "title": "Mailu 인터페이스", "baseUrl": "v1 인터페이스 기본 URL", "token": "인증 토큰", "timeout": "시간 제한(초)" },
     "accounts": { "title": "관리 서비스 계정", "collector": "Collector 주소", "collectorPassword": "Collector 비밀번호", "catchAll": "Catch-all 전달 계정", "catchAllPassword": "Catch-all 계정 비밀번호", "safety": "서로 다른 두 Mailu 사용자여야 합니다. MoeMail은 allow_spoofing과 catch-all 계정 로그인을 비활성화합니다. 이 계정은 collector로 전달만 하며 SMTP 인증할 수 없습니다." },
-    "imap": { "title": "IMAP 수집", "summaryRealtime": "{endpoint} · IDLE 실시간 수신", "summaryPolling": "{endpoint} · 정기 폴링", "realtimeEnabled": "실시간 수신", "realtimeMode": "모드", "modeIdle": "IMAP IDLE", "reconnect": "연결 끊김 시 자동 재연결", "fallbackPollInterval": "보완 폴링(초)", "realtimeHelp": "MoeMail은 IMAP IDLE 연결을 유지합니다. 새 메일이 collector에 저장되면 Mailu가 즉시 알리고, 정기 전체 검사가 누락된 알림과 연결 중단 구간을 보완합니다.", "mailbox": "원본 메일함", "recipientHeader": "신뢰 수신자 헤더", "initialSync": "최초 동기화 범위", "initialSyncOptions": { "new": "저장 후 도착한 메일만", "unseen": "읽지 않은 메일도 가져오기" }, "maxMessages": "회당 최대 처리 수" },
+    "imap": { "title": "IMAP 수집", "summaryRealtime": "{endpoint} · IDLE 실시간 수신", "summaryPolling": "{endpoint} · 정기 폴링", "realtimeEnabled": "실시간 수신", "realtimeMode": "모드", "modeIdle": "IMAP IDLE", "modeIdleAuto": "자동: IDLE 우선, 미지원 시 폴링", "reconnect": "연결 끊김 시 자동 재연결", "fallbackPollInterval": "보완 폴링(초)", "realtimeHelp": "MoeMail은 CAPABILITY를 확인하고 가능하면 읽기 전용 IDLE 리스너를 유지합니다. Mailu 새 메일은 즉시 알림을 보내며, 전체 정기 검사가 누락된 알림, IDLE 미지원 및 연결 중단을 계속 보완합니다.", "advanced": "고급 연결 및 성능", "connectionTimeout": "연결 시간 제한(초)", "idleRenew": "IDLE 갱신 주기(초)", "reconnectMin": "최초 재연결 지연(초)", "reconnectMax": "최대 재연결 지연(초)", "advancedHelp": "IDLE은 일반 제공업체가 연결을 끊기 전에 갱신됩니다. 자동 재연결은 선택한 범위 안에서 지수 백오프를 사용하며 폴링은 항상 독립적으로 유지됩니다.", "mailbox": "원본 메일함", "recipientHeader": "신뢰 수신자 헤더", "initialSync": "최초 동기화 범위", "initialSyncOptions": { "new": "저장 후 도착한 메일만", "unseen": "읽지 않은 메일도 가져오기" }, "maxMessages": "회당 최대 처리 수" },
     "smtp": { "title": "SMTP 전달", "authMethod": "인증 방식", "fromName": "발신자 이름(선택)" },
     "retention": { "title": "상위 서버 보존 정책", "action": "MoeMail 영구 저장 성공 후", "actions": { "keep": "Mailu에 유지", "delete": "Mailu에서 삭제", "archive": "보관 메일함으로 이동" }, "delay": "보존 지연(초)", "mailbox": "보관 메일함", "safety": "MoeMail 커밋 또는 기존 중복이 확인된 경우에만 삭제/이동을 예약합니다. 거부되거나 수신자를 알 수 없는 메일은 상위 서버에 유지합니다." },
     "reconcile": { "title": "Mailu 동기화", "enabled": "자동 동기화", "createCatchAll": "Catch-all 별칭 생성", "removeStaleAliases": "오래된 관리 별칭 제거", "interval": "간격(초)", "safety": "이 통합의 소유권 표시가 있는 객체만 수정하거나 삭제합니다. 외부 사용자 또는 별칭 충돌은 안전하게 거부합니다." },
     "actions": { "testApi": "API 테스트", "discover": "도메인 검색", "importDomains": "초안에 도메인 {count}개 추가", "testImap": "IMAP 테스트", "testSmtp": "SMTP 테스트", "reconcile": "지금 동기화", "generateCollector": "Collector 비밀 생성", "generateCatchAll": "Catch-all 비밀 생성", "rotateCollector": "Collector 비밀 생성 및 교체", "rotateCatchAll": "Catch-all 비밀 생성 및 교체", "save": "Mailu 설정 저장", "saving": "저장 중" },
     "errors": { "load": "Mailu 설정을 불러오지 못했습니다", "save": "Mailu 설정을 저장하지 못했습니다", "testApi": "Mailu API 테스트 실패", "discover": "Mailu 리소스 검색 실패", "testImap": "Mailu IMAP 테스트 실패", "testSmtp": "Mailu SMTP 테스트 실패", "reconcile": "Mailu 동기화 실패", "rotateCollector": "Collector 비밀 교체 실패", "rotateCatchAll": "Catch-all 비밀 교체 실패" },
-    "success": { "saved": "Mailu 설정을 저장했습니다", "testApi": "Mailu API 연결 성공", "discover": "Mailu 도메인을 검색했습니다", "testImap": "Mailu IMAP 연결 성공", "testSmtp": "Mailu SMTP 인증 성공", "reconcile": "Mailu 동기화 완료", "rotateCollector": "Collector 비밀을 교체했습니다", "rotateCatchAll": "Catch-all 비밀을 교체했습니다", "reconcileCounts": "생성 {created}, 수정 {updated}, 제거 {removed}", "domainsAdded": "Mailu 도메인 {count}개를 초안에 추가했습니다" }
+    "success": { "saved": "Mailu 설정을 저장했습니다", "testApi": "Mailu API 연결 성공", "discover": "Mailu 도메인을 검색했습니다", "testImap": "Mailu IMAP 연결 성공", "testImapRealtime": "서버가 IDLE 지원을 알렸으므로 실시간 수신을 사용할 수 있습니다.", "testImapPolling": "서버가 IDLE 지원을 알리지 않아 전체 폴링으로 보완합니다.", "testSmtp": "Mailu SMTP 인증 성공", "reconcile": "Mailu 동기화 완료", "rotateCollector": "Collector 비밀을 교체했습니다", "rotateCatchAll": "Catch-all 비밀을 교체했습니다", "reconcileCounts": "생성 {created}, 수정 {updated}, 제거 {removed}", "domainsAdded": "Mailu 도메인 {count}개를 초안에 추가했습니다" }
   },
   "deleteConfirm": {
     "title": "이 도메인을 제거하시겠습니까?",

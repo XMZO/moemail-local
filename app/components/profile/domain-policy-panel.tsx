@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Globe2, Loader2, PlugZap, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
+import { ChevronDown, Globe2, Loader2, PlugZap, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
 import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,6 +45,15 @@ type Inbound =
       mailbox: string
       recipientHeader: "auto" | "x-original-to" | "delivered-to" | "envelope-to" | "x-envelope-to"
       initialSync: "new" | "unseen"
+      connectionTimeoutSeconds: number
+      realtime: {
+        enabled: boolean
+        mode: "idle"
+        reconnect: boolean
+        idleRenewSeconds: number
+        reconnectMinSeconds: number
+        reconnectMaxSeconds: number
+      }
       pollIntervalSeconds: number
       maxMessagesPerPoll: number
     }
@@ -99,6 +108,15 @@ const imapDefaults = (): Extract<Inbound, { mode: "imap" }> => ({
   mailbox: "INBOX",
   recipientHeader: "auto",
   initialSync: "new",
+  connectionTimeoutSeconds: 15,
+  realtime: {
+    enabled: true,
+    mode: "idle",
+    reconnect: true,
+    idleRenewSeconds: 1_500,
+    reconnectMinSeconds: 1,
+    reconnectMaxSeconds: 30,
+  },
   pollIntervalSeconds: 60,
   maxMessagesPerPoll: 100,
 })
@@ -182,12 +200,19 @@ export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: "imap", policy: current.inbound }),
       })
-      const body = await response.json() as { error?: string; code?: string; mailbox?: string; messages?: number }
+      const body = await response.json() as { error?: string; code?: string; mailbox?: string; messages?: number; idleSupported?: boolean }
       if (!response.ok) {
         const code = body.code ?? body.error ?? "IMAP_CONNECTION_FAILED"
         throw new LocalizedUiError(tApi.has(code as never) ? tApi(code as never) : t("errors.imapTest"))
       }
-      toast({ title: t("success.imapTitle"), description: t("success.imapDescription", { mailbox: body.mailbox ?? "INBOX", messages: body.messages ?? 0 }) })
+      toast({
+        title: t("success.imapTitle"),
+        description: t("success.imapDescription", {
+          mailbox: body.mailbox ?? "INBOX",
+          messages: body.messages ?? 0,
+          capability: t(body.idleSupported ? "imap.capabilityIdle" : "imap.capabilityPolling"),
+        }),
+      })
     } catch (caught) {
       console.error("domain_policy.imap_test_failed", caught)
       setError(localizedUiErrorMessage(caught, t("errors.imapTest")))
@@ -349,6 +374,70 @@ export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
               </div>
               {current.inbound.mode === "imap" && (
                 <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2 rounded-md border bg-muted/20 p-2.5 sm:col-span-2 sm:grid-cols-2">
+                    <div className="flex min-h-10 items-center justify-between gap-3 rounded border bg-background px-3 py-2">
+                      <Label htmlFor="domain-imap-realtime">{t("imap.realtimeEnabled")}</Label>
+                      <Switch
+                        id="domain-imap-realtime"
+                        checked={current.inbound.realtime.enabled}
+                        onCheckedChange={enabled => updateCurrent(policy => ({
+                          ...policy,
+                          inbound: {
+                            ...(policy.inbound as Extract<Inbound, { mode: "imap" }>),
+                            realtime: {
+                              ...(policy.inbound as Extract<Inbound, { mode: "imap" }>).realtime,
+                              enabled,
+                            },
+                          },
+                        }))}
+                      />
+                    </div>
+                    <div className="flex min-h-10 items-center justify-between gap-3 rounded border bg-background px-3 py-2">
+                      <Label>{t("imap.realtimeMode")}</Label>
+                      <span className="max-w-[13rem] text-right text-xs leading-tight text-muted-foreground">
+                        {t("imap.modeIdleAuto")}
+                      </span>
+                    </div>
+                    <div className="flex min-h-10 items-center justify-between gap-3 rounded border bg-background px-3 py-2">
+                      <Label htmlFor="domain-imap-reconnect">{t("imap.reconnect")}</Label>
+                      <Switch
+                        id="domain-imap-reconnect"
+                        disabled={!current.inbound.realtime.enabled}
+                        checked={current.inbound.realtime.reconnect}
+                        onCheckedChange={reconnect => updateCurrent(policy => ({
+                          ...policy,
+                          inbound: {
+                            ...(policy.inbound as Extract<Inbound, { mode: "imap" }>),
+                            realtime: {
+                              ...(policy.inbound as Extract<Inbound, { mode: "imap" }>).realtime,
+                              reconnect,
+                            },
+                          },
+                        }))}
+                      />
+                    </div>
+                    <div className="grid min-h-10 gap-2 rounded border bg-background px-3 py-2 sm:grid-cols-[minmax(0,1fr)_6rem] sm:items-center">
+                      <Label htmlFor="domain-imap-fallback">{t("imap.fallbackPollInterval")}</Label>
+                      <Input
+                        id="domain-imap-fallback"
+                        className="h-8"
+                        type="number"
+                        min={15}
+                        max={86400}
+                        value={current.inbound.pollIntervalSeconds}
+                        onChange={event => updateCurrent(policy => ({
+                          ...policy,
+                          inbound: {
+                            ...(policy.inbound as Extract<Inbound, { mode: "imap" }>),
+                            pollIntervalSeconds: Number(event.target.value),
+                          },
+                        }))}
+                      />
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                      {t("imap.realtimeHelp")}
+                    </p>
+                  </div>
                   <div className="space-y-2"><Label>{t("imap.host")}</Label><Input value={current.inbound.host} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), host: event.target.value } }))} /></div>
                   <div className="space-y-2"><Label>{t("common.port")}</Label><Input type="number" min={1} max={65535} value={current.inbound.port} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), port: Number(event.target.value) } }))} /></div>
                   <div className="space-y-2"><Label>{t("common.security")}</Label><Select value={current.inbound.security} onValueChange={security => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), security: security as "plain" | "starttls" | "tls" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tls">{t("common.securityOptions.tls993")}</SelectItem><SelectItem value="starttls">{t("common.securityOptions.starttls143")}</SelectItem><SelectItem value="plain">{t("common.securityOptions.plain")}</SelectItem></SelectContent></Select></div>
@@ -357,9 +446,36 @@ export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
                   <div className="space-y-2"><Label>{t("imap.password")}</Label><SecretInput showLabel={t("secrets.show")} hideLabel={t("secrets.hide")} autoComplete="new-password" value={current.inbound.password} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), password: event.target.value } }))} /></div>
                   <div className="space-y-2"><Label>{t("imap.recipientHeader")}</Label><Select value={current.inbound.recipientHeader} onValueChange={recipientHeader => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), recipientHeader: recipientHeader as Extract<Inbound, { mode: "imap" }>["recipientHeader"] } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">{t("imap.recipientHeaders.auto")}</SelectItem><SelectItem value="x-original-to">{t("imap.recipientHeaders.xOriginalTo")}</SelectItem><SelectItem value="delivered-to">{t("imap.recipientHeaders.deliveredTo")}</SelectItem><SelectItem value="envelope-to">{t("imap.recipientHeaders.envelopeTo")}</SelectItem><SelectItem value="x-envelope-to">{t("imap.recipientHeaders.xEnvelopeTo")}</SelectItem></SelectContent></Select></div>
                   <div className="space-y-2"><Label>{t("imap.initialSync")}</Label><Select value={current.inbound.initialSync} onValueChange={initialSync => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), initialSync: initialSync as "new" | "unseen" } }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">{t("imap.initialSyncOptions.new")}</SelectItem><SelectItem value="unseen">{t("imap.initialSyncOptions.unseen")}</SelectItem></SelectContent></Select></div>
-                  <div className="space-y-2"><Label>{t("imap.pollInterval")}</Label><Input type="number" min={15} max={86400} value={current.inbound.pollIntervalSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), pollIntervalSeconds: Number(event.target.value) } }))} /></div>
-                  <div className="space-y-2"><Label>{t("imap.maxMessages")}</Label><Input type="number" min={1} max={1000} value={current.inbound.maxMessagesPerPoll} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), maxMessagesPerPoll: Number(event.target.value) } }))} /></div>
                   <div className="flex items-center justify-between gap-3 rounded border p-3 sm:col-span-2"><div><Label>{t("common.strictCertificate")}</Label><p className="text-xs text-muted-foreground">{t("imap.certificateHelp")}</p></div><Switch checked={current.inbound.rejectUnauthorized} onCheckedChange={rejectUnauthorized => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), rejectUnauthorized } }))} /></div>
+                  <details className="group overflow-hidden rounded border bg-muted/20 sm:col-span-2">
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                      <span>{t("imap.advanced")}</span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+                    </summary>
+                    <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
+                      <div className="min-w-0 space-y-2">
+                        <Label>{t("imap.connectionTimeout")}</Label>
+                        <Input type="number" min={5} max={120} value={current.inbound.connectionTimeoutSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), connectionTimeoutSeconds: Number(event.target.value) } }))} />
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label>{t("imap.idleRenew")}</Label>
+                        <Input disabled={!current.inbound.realtime.enabled} type="number" min={60} max={1740} value={current.inbound.realtime.idleRenewSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), realtime: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>).realtime, idleRenewSeconds: Number(event.target.value) } } }))} />
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label>{t("imap.reconnectMin")}</Label>
+                        <Input disabled={!current.inbound.realtime.enabled || !current.inbound.realtime.reconnect} type="number" min={1} max={60} value={current.inbound.realtime.reconnectMinSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), realtime: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>).realtime, reconnectMinSeconds: Number(event.target.value) } } }))} />
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label>{t("imap.reconnectMax")}</Label>
+                        <Input disabled={!current.inbound.realtime.enabled || !current.inbound.realtime.reconnect} type="number" min={5} max={300} value={current.inbound.realtime.reconnectMaxSeconds} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), realtime: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>).realtime, reconnectMaxSeconds: Number(event.target.value) } } }))} />
+                      </div>
+                      <div className="min-w-0 space-y-2 sm:col-span-2">
+                        <Label>{t("imap.maxMessages")}</Label>
+                        <Input type="number" min={1} max={1000} value={current.inbound.maxMessagesPerPoll} onChange={event => updateCurrent(policy => ({ ...policy, inbound: { ...(policy.inbound as Extract<Inbound, { mode: "imap" }>), maxMessagesPerPoll: Number(event.target.value) } }))} />
+                      </div>
+                      <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">{t("imap.advancedHelp")}</p>
+                    </div>
+                  </details>
                   <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => void testImap()} disabled={testingImap}><PlugZap className="mr-1 h-4 w-4" />{testingImap ? t("imap.testing") : t("imap.test")}</Button></div>
                   <p className="text-xs text-muted-foreground sm:col-span-2">{t("imap.readOnlyHelp")}</p>
                 </div>

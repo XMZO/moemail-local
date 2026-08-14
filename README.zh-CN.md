@@ -190,7 +190,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.19.2 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.3 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -244,9 +244,9 @@ Mailu 是独立邮件服务器，MX、TLS、DKIM/SPF/DMARC、反垃圾、存储�
 
 先在域名的 DNS/MX 和邮局控制台启用 catch-all（全域收件）或等价的别名转发，让该域所有地址进入一个外部邮箱。邮局必须在 `X-Original-To`、`Envelope-To`、`Delivered-To` 等投递追踪 Header 中保留并清洗原始收件地址；应用刻意不接受发件人可控的 MIME `To`。普通只接收固定地址或抹掉 envelope 信息的邮箱无法还原 MoeMail 临时地址。
 
-在 WebUI 将该域的收件方式设为“外部邮箱 IMAP”，填写 IMAP 主机、端口、TLS、用户名、密码或应用专用密码和文件夹，点击“测试 IMAP 连接”后保存。默认只导入保存后到达的新邮件，也可选择首次导入未读邮件。轮询器在 Web 进程内自动运行，无需 Compose profile。
+在 WebUI 将该域的收件方式设为“外部邮箱 IMAP”，填写 IMAP 主机、端口、TLS、用户名、密码或应用专用密码和文件夹，点击“测试 IMAP 连接”后保存。测试结果还会显示服务器是否声明 `IDLE`。WebUI 新建策略默认开启实时接收：支持 IDLE 的邮局会在新邮件到达时立即唤醒 MoeMail；不支持时自动保持完整轮询。已有的普通 IMAP 配置继续沿用纯轮询，管理员打开开关后才启用实时连接。默认只导入保存后到达的新邮件，也可选择首次导入未读邮件。接收器在 Web 进程内自动运行，无需 Compose profile。
 
-轮询使用只读 `EXAMINE` 与 PEEK，不会标记已读、移动或删除邮局邮件；进度以 `UIDVALIDITY + UID` 持久保存，原始 RFC822 内容另作幂等去重。查看日志：
+IDLE 与轮询都使用只读 `EXAMINE` 和 PEEK，不会标记已读、移动或删除邮局邮件。可配置的 15–86400 秒完整轮询始终保留，用于补回漏通知、服务商故障、重连空窗和 MoeMail 停机期间到达的邮件；关闭自动重连也不会关闭轮询。高级设置可调整连接超时、IDLE 续期、指数退避重连上下限和单轮批次。最多同时维持 32 个只读监听、并行轮询 4 个账号，超出的域自动使用轮询，不会无限占用连接。进度以 `UIDVALIDITY + UID` 持久保存，原始 RFC822 内容另作幂等去重。查看日志：
 
 ```bash
 docker compose logs -f moemail
@@ -328,7 +328,7 @@ docker compose --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.19.2 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.3 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile

@@ -25,7 +25,11 @@ type Integration = {
     host: string; port: number; security: Security; rejectUnauthorized: boolean
     mailbox: string; recipientHeader: "x-original-to" | "delivered-to" | "envelope-to" | "x-envelope-to"
     initialSync: "new" | "unseen"
-    realtime: { enabled: boolean; mode: "idle"; reconnect: boolean }
+    connectionTimeoutSeconds: number
+    realtime: {
+      enabled: boolean; mode: "idle"; reconnect: boolean
+      idleRenewSeconds: number; reconnectMinSeconds: number; reconnectMaxSeconds: number
+    }
     pollIntervalSeconds: number; maxMessagesPerPoll: number
   }
   smtp: {
@@ -148,11 +152,16 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
           ? { rotate: kind === "rotateCollector" ? "collector" : "catchAll" }
           : kind === "reconcile" ? { kind } : { kind, integration }),
       })
-      const body = await response.json() as { integration?: Integration; domains?: string[]; created?: number; updated?: number; removed?: number }
+      const body = await response.json() as { integration?: Integration; domains?: string[]; created?: number; updated?: number; removed?: number; idleSupported?: boolean }
       if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "MAILU_CONNECTION_FAILED") as never))
       if (body.integration) setIntegration(body.integration)
       if (body.domains) setDiscoveredDomains(body.domains)
-      toast({ title: t(`success.${kind}` as never), description: kind === "reconcile" ? t("success.reconcileCounts", { created: body.created ?? 0, updated: body.updated ?? 0, removed: body.removed ?? 0 }) : undefined })
+      const description = kind === "reconcile"
+        ? t("success.reconcileCounts", { created: body.created ?? 0, updated: body.updated ?? 0, removed: body.removed ?? 0 })
+        : kind === "testImap"
+          ? t(body.idleSupported ? "success.testImapRealtime" : "success.testImapPolling")
+          : undefined
+      toast({ title: t(`success.${kind}` as never), description })
     } catch (caught) { setError(localizedUiErrorMessage(caught, t(`errors.${kind}` as never))) } finally { setAction(null) }
   }
 
@@ -265,25 +274,38 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
               </div>
               <div className="flex min-h-10 items-center justify-between gap-3 rounded border bg-background px-3">
                 <Label>{t("imap.realtimeMode")}</Label>
-                <span className="rounded bg-muted px-2 py-1 font-mono text-xs">{t("imap.modeIdle")}</span>
+                <span className="max-w-[13rem] text-right text-xs leading-tight text-muted-foreground">{t("imap.modeIdleAuto")}</span>
               </div>
               <div className="flex min-h-10 items-center justify-between gap-3 rounded border bg-background px-3">
                 <Label htmlFor="mailu-imap-reconnect">{t("imap.reconnect")}</Label>
                 <Switch id="mailu-imap-reconnect" disabled={!integration.imap.realtime.enabled} checked={integration.imap.realtime.reconnect} onCheckedChange={reconnect => patch({ imap: { ...integration.imap, realtime: { ...integration.imap.realtime, reconnect } } })} />
               </div>
-              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 rounded border bg-background px-3 py-1">
+              <div className="grid min-h-10 gap-2 rounded border bg-background px-3 py-2 sm:grid-cols-[minmax(0,1fr)_6rem] sm:items-center">
                 <Label htmlFor="mailu-imap-fallback">{t("imap.fallbackPollInterval")}</Label>
                 <Input id="mailu-imap-fallback" className="h-8" type="number" min={15} max={86400} value={integration.imap.pollIntervalSeconds} onChange={event => patch({ imap: { ...integration.imap, pollIntervalSeconds: Number(event.target.value) } })} />
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2 xl:col-span-4">{t("imap.realtimeHelp")}</p>
             </div>
+            <details className="group overflow-hidden rounded border bg-muted/20 sm:col-span-2 xl:col-span-4">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                <span>{t("imap.advanced")}</span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+              </summary>
+              <div className="grid gap-3 border-t p-3 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="min-w-0 space-y-2"><Label>{t("imap.connectionTimeout")}</Label><Input type="number" min={5} max={120} value={integration.imap.connectionTimeoutSeconds} onChange={event => patch({ imap: { ...integration.imap, connectionTimeoutSeconds: Number(event.target.value) } })} /></div>
+                <div className="min-w-0 space-y-2"><Label>{t("imap.idleRenew")}</Label><Input disabled={!integration.imap.realtime.enabled} type="number" min={60} max={1740} value={integration.imap.realtime.idleRenewSeconds} onChange={event => patch({ imap: { ...integration.imap, realtime: { ...integration.imap.realtime, idleRenewSeconds: Number(event.target.value) } } })} /></div>
+                <div className="min-w-0 space-y-2"><Label>{t("imap.reconnectMin")}</Label><Input disabled={!integration.imap.realtime.enabled || !integration.imap.realtime.reconnect} type="number" min={1} max={60} value={integration.imap.realtime.reconnectMinSeconds} onChange={event => patch({ imap: { ...integration.imap, realtime: { ...integration.imap.realtime, reconnectMinSeconds: Number(event.target.value) } } })} /></div>
+                <div className="min-w-0 space-y-2"><Label>{t("imap.reconnectMax")}</Label><Input disabled={!integration.imap.realtime.enabled || !integration.imap.realtime.reconnect} type="number" min={5} max={300} value={integration.imap.realtime.reconnectMaxSeconds} onChange={event => patch({ imap: { ...integration.imap, realtime: { ...integration.imap.realtime, reconnectMaxSeconds: Number(event.target.value) } } })} /></div>
+                <div className="min-w-0 space-y-2"><Label>{t("imap.maxMessages")}</Label><Input type="number" min={1} max={1000} value={integration.imap.maxMessagesPerPoll} onChange={event => patch({ imap: { ...integration.imap, maxMessagesPerPoll: Number(event.target.value) } })} /></div>
+                <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2 xl:col-span-5">{t("imap.advancedHelp")}</p>
+              </div>
+            </details>
             <div className="min-w-0 space-y-2"><Label>{t("host")}</Label><Input value={integration.imap.host} onChange={event => patch({ imap: { ...integration.imap, host: event.target.value } })} /></div>
             <div className="min-w-0 space-y-2"><Label>{t("port")}</Label><Input type="number" min={1} max={65535} value={integration.imap.port} onChange={event => patch({ imap: { ...integration.imap, port: Number(event.target.value) } })} /></div>
             <div className="min-w-0 space-y-2"><Label>{t("security")}</Label><Select value={integration.imap.security} onValueChange={security => patch({ imap: { ...integration.imap, security: security as Security } })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["tls", "starttls", "plain"].map(value => <SelectItem key={value} value={value}>{t(`securityOptions.${value}` as never)}</SelectItem>)}</SelectContent></Select></div>
             <div className="min-w-0 space-y-2"><Label>{t("imap.mailbox")}</Label><Input value={integration.imap.mailbox} onChange={event => patch({ imap: { ...integration.imap, mailbox: event.target.value } })} /></div>
             <div className="min-w-0 space-y-2"><Label>{t("imap.recipientHeader")}</Label><Select value={integration.imap.recipientHeader} onValueChange={recipientHeader => patch({ imap: { ...integration.imap, recipientHeader: recipientHeader as Integration["imap"]["recipientHeader"] } })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["delivered-to", "x-original-to", "envelope-to", "x-envelope-to"].map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
             <div className="min-w-0 space-y-2"><Label>{t("imap.initialSync")}</Label><Select value={integration.imap.initialSync} onValueChange={initialSync => patch({ imap: { ...integration.imap, initialSync: initialSync as Integration["imap"]["initialSync"] } })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">{t("imap.initialSyncOptions.new")}</SelectItem><SelectItem value="unseen">{t("imap.initialSyncOptions.unseen")}</SelectItem></SelectContent></Select></div>
-            <div className="min-w-0 space-y-2"><Label>{t("imap.maxMessages")}</Label><Input type="number" min={1} max={1000} value={integration.imap.maxMessagesPerPoll} onChange={event => patch({ imap: { ...integration.imap, maxMessagesPerPoll: Number(event.target.value) } })} /></div>
             <div className="flex min-h-10 items-center justify-between gap-3 rounded border px-3 sm:col-span-2"><Label>{t("strictCertificate")}</Label><Switch checked={integration.imap.rejectUnauthorized} onCheckedChange={rejectUnauthorized => patch({ imap: { ...integration.imap, rejectUnauthorized } })} /></div>
             <div className="flex items-center sm:col-span-2"><Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" disabled={busy} onClick={() => void run("testImap")}><PlugZap className="mr-1 h-4 w-4" />{t("actions.testImap")}</Button></div>
           </div>

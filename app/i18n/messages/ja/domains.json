@@ -13,7 +13,7 @@
   "success": {
     "saved": "ドメイン別メールポリシーを保存しました",
     "imapTitle": "IMAP 接続に成功しました",
-    "imapDescription": "{mailbox}：{messages} 件のメール",
+    "imapDescription": "{mailbox}：{messages} 件のメール · {capability}",
     "smtpTitle": "SMTP 接続と認証に成功しました"
   },
   "summary": "受信：{inbound} · 送信：{outbound}",
@@ -67,11 +67,25 @@
       "unseen": "未読メールも取り込む"
     },
     "pollInterval": "ポーリング間隔（秒）",
+    "realtimeEnabled": "リアルタイム受信",
+    "realtimeMode": "モード",
+    "modeIdleAuto": "自動：IDLE を優先し、非対応時はポーリング",
+    "capabilityIdle": "IDLE リアルタイム通知に対応",
+    "capabilityPolling": "IDLE 非対応のためポーリングで補完",
+    "reconnect": "切断時に自動再接続",
+    "fallbackPollInterval": "補完ポーリング（秒）",
+    "realtimeHelp": "MoeMail は最初に CAPABILITY を確認します。IDLE 対応サーバーでは読み取り専用の長時間接続が直ちに通知を受け、非対応時は完全なポーリングへ自動的に切り替わります。同じポーリングが通知漏れや停止中のメールも補完します。",
+    "advanced": "高度な接続とパフォーマンス",
+    "connectionTimeout": "接続タイムアウト（秒）",
+    "idleRenew": "IDLE 更新間隔（秒）",
+    "reconnectMin": "初回再接続遅延（秒）",
+    "reconnectMax": "最大再接続遅延（秒）",
+    "advancedHelp": "IDLE は一般的なプロバイダーのタイムアウト前に更新され、再接続遅延は選択した範囲内で指数的に増加します。読み取り専用リスナーは最大 32 件で、超過したアカウントも制限付き並列ポーリングで完全に補完されます。",
     "maxMessages": "1 回の最大メール数",
     "certificateHelp": "一般のメールプロバイダーでは有効のままにしてください。",
     "test": "IMAP 接続をテスト",
     "testing": "接続中",
-    "readOnlyHelp": "ポーリングはメールボックスを読み取り専用で利用し、既読化、移動、削除を行いません。エイリアスまたはキャッチオール転送では、元の受信者を識別できる Header を保持する必要があります。"
+    "readOnlyHelp": "IDLE とポーリングはメールボックスを読み取り専用で利用し、既読化、移動、削除を行いません。エイリアスまたはキャッチオール転送では、元の受信者を識別できる Header を保持する必要があります。"
   },
   "smtp": {
     "host": "SMTP ホスト",
@@ -104,13 +118,13 @@
     "senderSafety": "Mailu 送信には、有効な MoeMail メールボックスと collector 宛ての完全一致管理エイリアスが必要です。catch-all は From を許可しません。",
     "api": { "title": "Mailu インターフェース", "baseUrl": "v1 インターフェースのベース URL", "token": "認証トークン", "timeout": "タイムアウト（秒）" },
     "accounts": { "title": "管理サービスアカウント", "collector": "Collector アドレス", "collectorPassword": "Collector パスワード", "catchAll": "Catch-all 転送アカウント", "catchAllPassword": "Catch-all パスワード", "safety": "別々の Mailu ユーザーが必要です。MoeMail は allow_spoofing と catch-all アカウントのログインを無効にします。このアカウントは collector への転送専用で SMTP 認証できません。" },
-    "imap": { "title": "IMAP 収集", "summaryRealtime": "{endpoint} · IDLE リアルタイム受信", "summaryPolling": "{endpoint} · 定期ポーリング", "realtimeEnabled": "リアルタイム受信", "realtimeMode": "モード", "modeIdle": "IMAP IDLE", "reconnect": "切断時に自動再接続", "fallbackPollInterval": "補完ポーリング（秒）", "realtimeHelp": "MoeMail は IMAP IDLE 接続を維持します。新着メールが collector に保存されると Mailu から直ちに通知され、定期的な全体スキャンが通知漏れや切断中の空白を補完します。", "mailbox": "取得元メールボックス", "recipientHeader": "信頼済み受信者ヘッダー", "initialSync": "初回同期範囲", "initialSyncOptions": { "new": "保存後に到着したメールのみ", "unseen": "未読メールも取り込む" }, "maxMessages": "1 回の最大処理件数" },
+    "imap": { "title": "IMAP 収集", "summaryRealtime": "{endpoint} · IDLE リアルタイム受信", "summaryPolling": "{endpoint} · 定期ポーリング", "realtimeEnabled": "リアルタイム受信", "realtimeMode": "モード", "modeIdle": "IMAP IDLE", "modeIdleAuto": "自動：IDLE を優先し、非対応時はポーリング", "reconnect": "切断時に自動再接続", "fallbackPollInterval": "補完ポーリング（秒）", "realtimeHelp": "MoeMail は CAPABILITY を確認し、利用可能な場合は読み取り専用の IDLE リスナーを維持します。Mailu の新着メールは直ちに通知され、完全な定期スキャンが通知漏れ、IDLE 非対応、接続停止を引き続き補完します。", "advanced": "高度な接続とパフォーマンス", "connectionTimeout": "接続タイムアウト（秒）", "idleRenew": "IDLE 更新間隔（秒）", "reconnectMin": "初回再接続遅延（秒）", "reconnectMax": "最大再接続遅延（秒）", "advancedHelp": "IDLE は一般的なプロバイダーによる切断前に更新されます。自動再接続は選択した範囲内で指数バックオフし、ポーリングは常に独立して維持されます。", "mailbox": "取得元メールボックス", "recipientHeader": "信頼済み受信者ヘッダー", "initialSync": "初回同期範囲", "initialSyncOptions": { "new": "保存後に到着したメールのみ", "unseen": "未読メールも取り込む" }, "maxMessages": "1 回の最大処理件数" },
     "smtp": { "title": "SMTP 配信", "authMethod": "認証方式", "fromName": "送信者名（任意）" },
     "retention": { "title": "上流保持ポリシー", "action": "MoeMail の永続化成功後", "actions": { "keep": "Mailu に保持", "delete": "Mailu から削除", "archive": "アーカイブへ移動" }, "delay": "保持遅延（秒）", "mailbox": "アーカイブメールボックス", "safety": "MoeMail がコミット済み、または既存重複を確認した場合だけ削除・移動を予約します。拒否・不明な受信者のメールは上流に残します。" },
     "reconcile": { "title": "Mailu 同期", "enabled": "自動同期", "createCatchAll": "Catch-all エイリアスを作成", "removeStaleAliases": "古い管理エイリアスを削除", "interval": "間隔（秒）", "safety": "この連携の所有権マーカー付きオブジェクトのみ更新・削除します。他のユーザーやエイリアスとの競合は安全に拒否します。" },
     "actions": { "testApi": "API をテスト", "discover": "ドメインを検出", "importDomains": "{count} 件を下書きへ追加", "testImap": "IMAP をテスト", "testSmtp": "SMTP をテスト", "reconcile": "今すぐ同期", "generateCollector": "Collector シークレットを生成", "generateCatchAll": "Catch-all シークレットを生成", "rotateCollector": "Collector シークレットを生成・更新", "rotateCatchAll": "Catch-all シークレットを生成・更新", "save": "Mailu 設定を保存", "saving": "保存中" },
     "errors": { "load": "Mailu 設定を読み込めませんでした", "save": "Mailu 設定を保存できませんでした", "testApi": "Mailu API テストに失敗しました", "discover": "Mailu リソースの取得に失敗しました", "testImap": "Mailu IMAP テストに失敗しました", "testSmtp": "Mailu SMTP テストに失敗しました", "reconcile": "Mailu 同期に失敗しました", "rotateCollector": "Collector シークレットの更新に失敗しました", "rotateCatchAll": "Catch-all シークレットの更新に失敗しました" },
-    "success": { "saved": "Mailu 設定を保存しました", "testApi": "Mailu API に接続しました", "discover": "Mailu ドメインを検出しました", "testImap": "Mailu IMAP に接続しました", "testSmtp": "Mailu SMTP 認証に成功しました", "reconcile": "Mailu 同期が完了しました", "rotateCollector": "Collector シークレットを更新しました", "rotateCatchAll": "Catch-all シークレットを更新しました", "reconcileCounts": "作成 {created}、更新 {updated}、削除 {removed}", "domainsAdded": "{count} 個の Mailu ドメインを下書きに追加しました" }
+    "success": { "saved": "Mailu 設定を保存しました", "testApi": "Mailu API に接続しました", "discover": "Mailu ドメインを検出しました", "testImap": "Mailu IMAP に接続しました", "testImapRealtime": "サーバーが IDLE 対応を通知しているため、リアルタイム受信を利用できます。", "testImapPolling": "サーバーが IDLE 対応を通知していないため、完全なポーリングで補完します。", "testSmtp": "Mailu SMTP 認証に成功しました", "reconcile": "Mailu 同期が完了しました", "rotateCollector": "Collector シークレットを更新しました", "rotateCatchAll": "Catch-all シークレットを更新しました", "reconcileCounts": "作成 {created}、更新 {updated}、削除 {removed}", "domainsAdded": "{count} 個の Mailu ドメインを下書きに追加しました" }
   },
   "deleteConfirm": {
     "title": "このドメインを削除しますか？",

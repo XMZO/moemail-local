@@ -440,16 +440,39 @@ try {
     retention: { action: "delete", delaySeconds: 0 },
   })
   assert.equal(configModule.defaultMailuIntegration().imap.recipientHeader, "delivered-to")
-  assert.deepEqual(configModule.defaultMailuIntegration().imap.realtime, {
-    enabled: true,
-    mode: "idle",
-    reconnect: true,
+  assert.equal(configModule.defaultMailuIntegration().imap.connectionTimeoutSeconds, 15)
+  assert.deepEqual(configModule.defaultMailuIntegration().imap.realtime, domains.defaultImapRealtime(true))
+  assert.deepEqual(
+    integration.imap.realtime,
+    domains.defaultImapRealtime(true),
+    "stored v1 Mailu settings without realtime fields must migrate to safe defaults",
+  )
+  const partiallyLegacyRealtime = configModule.mailuIntegrationSchema.parse({
+    ...integration,
+    imap: {
+      ...integration.imap,
+      realtime: { enabled: true, mode: "idle", reconnect: true },
+    },
   })
-  assert.deepEqual(integration.imap.realtime, {
-    enabled: true,
-    mode: "idle",
-    reconnect: true,
-  }, "stored v1 Mailu settings without realtime fields must migrate to safe defaults")
+  assert.deepEqual(partiallyLegacyRealtime.imap.realtime, domains.defaultImapRealtime(true))
+  const tunedRealtime = configModule.mailuIntegrationSchema.parse({
+    ...integration,
+    imap: {
+      ...integration.imap,
+      connectionTimeoutSeconds: 7,
+      realtime: {
+        enabled: true,
+        mode: "idle",
+        reconnect: true,
+        idleRenewSeconds: 120,
+        reconnectMinSeconds: 2,
+        reconnectMaxSeconds: 9,
+      },
+    },
+  })
+  const tunedOptions = inbound.mailuImapClientOptions(tunedRealtime, true)
+  assert.equal(tunedOptions.connectionTimeout, 7_000)
+  assert.equal(tunedOptions.maxIdleTime, 120_000)
   assert.equal(configModule.mailuIntegrationSchema.safeParse({ ...integration, api: { ...integration.api, token: "replace-me" } }).success, false)
   assert.equal(configModule.mailuIntegrationSchema.safeParse({ ...integration, api: { ...integration.api, token: "abc" } }).success, false)
   await configModule.saveMailuIntegration(integration)

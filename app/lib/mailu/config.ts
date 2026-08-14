@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import { CONFIG_KEYS, getConfigValue, setConfigValues } from "../config-store"
 import { normalizeMailboxAddress } from "../email-address"
-import { MAIL_SECURITY_MODES, SMTP_AUTH_METHODS } from "../domain-policies"
+import {
+  defaultImapRealtime,
+  imapRealtimeSchema,
+  MAIL_SECURITY_MODES,
+  SMTP_AUTH_METHODS,
+} from "../domain-policies"
 
 const host = z.string().trim().min(1).max(253)
   .refine(value => !/[\x00-\x20\x7f/@]/u.test(value), "MAILU_HOST_INVALID")
@@ -69,11 +74,8 @@ export const mailuIntegrationSchema = z.object({
     mailbox,
     recipientHeader: z.enum(["x-original-to", "delivered-to", "envelope-to", "x-envelope-to"]),
     initialSync: z.enum(["new", "unseen"]),
-    realtime: z.object({
-      enabled: z.boolean(),
-      mode: z.literal("idle"),
-      reconnect: z.boolean(),
-    }).strict().default({ enabled: true, mode: "idle", reconnect: true }),
+    connectionTimeoutSeconds: z.number().int().min(5).max(120).default(15),
+    realtime: imapRealtimeSchema.default(defaultImapRealtime(true)),
     pollIntervalSeconds: z.number().int().min(15).max(86_400),
     maxMessagesPerPoll: z.number().int().min(1).max(1_000),
   }).strict(),
@@ -158,7 +160,8 @@ export function defaultMailuIntegration(): MailuIntegration {
       // Delivered-To field and writes the real SMTP envelope recipient back.
       recipientHeader: "delivered-to",
       initialSync: "new",
-      realtime: { enabled: true, mode: "idle", reconnect: true },
+      connectionTimeoutSeconds: 15,
+      realtime: defaultImapRealtime(true),
       pollIntervalSeconds: 60,
       maxMessagesPerPoll: 100,
     },
