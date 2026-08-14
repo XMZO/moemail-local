@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useId, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { ChevronDown, KeyRound, Loader2, Plus, PlugZap, RefreshCw, Save, ServerCog } from "lucide-react"
 import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
@@ -46,36 +46,29 @@ type Integration = {
 type Action = "testApi" | "testImap" | "testSmtp" | "discover" | "reconcile" | "rotateCollector" | "rotateCatchAll"
 type SectionId = "api" | "accounts" | "imap" | "smtp" | "retention" | "reconcile"
 
-function MailuSettingsSection({ title, summary, open, onToggle, children }: {
-  title: string
-  summary: string
-  open: boolean
-  onToggle: () => void
+const MAILU_SECTIONS = [
+  { id: "api", translationKey: "api.title" },
+  { id: "accounts", translationKey: "accounts.title" },
+  { id: "imap", translationKey: "imap.title" },
+  { id: "smtp", translationKey: "smtp.title" },
+  { id: "retention", translationKey: "retention.title" },
+  { id: "reconcile", translationKey: "reconcile.title" },
+] as const satisfies ReadonlyArray<{ id: SectionId; translationKey: string }>
+
+function MailuSettingsSection({ id, active, children }: {
+  id: SectionId
+  active: boolean
   children: ReactNode
 }) {
-  const contentId = useId()
+  if (!active) return null
   return (
-    <section className="overflow-hidden rounded-md border bg-card/30">
-      <button
-        type="button"
-        className="flex min-h-12 w-full min-w-0 items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
-        aria-expanded={open}
-        aria-controls={contentId}
-        onClick={onToggle}
-      >
-        <span className="min-w-0">
-          <span className="block text-sm font-medium">{title}</span>
-          <span className="block truncate text-xs text-muted-foreground">{summary}</span>
-        </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-      </button>
-      <div
-        id={contentId}
-        hidden={!open}
-        className="animate-in border-t fade-in slide-in-from-top-1 duration-150"
-      >
-        <div className="p-3 sm:p-4">{children}</div>
-      </div>
+    <section
+      id={`mailu-panel-${id}`}
+      role="region"
+      aria-labelledby={`mailu-tab-${id}`}
+      className="animate-in rounded-md border bg-card/30 p-3 fade-in slide-in-from-top-1 duration-150 sm:p-4"
+    >
+      {children}
     </section>
   )
 }
@@ -89,21 +82,25 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
   const tApi = useTranslations("api")
   const { toast } = useToast()
   const [integration, setIntegration] = useState<Integration | null>(null)
+  const [persistedEnabled, setPersistedEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [action, setAction] = useState<Action | null>(null)
   const [error, setError] = useState("")
   const [discoveredDomains, setDiscoveredDomains] = useState<string[]>([])
-  const [openSection, setOpenSection] = useState<SectionId | null>(null)
+  const [settingsExpanded, setSettingsExpanded] = useState(false)
+  const [activeSection, setActiveSection] = useState<SectionId>("api")
 
   const load = useCallback(async () => {
     setLoading(true); setError("")
     try {
       const response = await fetch("/api/config/mailu", { cache: "no-store" })
-      const body = await response.json() as { integration?: Integration; configured?: boolean }
+      const body = await response.json() as { integration?: Integration }
       if (!response.ok || !body.integration) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "MAILU_CONFIG_READ_FAILED") as never))
       setIntegration(body.integration)
-      setOpenSection(body.configured ? null : "api")
+      setPersistedEnabled(body.integration.enabled)
+      setSettingsExpanded(false)
+      setActiveSection("api")
     } catch (caught) {
       setError(localizedUiErrorMessage(caught, t("errors.load")))
     } finally { setLoading(false) }
@@ -120,12 +117,12 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
   }
   const updateCollectorSecret = () => {
     if (!integration) return
-    if (integration.enabled) void run("rotateCollector")
+    if (persistedEnabled) void run("rotateCollector")
     else patch({ collector: { ...integration.collector, password: randomSecret() } })
   }
   const updateCatchAllSecret = () => {
     if (!integration) return
-    if (integration.enabled) void run("rotateCatchAll")
+    if (persistedEnabled) void run("rotateCatchAll")
     else patch({ catchAll: { ...integration.catchAll, password: randomSecret() } })
   }
   const save = async () => {
@@ -136,6 +133,7 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
       const body = await response.json() as { integration?: Integration }
       if (!response.ok || !body.integration) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "MAILU_CONFIG_SAVE_FAILED") as never))
       setIntegration(body.integration)
+      setPersistedEnabled(body.integration.enabled)
       toast({ title: t("success.saved") })
     } catch (caught) { setError(localizedUiErrorMessage(caught, t("errors.save"))) } finally { setSaving(false) }
   }
@@ -178,44 +176,94 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
   const busy = saving || action !== null
 
   return (
-    <section className="rounded-lg border-2 border-primary/20 bg-background p-3 sm:p-4">
-      <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 font-semibold">
-            <ServerCog className="h-5 w-5 shrink-0 text-primary" />
-            {t("title")}
-          </div>
-          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">{t("description")}</p>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs">
-            <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 px-2 py-1">
-              <span className={`h-1.5 w-1.5 rounded-full ${integration.enabled ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
-              {t(integration.enabled ? "status.enabled" : "status.disabled")}
+    <section className="overflow-hidden rounded-lg border-2 border-primary/20 bg-background">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-2 sm:gap-3 sm:p-3">
+        {integration.enabled ? <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:gap-3"
+          aria-expanded={settingsExpanded}
+          aria-controls="mailu-settings-content"
+          onClick={() => setSettingsExpanded(expanded => !expanded)}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:h-10 sm:w-10">
+            <ServerCog className="h-5 w-5 text-primary" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-semibold">{t("title")}</span>
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {t("status.enabled")}
+              </span>
             </span>
-            <span className="max-w-full truncate rounded-full border px-2 py-1 font-mono text-muted-foreground">
-              {integration.collector.address}
-            </span>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="mailu-enabled">{t("enabled")}</Label>
-            <Switch id="mailu-enabled" checked={integration.enabled} disabled={busy} onCheckedChange={enabled => patch({ enabled })} />
-          </div>
-          <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
-            <Save className="mr-1 h-4 w-4" />
-            {saving ? t("actions.saving") : t("actions.save")}
+            <span className="block truncate font-mono text-[11px] text-muted-foreground">{integration.collector.address}</span>
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${settingsExpanded ? "rotate-180" : ""}`} />
+        </button> : <div className="flex min-w-0 items-center gap-2 p-1 sm:gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted sm:h-10 sm:w-10">
+            <ServerCog className="h-5 w-5 text-muted-foreground" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold">{t("title")}</span>
+            <span className="block truncate text-[11px] text-muted-foreground" title={t("compactDisabled")}>{t("compactDisabled")}</span>
+          </span>
+        </div>}
+
+        <div className="flex shrink-0 items-center justify-end gap-2">
+          <Label htmlFor="mailu-enabled" className="hidden text-xs sm:block">{t("enabled")}</Label>
+          <Switch
+            id="mailu-enabled"
+            aria-label={t("enabled")}
+            checked={integration.enabled}
+            disabled={busy}
+            onCheckedChange={enabled => {
+              patch({ enabled })
+              if (!enabled) setSettingsExpanded(false)
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 w-8 p-0 sm:w-auto sm:px-3"
+            aria-label={saving ? t("actions.saving") : t("actions.save")}
+            title={saving ? t("actions.saving") : t("actions.save")}
+            disabled={busy}
+            onClick={() => void save()}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin sm:mr-1" /> : <Save className="h-4 w-4 sm:mr-1" />}
+            <span className="hidden sm:inline">{saving ? t("actions.saving") : t("actions.save")}</span>
           </Button>
         </div>
       </div>
 
-      {error && <div className="mb-3 rounded border border-destructive/60 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+      {error && <div className="mx-2 mb-2 rounded border border-destructive/60 bg-destructive/10 p-3 text-sm text-destructive sm:mx-3 sm:mb-3">{error}</div>}
 
-      <div className="space-y-2">
+      {integration.enabled && settingsExpanded && <div
+        id="mailu-settings-content"
+        className="animate-in border-t p-3 fade-in slide-in-from-top-1 duration-200 motion-reduce:animate-none sm:p-4"
+      >
+        <p className="mb-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">{t("description")}</p>
+        <div
+          role="group"
+          aria-label={t("sectionsLabel")}
+          className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-1 sm:grid-cols-3 lg:grid-cols-6"
+        >
+          {MAILU_SECTIONS.map(section => <button
+            key={section.id}
+            id={`mailu-tab-${section.id}`}
+            type="button"
+            aria-pressed={activeSection === section.id}
+            aria-controls={`mailu-panel-${section.id}`}
+            className={`min-h-10 rounded-md px-2 py-1.5 text-xs font-medium leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${activeSection === section.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}
+            onClick={() => setActiveSection(section.id)}
+          >
+            {t(section.translationKey)}
+          </button>)}
+        </div>
+        <div>
         <MailuSettingsSection
-          title={t("api.title")}
-          summary={integration.api.baseUrl}
-          open={openSection === "api"}
-          onToggle={() => setOpenSection(current => current === "api" ? null : "api")}
+          id="api"
+          active={activeSection === "api"}
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1.25fr)_7rem]">
             <div className="min-w-0 space-y-2">
@@ -240,31 +288,25 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
         </MailuSettingsSection>
 
         <MailuSettingsSection
-          title={t("accounts.title")}
-          summary={integration.collector.address}
-          open={openSection === "accounts"}
-          onToggle={() => setOpenSection(current => current === "accounts" ? null : "accounts")}
+          id="accounts"
+          active={activeSection === "accounts"}
         >
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="min-w-0 space-y-2"><Label>{t("accounts.collector")}</Label><Input disabled={integration.enabled} autoComplete="off" value={integration.collector.address} onChange={event => patch({ collector: { ...integration.collector, address: event.target.value } })} /></div>
-            <div className="min-w-0 space-y-2"><Label>{t("accounts.collectorPassword")}</Label><SecretInput disabled={integration.enabled} autoComplete="new-password" showLabel={t("showSecret")} hideLabel={t("hideSecret")} value={integration.collector.password} onChange={event => patch({ collector: { ...integration.collector, password: event.target.value } })} /></div>
-            <div className="min-w-0 space-y-2"><Label>{t("accounts.catchAll")}</Label><Input disabled={integration.enabled} autoComplete="off" value={integration.catchAll.address} onChange={event => patch({ catchAll: { ...integration.catchAll, address: event.target.value } })} /></div>
-            <div className="min-w-0 space-y-2"><Label>{t("accounts.catchAllPassword")}</Label><SecretInput disabled={integration.enabled} autoComplete="new-password" showLabel={t("showSecret")} hideLabel={t("hideSecret")} value={integration.catchAll.password} onChange={event => patch({ catchAll: { ...integration.catchAll, password: event.target.value } })} /></div>
+            <div className="min-w-0 space-y-2"><Label>{t("accounts.collector")}</Label><Input disabled={persistedEnabled} autoComplete="off" value={integration.collector.address} onChange={event => patch({ collector: { ...integration.collector, address: event.target.value } })} /></div>
+            <div className="min-w-0 space-y-2"><Label>{t("accounts.collectorPassword")}</Label><SecretInput disabled={persistedEnabled} autoComplete="new-password" showLabel={t("showSecret")} hideLabel={t("hideSecret")} value={integration.collector.password} onChange={event => patch({ collector: { ...integration.collector, password: event.target.value } })} /></div>
+            <div className="min-w-0 space-y-2"><Label>{t("accounts.catchAll")}</Label><Input disabled={persistedEnabled} autoComplete="off" value={integration.catchAll.address} onChange={event => patch({ catchAll: { ...integration.catchAll, address: event.target.value } })} /></div>
+            <div className="min-w-0 space-y-2"><Label>{t("accounts.catchAllPassword")}</Label><SecretInput disabled={persistedEnabled} autoComplete="new-password" showLabel={t("showSecret")} hideLabel={t("hideSecret")} value={integration.catchAll.password} onChange={event => patch({ catchAll: { ...integration.catchAll, password: event.target.value } })} /></div>
             <p className="text-xs leading-relaxed text-muted-foreground md:col-span-2">{t("accounts.safety")}</p>
             <div className="flex flex-wrap gap-2 md:col-span-2">
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={updateCollectorSecret}><KeyRound className="mr-1 h-4 w-4" />{t(integration.enabled ? "actions.rotateCollector" : "actions.generateCollector")}</Button>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={updateCatchAllSecret}><KeyRound className="mr-1 h-4 w-4" />{t(integration.enabled ? "actions.rotateCatchAll" : "actions.generateCatchAll")}</Button>
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={updateCollectorSecret}><KeyRound className="mr-1 h-4 w-4" />{t(persistedEnabled ? "actions.rotateCollector" : "actions.generateCollector")}</Button>
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={updateCatchAllSecret}><KeyRound className="mr-1 h-4 w-4" />{t(persistedEnabled ? "actions.rotateCatchAll" : "actions.generateCatchAll")}</Button>
             </div>
           </div>
         </MailuSettingsSection>
 
         <MailuSettingsSection
-          title={t("imap.title")}
-          summary={t(integration.imap.realtime.enabled ? "imap.summaryRealtime" : "imap.summaryPolling", {
-            endpoint: `${integration.imap.host}:${integration.imap.port}`,
-          })}
-          open={openSection === "imap"}
-          onToggle={() => setOpenSection(current => current === "imap" ? null : "imap")}
+          id="imap"
+          active={activeSection === "imap"}
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2 rounded-md border bg-muted/20 p-2.5 sm:col-span-2 sm:grid-cols-2 xl:col-span-4 xl:grid-cols-4">
@@ -312,10 +354,8 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
         </MailuSettingsSection>
 
         <MailuSettingsSection
-          title={t("smtp.title")}
-          summary={`${integration.smtp.host}:${integration.smtp.port}`}
-          open={openSection === "smtp"}
-          onToggle={() => setOpenSection(current => current === "smtp" ? null : "smtp")}
+          id="smtp"
+          active={activeSection === "smtp"}
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="min-w-0 space-y-2"><Label>{t("host")}</Label><Input value={integration.smtp.host} onChange={event => patch({ smtp: { ...integration.smtp, host: event.target.value } })} /></div>
@@ -329,10 +369,8 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
         </MailuSettingsSection>
 
         <MailuSettingsSection
-          title={t("retention.title")}
-          summary={t(`retention.actions.${integration.retention.action}` as never)}
-          open={openSection === "retention"}
-          onToggle={() => setOpenSection(current => current === "retention" ? null : "retention")}
+          id="retention"
+          active={activeSection === "retention"}
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <div className="min-w-0 space-y-2"><Label>{t("retention.action")}</Label><Select value={integration.retention.action} onValueChange={value => patch({ retention: value === "keep" ? { action: "keep" } : value === "delete" ? { action: "delete", delaySeconds: retentionDelay } : { action: "archive", delaySeconds: retentionDelay, mailbox: "MoeMail Archive" } })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["keep", "delete", "archive"].map(value => <SelectItem key={value} value={value}>{t(`retention.actions.${value}` as never)}</SelectItem>)}</SelectContent></Select></div>
@@ -343,10 +381,8 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
         </MailuSettingsSection>
 
         <MailuSettingsSection
-          title={t("reconcile.title")}
-          summary={t(integration.reconciliation.enabled ? "status.enabled" : "status.disabled")}
-          open={openSection === "reconcile"}
-          onToggle={() => setOpenSection(current => current === "reconcile" ? null : "reconcile")}
+          id="reconcile"
+          active={activeSection === "reconcile"}
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {(["enabled", "createCatchAll", "removeStaleAliases"] as const).map(key => <div key={key} className="flex min-h-10 items-center justify-between gap-3 rounded border px-3"><Label>{t(`reconcile.${key}` as never)}</Label><Switch checked={integration.reconciliation[key]} onCheckedChange={value => patch({ reconciliation: { ...integration.reconciliation, [key]: value } })} /></div>)}
@@ -356,6 +392,7 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
           </div>
         </MailuSettingsSection>
       </div>
+      </div>}
     </section>
   )
 }

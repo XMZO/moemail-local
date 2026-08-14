@@ -111,6 +111,8 @@
   "mailu": {
     "title": "Mailu integration",
     "description": "Use the Mailu v1 API to reconcile exact aliases, ingest through one IMAP collector, and send through the same collector without granting wildcard sender spoofing.",
+    "compactDisabled": "Disabled; settings and background tasks remain inactive.",
+    "sectionsLabel": "Mailu settings sections",
     "enabled": "Enable Mailu",
     "status": { "enabled": "Enabled", "disabled": "Disabled" },
     "showSecret": "Show secret",

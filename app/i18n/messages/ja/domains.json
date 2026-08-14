@@ -111,6 +111,8 @@
   "mailu": {
     "title": "Mailu 連携",
     "description": "Mailu v1 API で完全一致エイリアスを同期し、単一の IMAP collector で受信、同じアカウントで SMTP 送信します。ワイルドカードから送信者偽装権限は付与しません。",
+    "compactDisabled": "無効です。設定内容とバックグラウンド処理は停止しています。",
+    "sectionsLabel": "Mailu 設定セクション",
     "status": { "enabled": "有効", "disabled": "無効" },
     "enabled": "Mailu を有効化", "showSecret": "シークレットを表示", "hideSecret": "シークレットを隠す", "host": "ホスト", "port": "ポート", "security": "セキュリティーモード", "strictCertificate": "証明書を厳密に検証",
     "securityOptions": { "tls": "TLS", "starttls": "STARTTLS", "plain": "平文" },

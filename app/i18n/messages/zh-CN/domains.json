@@ -111,6 +111,8 @@
   "mailu": {
     "title": "Mailu 集成",
     "description": "通过 Mailu v1 API 协调精确别名，用一个 IMAP collector 收件并用同一账号 SMTP 发件，同时不给通配别名发件人伪造权限。",
+    "compactDisabled": "当前未启用；展开项和后台任务均保持关闭。",
+    "sectionsLabel": "Mailu 设置分区",
     "enabled": "启用 Mailu",
     "status": { "enabled": "已启用", "disabled": "已停用" },
     "showSecret": "显示密钥",

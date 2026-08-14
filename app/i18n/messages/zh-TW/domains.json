@@ -111,6 +111,8 @@
   "mailu": {
     "title": "Mailu 整合",
     "description": "透過 Mailu v1 API 協調精確別名，以單一 IMAP collector 收件並以相同帳號 SMTP 寄件，同時不授予萬用別名寄件者偽造權限。",
+    "compactDisabled": "目前未啟用；設定內容與背景工作均維持關閉。",
+    "sectionsLabel": "Mailu 設定分區",
     "status": { "enabled": "已啟用", "disabled": "已停用" },
     "enabled": "啟用 Mailu", "showSecret": "顯示密鑰", "hideSecret": "隱藏密鑰", "host": "主機", "port": "連接埠", "security": "安全模式", "strictCertificate": "嚴格驗證憑證",
     "securityOptions": { "tls": "TLS", "starttls": "STARTTLS", "plain": "明文" },

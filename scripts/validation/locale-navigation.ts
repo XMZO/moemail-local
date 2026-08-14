@@ -56,6 +56,7 @@ const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profi
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
 const searchableUserSource = readFileSync(join(process.cwd(), "app/components/profile/searchable-user-select.tsx"), "utf8")
 const domainPolicySource = readFileSync(join(process.cwd(), "app/components/profile/domain-policy-panel.tsx"), "utf8")
+const messageListSource = readFileSync(join(process.cwd(), "app/components/emails/message-list.tsx"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
 assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
 assert.match(accessPanelSource, /mailQuotaRules/u)
@@ -81,13 +82,22 @@ assert.match(domainPolicySource, /reconnectMaxSeconds/u)
 assert.match(domainPolicySource, /imap\.capabilityIdle/u)
 assert.match(domainPolicySource, /sm:grid-cols-2/u)
 assert.match(domainPolicySource, /<details className="group overflow-hidden rounded border/u)
+assert.match(messageListSource, /ml-auto flex min-w-0 flex-1 justify-end gap-1 overflow-x-auto whitespace-nowrap/u)
+assert.match(messageListSource, /max-w-48 shrink-0 truncate rounded-full/u)
+assert.doesNotMatch(messageListSource, /basis-full flex flex-wrap gap-x-3/u)
 
 const mailuPanelSource = readFileSync(join(process.cwd(), "app/components/profile/mailu-integration-panel.tsx"), "utf8")
 assert.equal([...mailuPanelSource.matchAll(/<MailuSettingsSection\b/gu)].length, 6)
 assert.match(mailuPanelSource, /type SectionId = "api" \| "accounts" \| "imap" \| "smtp" \| "retention" \| "reconcile"/u)
-assert.match(mailuPanelSource, /aria-expanded=\{open\}/u)
-assert.match(mailuPanelSource, /hidden=\{!open\}/u)
-assert.match(mailuPanelSource, /setOpenSection\(body\.configured \? null : "api"\)/u)
+assert.match(mailuPanelSource, /const \[settingsExpanded, setSettingsExpanded\] = useState\(false\)/u)
+assert.match(mailuPanelSource, /integration\.enabled && settingsExpanded/u)
+assert.match(mailuPanelSource, /aria-expanded=\{settingsExpanded\}/u)
+assert.match(mailuPanelSource, /if \(!enabled\) setSettingsExpanded\(false\)/u)
+assert.match(mailuPanelSource, /role="group"/u)
+assert.match(mailuPanelSource, /aria-pressed=\{activeSection === section\.id\}/u)
+assert.match(mailuPanelSource, /grid-cols-2 gap-1 rounded-lg bg-muted\/50 p-1 sm:grid-cols-3 lg:grid-cols-6/u)
+assert.match(mailuPanelSource, /role="region"/u)
+assert.doesNotMatch(mailuPanelSource, /hidden=\{!open\}|onToggle=/u)
 assert.match(mailuPanelSource, /sm:grid-cols-2 xl:grid-cols-4/u)
 assert.match(mailuPanelSource, /integration\.imap\.realtime\.enabled/u)
 assert.match(mailuPanelSource, /integration\.imap\.realtime\.reconnect/u)
@@ -114,7 +124,8 @@ console.log(JSON.stringify({
   bidirectionalMailQuotaUiLocalized: true,
   quotaUsageRefreshAfterSave: true,
   quotaUserSearchLiveAndAbortable: true,
-  mailuSettingsAccordionResponsive: true,
+  compactMailuSettingsResponsive: true,
+  inlineMailboxQuotaResponsive: true,
   mailuRealtimeControlsLocalized: true,
   genericImapRealtimeControlsLocalized: true,
   imapAdvancedSettingsResponsive: true,

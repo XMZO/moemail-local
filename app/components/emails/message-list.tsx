@@ -247,7 +247,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
   return (
   <>
     <div className="h-full flex flex-col">
-      <div className="p-2 flex flex-wrap justify-between items-center gap-1 border-b border-primary/20">
+      <div className="flex min-w-0 items-center gap-2 border-b border-primary/20 p-2">
         <Button
           variant="ghost"
           size="icon"
@@ -257,10 +257,10 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
         >
           <RefreshCw className="h-4 w-4" />
         </Button>
-        <span className="text-xs text-gray-500">
+        <span className="max-w-28 shrink-0 truncate text-xs text-gray-500 sm:max-w-none">
           {total > 0 ? t("messageCount", { count: total }) : t("noMessages")}
         </span>
-        {quota && <div className="basis-full flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+        {quota && <div className="ml-auto flex min-w-0 flex-1 justify-end gap-1 overflow-x-auto whitespace-nowrap text-[11px] text-muted-foreground [scrollbar-width:none]">
           {(["receive", "send"] as const).map(direction => {
             const state = quota[direction]
             if (!state) return null
@@ -268,10 +268,11 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
               const reason = tApi.has(state.error as never)
                 ? tApi(state.error as never)
                 : t(`quota.${direction}` as never)
-              return <span key={direction}>{tFormat("labelValue", {
+              const summary = tFormat("labelValue", {
                 label: t(`quota.${direction}` as never),
                 value: reason,
-              })}</span>
+              })
+              return <span key={direction} title={summary} className="max-w-48 shrink-0 truncate rounded-full border bg-muted/40 px-2 py-0.5">{summary}</span>
             }
             const applied = state.quota?.applied ?? []
             if (applied.length === 0) return null
@@ -286,10 +287,11 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                 : t("quota.lifetime", { count: Math.min(...finiteLifetime) }),
             ].filter((value): value is string => value !== null)
             if (parts.length === 0) return null
-            return <span key={direction}>{tFormat("labelValue", {
+            const summary = tFormat("labelValue", {
               label: t(`quota.${direction}` as never),
               value: format.list(parts, { type: "unit" }),
-            })}</span>
+            })
+            return <span key={direction} title={summary} className="max-w-48 shrink-0 truncate rounded-full border bg-muted/40 px-2 py-0.5">{summary}</span>
           })}
         </div>}
       </div>

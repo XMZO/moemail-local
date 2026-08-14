@@ -111,6 +111,8 @@
   "mailu": {
     "title": "Mailu 통합",
     "description": "Mailu v1 API로 정확한 별칭을 동기화하고 단일 IMAP collector로 수신하며 같은 계정으로 SMTP 발신합니다. 와일드카드 별칭에는 발신자 위조 권한을 부여하지 않습니다.",
+    "compactDisabled": "비활성화되어 있으며 설정 내용과 백그라운드 작업도 중지됩니다.",
+    "sectionsLabel": "Mailu 설정 섹션",
     "status": { "enabled": "활성화됨", "disabled": "비활성화됨" },
     "enabled": "Mailu 활성화", "showSecret": "비밀 값 표시", "hideSecret": "비밀 값 숨기기", "host": "호스트", "port": "포트", "security": "보안 모드", "strictCertificate": "인증서 엄격 검증",
     "securityOptions": { "tls": "TLS", "starttls": "STARTTLS", "plain": "평문" },
