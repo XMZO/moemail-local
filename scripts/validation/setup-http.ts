@@ -823,6 +823,25 @@ try {
     body: JSON.stringify({ kind: "reconcile" }),
   })
   assert.equal(crossOriginMailuMutation.status, 403)
+  const proxiedSameOriginMailuMutation = await request("/api/config/mailu", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: `https://127.0.0.1:${port}`,
+      "X-Forwarded-Proto": "https",
+      "Sec-Fetch-Site": "same-origin",
+    },
+    body: JSON.stringify({ kind: "reconcile" }),
+  })
+  // This test logs in over plain HTTP, while the simulated public request is
+  // HTTPS. Auth.js therefore looks for its secure session cookie and returns
+  // 401; reaching auth (instead of the old origin guard's 403) is the boundary
+  // this proxy regression needs to prove.
+  assert.equal(proxiedSameOriginMailuMutation.status, 401)
+  assert.equal(
+    (await proxiedSameOriginMailuMutation.json() as { code?: string }).code,
+    "UNAUTHORIZED",
+  )
   const mailboxPayload = (name: string) => JSON.stringify({
     name,
     domain: validationDomain,

@@ -392,6 +392,35 @@ try {
   smtp = await createMockSmtp()
 
   const setup = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/setup-service.ts")).href)
+  const { isSameOriginMutation } = await import(pathToFileURL(resolve(repositoryRoot, "app/lib/request-origin.ts")).href)
+  const mutationRequest = (headers: Record<string, string>) => new Request("http://127.0.0.1:3000/api/config/mailu", {
+    method: "PUT",
+    headers,
+  })
+  assert.equal(isSameOriginMutation(mutationRequest({
+    Host: "miku.test",
+    Origin: "https://miku.test",
+    "X-Forwarded-Proto": "https",
+    "Sec-Fetch-Site": "same-origin",
+  })), true, "a TLS-terminating reverse proxy must preserve legitimate same-origin mutations")
+  assert.equal(isSameOriginMutation(mutationRequest({
+    Host: "miku.test",
+    Origin: "https://attacker.invalid",
+    "X-Forwarded-Proto": "https",
+    "Sec-Fetch-Site": "cross-site",
+  })), false)
+  assert.equal(isSameOriginMutation(mutationRequest({
+    Host: "miku.test",
+    Origin: "http://miku.test",
+    "X-Forwarded-Proto": "https",
+    "Sec-Fetch-Site": "same-origin",
+  })), false, "the public protocol remains part of the origin boundary")
+  assert.equal(isSameOriginMutation(mutationRequest({
+    Host: "miku.test",
+    Origin: "https://miku.test",
+    "X-Forwarded-Proto": "javascript",
+    "Sec-Fetch-Site": "same-origin",
+  })), false, "invalid forwarded protocols must fail closed")
   const setupOutcome = await setup.completeSetup({
     config: {
       server: { baseUrl: "http://127.0.0.1:3000" },
@@ -691,6 +720,7 @@ try {
     expiredMailboxCollectorAuthorizationRevoked: true,
     localAndExternalFromSpoofingRejected: true,
     existingHtmlSandboxReused: true,
+    reverseProxySameOriginMutationAccepted: true,
   }))
 } finally {
   if (stopMailuPoller) await stopMailuPoller().catch(() => undefined)

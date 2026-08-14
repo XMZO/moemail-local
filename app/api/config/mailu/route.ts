@@ -3,6 +3,7 @@ import { z } from "zod"
 import { apiError, apiIssues } from "@/lib/api-response"
 import { PERMISSIONS } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth"
+import { isSameOriginMutation } from "@/lib/request-origin"
 import { MailuClient } from "@/lib/mailu/client"
 import {
   defaultMailuIntegration,
@@ -32,10 +33,7 @@ const actionSchema = z.discriminatedUnion("kind", [
 
 async function authorizeMailu(request: Request) {
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
-    const requestUrl = new URL(request.url)
-    const origin = request.headers.get("Origin")
-    const fetchSite = request.headers.get("Sec-Fetch-Site")
-    if ((origin && origin !== requestUrl.origin) || (fetchSite && !["same-origin", "none"].includes(fetchSite))) {
+    if (!isSameOriginMutation(request)) {
       return { ok: false as const, response: apiError("PERMISSION_DENIED", 403, { headers }) }
     }
   }
