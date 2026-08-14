@@ -43,6 +43,8 @@ const authErrorSource = readFileSync(join(process.cwd(), "app/[locale]/auth-erro
 const authErrorContentSource = readFileSync(join(process.cwd(), "app/components/auth/auth-error-content.tsx"), "utf8")
 const signButtonSource = readFileSync(join(process.cwd(), "app/components/auth/sign-button.tsx"), "utf8")
 const currentOriginSignOutSource = readFileSync(join(process.cwd(), "app/hooks/use-current-origin-sign-out.ts"), "utf8")
+const loginFormSource = readFileSync(join(process.cwd(), "app/components/auth/login-form.tsx"), "utf8")
+const loginPageSource = readFileSync(join(process.cwd(), "app/[locale]/login/page.tsx"), "utf8")
 assert.match(authSource, /signIn:\s*"\/login"/u)
 assert.match(authSource, /error:\s*"\/auth-error"/u)
 assert.match(authErrorSource, /<AuthErrorContent\s*\/>/u)
@@ -54,6 +56,13 @@ assert.match(currentOriginSignOutSource, /signOut\(\{ redirect: false \}\)/u)
 assert.match(currentOriginSignOutSource, /new URL\(`\/\$\{locale\}`, window\.location\.origin\)/u)
 assert.match(currentOriginSignOutSource, /window\.location\.replace\(localizedHome\.href\)/u)
 assert.doesNotMatch(`${signButtonSource}\n${profileSource}`, /callbackUrl/u)
+assert.doesNotMatch(loginFormSource, /min-h-\[220px\]/u)
+assert.match(loginFormSource, /grid gap-3 min-\[480px\]:grid-cols-2/u)
+assert.match(loginFormSource, /usernameField\("min-\[480px\]:col-span-2"\)/u)
+assert.match(loginFormSource, /className="mt-4 min-h-\[65px\] items-center"/u)
+assert.match(loginFormSource, /type="submit"/u)
+assert.match(loginFormSource, /activeTab === "login" \? t\("actions\.login"\) : t\("actions\.register"\)/u)
+assert.match(loginPageSource, /min-h-\[100dvh\]/u)
 
 const userPanelSource = readFileSync(join(process.cwd(), "app/components/profile/promote-panel.tsx"), "utf8")
 assert.doesNotMatch(userPanelSource, /<RoleIcon/u)
@@ -127,6 +136,7 @@ console.log(JSON.stringify({
   setupControlsPresent: true,
   authFallbackPagesLocalized: true,
   signOutPreservesCurrentBrowserOrigin: true,
+  authCardStableAndResponsive: true,
   duplicateRoleIconRemoved: true,
   userRoleEditorResponsive: true,
   accessPolicyLayoutCovered: true,

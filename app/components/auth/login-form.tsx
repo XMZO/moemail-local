@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useState, type FormEvent } from "react"
 import { signIn } from "next-auth/react"
 import { useTranslations } from "next-intl"
 import { useToast } from "@/components/ui/use-toast"
@@ -226,9 +226,100 @@ export function LoginForm({ turnstile }: LoginFormProps) {
     signIn("google", { callbackUrl: "/" })
   }
 
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (activeTab === "login") void handleLogin()
+    else void handleRegister()
+  }
+
+  const usernameField = (className?: string) => (
+    <div className={cn("space-y-1.5", className)}>
+      <div className="relative">
+        <div className="absolute left-2.5 top-2 text-muted-foreground">
+          <User2 className="h-5 w-5" />
+        </div>
+        <Input
+          className={cn(
+            "h-9 pl-9 pr-3",
+            errors.username && "border-destructive focus-visible:ring-destructive"
+          )}
+          placeholder={t("fields.username")}
+          value={username}
+          onChange={(event) => {
+            setUsername(event.target.value)
+            setErrors({})
+          }}
+          disabled={loading}
+          aria-invalid={Boolean(errors.username)}
+        />
+      </div>
+      {errors.username && (
+        <p className="text-xs text-destructive">{errors.username}</p>
+      )}
+    </div>
+  )
+
+  const passwordField = () => (
+    <div className="space-y-1.5">
+      <div className="relative">
+        <div className="absolute left-2.5 top-2 text-muted-foreground">
+          <KeyRound className="h-5 w-5" />
+        </div>
+        <Input
+          className={cn(
+            "h-9 pl-9 pr-3",
+            errors.password && "border-destructive focus-visible:ring-destructive"
+          )}
+          type="password"
+          maxLength={256}
+          placeholder={t("fields.password")}
+          value={password}
+          onChange={(event) => {
+            setPassword(event.target.value)
+            setErrors({})
+          }}
+          disabled={loading}
+          aria-invalid={Boolean(errors.password)}
+        />
+      </div>
+      {errors.password && (
+        <p className="text-xs text-destructive">{errors.password}</p>
+      )}
+    </div>
+  )
+
+  const confirmPasswordField = () => (
+    <div className="space-y-1.5">
+      <div className="relative">
+        <div className="absolute left-2.5 top-2 text-muted-foreground">
+          <KeyRound className="h-5 w-5" />
+        </div>
+        <Input
+          className={cn(
+            "h-9 pl-9 pr-3",
+            errors.confirmPassword && "border-destructive focus-visible:ring-destructive"
+          )}
+          type="password"
+          maxLength={256}
+          placeholder={t("fields.confirmPassword")}
+          value={confirmPassword}
+          onChange={(event) => {
+            setConfirmPassword(event.target.value)
+            setErrors({})
+          }}
+          disabled={loading}
+          aria-invalid={Boolean(errors.confirmPassword)}
+        />
+      </div>
+      {errors.confirmPassword && (
+        <p className="text-xs text-destructive">{errors.confirmPassword}</p>
+      )}
+    </div>
+  )
+
   return (
-    <Card className="w-[95%] max-w-lg border-2 border-primary/20">
-      <CardHeader className="space-y-2">
+    <Card className="w-full max-w-xl border-2 border-primary/20">
+      <CardHeader className="space-y-2 px-5 pb-5 pt-6 sm:px-6">
         <CardTitle className="text-2xl text-center bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
           {t("title")}
         </CardTitle>
@@ -236,228 +327,115 @@ export function LoginForm({ turnstile }: LoginFormProps) {
           {t("subtitle")}
         </CardDescription>
       </CardHeader>
-      <CardContent className="px-6">
-        <Tabs value={activeTab} className="w-full" onValueChange={handleTabChange}>
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="login">{t("tabs.login")}</TabsTrigger>
-            <TabsTrigger value="register">{t("tabs.register")}</TabsTrigger>
-          </TabsList>
-          <div className="min-h-[220px]">
-            <TabsContent value="login" className="space-y-4 mt-0">
+      <CardContent className="px-4 pb-5 sm:px-6 sm:pb-6">
+        <form onSubmit={handleSubmit}>
+          <Tabs value={activeTab} className="w-full" onValueChange={handleTabChange}>
+            <TabsList className="mb-4 grid w-full grid-cols-2">
+              <TabsTrigger value="login" disabled={loading}>{t("tabs.login")}</TabsTrigger>
+              <TabsTrigger value="register" disabled={loading}>{t("tabs.register")}</TabsTrigger>
+            </TabsList>
+            <TabsContent
+              value="login"
+              className="mt-0 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:slide-in-from-bottom-1 data-[state=active]:duration-150 motion-reduce:animate-none"
+            >
               <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="relative">
-                    <div className="absolute left-2.5 top-2 text-muted-foreground">
-                      <User2 className="h-5 w-5" />
-                    </div>
-                    <Input
-                      className={cn(
-                        "h-9 pl-9 pr-3",
-                        errors.username && "border-destructive focus-visible:ring-destructive"
-                      )}
-                      placeholder={t("fields.username")}
-                      value={username}
-                      onChange={(e) => {
-                        setUsername(e.target.value)
-                        setErrors({})
-                      }}
-                      disabled={loading}
-                    />
-                  </div>
-                  {errors.username && (
-                    <p className="text-xs text-destructive">{errors.username}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="relative">
-                    <div className="absolute left-2.5 top-2 text-muted-foreground">
-                      <KeyRound className="h-5 w-5" />
-                    </div>
-                    <Input
-                      className={cn(
-                        "h-9 pl-9 pr-3",
-                        errors.password && "border-destructive focus-visible:ring-destructive"
-                      )}
-                      type="password"
-                      maxLength={256}
-                      placeholder={t("fields.password")}
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value)
-                        setErrors({})
-                      }}
-                      disabled={loading}
-                    />
-                  </div>
-                  {errors.password && (
-                    <p className="text-xs text-destructive">{errors.password}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-1">
-                <Button
-                  className="w-full"
-                  onClick={handleLogin}
-                  disabled={loading}
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {t("actions.login")}
-                </Button>
-
-                {(oauth.github || oauth.google) && (
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">
-                        {t("actions.or")}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {oauth.github && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleGithubLogin}
-                  >
-                    <Github className="mr-2 h-4 w-4" />
-                    {t("actions.githubLogin")}
-                  </Button>
-                )}
-
-                {oauth.google && (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleGoogleLogin}
-                >
-                  <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-                    <path
-                      fill="currentColor"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="currentColor"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="currentColor"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    />
-                    <path
-                      fill="currentColor"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    />
-                  </svg>
-                  {t("actions.googleLogin")}
-                </Button>
-                )}
+                {usernameField()}
+                {passwordField()}
               </div>
             </TabsContent>
-            <TabsContent value="register" className="space-y-4 mt-0">
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="relative">
-                    <div className="absolute left-2.5 top-2 text-muted-foreground">
-                      <User2 className="h-5 w-5" />
-                    </div>
-                    <Input
-                      className={cn(
-                        "h-9 pl-9 pr-3",
-                        errors.username && "border-destructive focus-visible:ring-destructive"
-                      )}
-                      placeholder={t("fields.username")}
-                      value={username}
-                      onChange={(e) => {
-                        setUsername(e.target.value)
-                        setErrors({})
-                      }}
-                      disabled={loading}
-                    />
-                  </div>
-                  {errors.username && (
-                    <p className="text-xs text-destructive">{errors.username}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="relative">
-                    <div className="absolute left-2.5 top-2 text-muted-foreground">
-                      <KeyRound className="h-5 w-5" />
-                    </div>
-                    <Input
-                      className={cn(
-                        "h-9 pl-9 pr-3",
-                        errors.password && "border-destructive focus-visible:ring-destructive"
-                      )}
-                      type="password"
-                      maxLength={256}
-                      placeholder={t("fields.password")}
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value)
-                        setErrors({})
-                      }}
-                      disabled={loading}
-                    />
-                  </div>
-                  {errors.password && (
-                    <p className="text-xs text-destructive">{errors.password}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="relative">
-                    <div className="absolute left-2.5 top-2 text-muted-foreground">
-                      <KeyRound className="h-5 w-5" />
-                    </div>
-                    <Input
-                      className={cn(
-                        "h-9 pl-9 pr-3",
-                        errors.confirmPassword && "border-destructive focus-visible:ring-destructive"
-                      )}
-                      type="password"
-                      maxLength={256}
-                      placeholder={t("fields.confirmPassword")}
-                      value={confirmPassword}
-                      onChange={(e) => {
-                        setConfirmPassword(e.target.value)
-                        setErrors({})
-                      }}
-                      disabled={loading}
-                    />
-                  </div>
-                  {errors.confirmPassword && (
-                    <p className="text-xs text-destructive">{errors.confirmPassword}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-1">
-                <Button
-                  className="w-full"
-                  onClick={handleRegister}
-                  disabled={loading}
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {t("actions.register")}
-                </Button>
+            <TabsContent
+              value="register"
+              className="mt-0 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:slide-in-from-bottom-1 data-[state=active]:duration-150 motion-reduce:animate-none"
+            >
+              <div className="grid gap-3 min-[480px]:grid-cols-2">
+                {usernameField("min-[480px]:col-span-2")}
+                {passwordField()}
+                {confirmPasswordField()}
               </div>
             </TabsContent>
-          </div>
-        </Tabs>
-        {turnstileEnabled && turnstileSiteKey && (
-          <div className={cn("space-y-2", activeTab === "login" ? "mt-4" : "")}>
-            <Turnstile
-              siteKey={turnstileSiteKey}
-              onVerify={setTurnstileToken}
-              onExpire={resetTurnstile}
-              resetSignal={turnstileResetCounter}
-            />
-          </div>
-        )}
+
+            {turnstileEnabled && turnstileSiteKey && (
+              <Turnstile
+                siteKey={turnstileSiteKey}
+                onVerify={setTurnstileToken}
+                onExpire={resetTurnstile}
+                resetSignal={turnstileResetCounter}
+                className="mt-4 min-h-[65px] items-center"
+              />
+            )}
+
+            <Button
+              type="submit"
+              className="mt-4 w-full"
+              disabled={loading}
+            >
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {activeTab === "login" ? t("actions.login") : t("actions.register")}
+            </Button>
+
+            {(oauth.github || oauth.google) && (
+              <div className="mt-5 space-y-3">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">
+                      {t("actions.or")}
+                    </span>
+                  </div>
+                </div>
+                <div className={cn(
+                  "grid gap-3",
+                  oauth.github && oauth.google && "min-[480px]:grid-cols-2",
+                )}>
+                  {oauth.github && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleGithubLogin}
+                      disabled={loading}
+                    >
+                      <Github className="mr-2 h-4 w-4" />
+                      {t("actions.githubLogin")}
+                    </Button>
+                  )}
+
+                  {oauth.google && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleGoogleLogin}
+                      disabled={loading}
+                    >
+                      <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="currentColor"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                        />
+                      </svg>
+                      {t("actions.googleLogin")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </Tabs>
+        </form>
       </CardContent>
     </Card>
   )
