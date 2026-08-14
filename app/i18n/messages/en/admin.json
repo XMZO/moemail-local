@@ -408,6 +408,11 @@
     "advanced": {
       "title": "High-risk advanced appearance",
       "subtitle": "Inject CSS, Head HTML, end-of-Body HTML, and JavaScript directly",
+      "statusEnabled": "Injection enabled",
+      "statusDisabled": "Injection disabled",
+      "summaryBytes": "Content present · {used} bytes",
+      "summaryEmpty": "No custom content",
+      "tabs": { "css": "CSS styles", "html": "HTML", "javascript": "JavaScript" },
       "emperorOnly": "Only an emperor account can edit advanced appearance.",
       "warningTitle": "Injected content runs with the current signed-in user's page privileges",
       "warningDescription": "Malicious HTML or JavaScript can read email, call APIs, or steal page data. Use only code you wrote and fully reviewed; never paste untrusted code.",

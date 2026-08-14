@@ -408,6 +408,11 @@
     "advanced": {
       "title": "高危高级外观",
       "subtitle": "直接注入 CSS、Head HTML、Body 尾部 HTML 和 JavaScript",
+      "statusEnabled": "注入已启用",
+      "statusDisabled": "注入已停用",
+      "summaryBytes": "已有内容 · {used} 字节",
+      "summaryEmpty": "尚无自定义内容",
+      "tabs": { "css": "CSS 样式", "html": "HTML 片段", "javascript": "JavaScript 脚本" },
       "emperorOnly": "高级外观只允许皇帝账号修改。",
       "warningTitle": "注入内容拥有当前登录用户的页面权限",
       "warningDescription": "恶意 HTML 或 JavaScript 可以读取邮件、调用接口或窃取页面数据。只使用自己编写且已完整审查的内容；不要粘贴陌生代码。",

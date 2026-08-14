@@ -119,6 +119,7 @@ const htmlFrameSource = readFileSync(join(process.cwd(), "app/components/emails/
 const messageViewSource = readFileSync(join(process.cwd(), "app/components/emails/message-view.tsx"), "utf8")
 const sharedMessageSource = readFileSync(join(process.cwd(), "app/components/emails/shared-message-detail.tsx"), "utf8")
 const threeColumnSource = readFileSync(join(process.cwd(), "app/components/emails/three-column-layout.tsx"), "utf8")
+const appearancePanelSource = readFileSync(join(process.cwd(), "app/components/profile/appearance-panel.tsx"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
 assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
 assert.match(accessPanelSource, /mailQuotaRules/u)
@@ -170,6 +171,13 @@ assert.doesNotMatch(htmlFrameSource, /srcDoc=\{source\}/u)
 assert.match(messageViewSource, /relative min-h-0 flex-1 overflow-auto/u)
 assert.match(sharedMessageSource, /relative min-h-0 flex-1 overflow-auto/u)
 assert.ok([...threeColumnSource.matchAll(/min-h-0 flex-1 overflow-auto/gu)].length >= 5)
+assert.match(appearancePanelSource, /summary className="grid min-h-14[^"]*list-none/u)
+assert.match(appearancePanelSource, /\[&::-webkit-details-marker\]:hidden/u)
+assert.match(appearancePanelSource, /group-open:rotate-180/u)
+assert.match(appearancePanelSource, /<Tabs value=\{advancedSection\}/u)
+assert.equal([...appearancePanelSource.matchAll(/<TabsTrigger value=/gu)].length, 3)
+assert.match(appearancePanelSource, /xl:grid-cols-\[minmax\(0,1\.35fr\)_minmax\(18rem,.65fr\)\]/u)
+assert.doesNotMatch(appearancePanelSource, /summary className="cursor-pointer select-none p-4 sm:p-5"/u)
 
 const mailuPanelSource = readFileSync(join(process.cwd(), "app/components/profile/mailu-integration-panel.tsx"), "utf8")
 assert.equal([...mailuPanelSource.matchAll(/<MailuSettingsSection\b/gu)].length, 6)
@@ -221,4 +229,5 @@ console.log(JSON.stringify({
   genericImapRealtimeControlsLocalized: true,
   imapAdvancedSettingsResponsive: true,
   htmlMessageFrameMountAndSizingGuarded: true,
+  compactAdvancedAppearanceResponsive: true,
 }))

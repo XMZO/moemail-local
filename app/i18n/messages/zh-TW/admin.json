@@ -391,6 +391,11 @@
     "advanced": {
       "title": "高風險進階外觀",
       "subtitle": "直接注入 CSS、Head HTML、Body 尾端 HTML 與 JavaScript",
+      "statusEnabled": "注入已啟用",
+      "statusDisabled": "注入已停用",
+      "summaryBytes": "已有內容 · {used} 位元組",
+      "summaryEmpty": "尚無自訂內容",
+      "tabs": { "css": "CSS 樣式", "html": "HTML 片段", "javascript": "JavaScript 指令碼" },
       "emperorOnly": "進階外觀僅允許皇帝帳戶修改。",
       "warningTitle": "注入內容具有目前登入使用者的頁面權限",
       "warningDescription": "惡意 HTML 或 JavaScript 可以讀取郵件、呼叫 API 或竊取頁面資料。僅使用自行撰寫且已完整審查的內容；請勿貼上陌生程式碼。",

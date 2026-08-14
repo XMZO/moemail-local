@@ -391,6 +391,11 @@
     "advanced": {
       "title": "고위험 고급 모양",
       "subtitle": "CSS, Head HTML, Body 끝 HTML 및 JavaScript를 직접 삽입",
+      "statusEnabled": "삽입 활성화됨",
+      "statusDisabled": "삽입 비활성화됨",
+      "summaryBytes": "내용 있음 · {used}바이트",
+      "summaryEmpty": "사용자 지정 내용 없음",
+      "tabs": { "css": "CSS 스타일", "html": "HTML 조각", "javascript": "JavaScript 코드" },
       "emperorOnly": "고급 모양은 황제 계정만 수정할 수 있습니다.",
       "warningTitle": "삽입된 콘텐츠는 현재 로그인한 사용자의 페이지 권한으로 실행됩니다",
       "warningDescription": "악성 HTML 또는 JavaScript는 메일을 읽고 API를 호출하거나 페이지 데이터를 훔칠 수 있습니다. 직접 작성하고 완전히 검토한 코드만 사용하고, 신뢰할 수 없는 코드는 붙여 넣지 마세요.",

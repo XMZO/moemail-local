@@ -5,6 +5,12 @@ const withNextIntl = createNextIntlPlugin('./app/i18n/request.ts')
 
 const nextConfig = {
   output: 'standalone',
+  outputFileTracingExcludes: {
+    '*': [
+      'node_modules/typescript/**/*',
+      'node_modules/.pnpm/typescript@*/node_modules/typescript/**/*',
+    ],
+  },
   serverExternalPackages: ['better-sqlite3', 'pg'],
   async headers() {
     return [{

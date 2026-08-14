@@ -391,6 +391,11 @@
     "advanced": {
       "title": "高リスクな高度な外観設定",
       "subtitle": "CSS、Head HTML、Body 末尾 HTML、JavaScript を直接挿入",
+      "statusEnabled": "挿入は有効",
+      "statusDisabled": "挿入は無効",
+      "summaryBytes": "内容あり・{used} バイト",
+      "summaryEmpty": "カスタム内容なし",
+      "tabs": { "css": "CSS スタイル", "html": "HTML 断片", "javascript": "JavaScript コード" },
       "emperorOnly": "高度な外観設定を変更できるのは皇帝アカウントだけです。",
       "warningTitle": "挿入内容は現在ログイン中のユーザーと同じページ権限で動作します",
       "warningDescription": "悪意ある HTML や JavaScript はメールの読み取り、API の呼び出し、ページデータの窃取が可能です。自分で作成し、完全に確認したコードだけを使用してください。信頼できないコードを貼り付けないでください。",
