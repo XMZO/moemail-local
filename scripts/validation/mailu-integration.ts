@@ -560,7 +560,7 @@ try {
     deleted: false,
   }
   imap.deliver(realtimeMessage)
-  await waitUntil(async () => (await db.select().from(schema.messages))
+  await waitUntil(async () => realtimeMessage.deleted && (await db.select().from(schema.messages))
     .some((item: { subject: string | null }) => item.subject === "Mailu IDLE realtime message"))
   assert(
     Date.now() - realtimeStartedAt < integration.imap.pollIntervalSeconds * 1_000,
@@ -577,7 +577,7 @@ try {
     deleted: false,
   }
   imap.deliver(reconnectedMessage)
-  await waitUntil(async () => (await db.select().from(schema.messages))
+  await waitUntil(async () => reconnectedMessage.deleted && (await db.select().from(schema.messages))
     .some((item: { subject: string | null }) => item.subject === "Mailu IDLE reconnect message"))
   assert.equal(reconnectedMessage.deleted, true)
 
@@ -588,7 +588,7 @@ try {
   }
   // Persist without emitting EXISTS to reproduce a lost IDLE notification.
   imapMessages.push(fallbackMessage)
-  await waitUntil(async () => (await db.select().from(schema.messages))
+  await waitUntil(async () => fallbackMessage.deleted && (await db.select().from(schema.messages))
     .some((item: { subject: string | null }) => item.subject === "Mailu fallback polling message"), 20_000)
   assert.equal(fallbackMessage.deleted, true)
   await inbound.stopMailuPoller()
