@@ -111,6 +111,7 @@ assert.match(userPanelSource, /<SelectTrigger className="h-8 w-full min-w-0 text
 
 const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profile/access-policy-panel.tsx"), "utf8")
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
+const quotaGuideSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-rule-guide.tsx"), "utf8")
 const searchableUserSource = readFileSync(join(process.cwd(), "app/components/profile/searchable-user-select.tsx"), "utf8")
 const domainPolicySource = readFileSync(join(process.cwd(), "app/components/profile/domain-policy-panel.tsx"), "utf8")
 const messageListSource = readFileSync(join(process.cwd(), "app/components/emails/message-list.tsx"), "utf8")
@@ -128,15 +129,22 @@ assert.match(sendQuotaSource, /admin\.access\.mailQuota/u)
 assert.match(sendQuotaSource, /RULES_PER_PAGE = 20/u)
 assert.match(sendQuotaSource, /filteredRules\.slice/u)
 assert.match(sendQuotaSource, /subjectFilter[\s\S]*targetFilter/u)
+assert.match(sendQuotaSource, /useDeferredValue\(query\)/u)
+assert.match(sendQuotaSource, /indexedRules/u)
+assert.match(sendQuotaSource, /quotaFilter/u)
 assert.match(sendQuotaSource, /editingRule[\s\S]*cloneAssignment/u)
 assert.match(sendQuotaSource, /manager\.modes\.custom/u)
 assert.match(sendQuotaSource, /raw\.trim\(\) === "" \? Number\.NaN/u)
 assert.match(sendQuotaSource, /rules\.length >= 2_000/u)
 assert.match(sendQuotaSource, /AlertDialogTitle/u)
-assert.match(sendQuotaSource, /md:grid-cols-\[minmax\(12rem,1fr\)_minmax\(9rem,.45fr\)_minmax\(9rem,.45fr\)\]/u)
+assert.match(sendQuotaSource, /xl:grid-cols-\[minmax\(14rem,1fr\)_minmax\(9rem,.42fr\)_minmax\(9rem,.42fr\)_minmax\(9rem,.42fr\)\]/u)
 assert.match(sendQuotaSource, /grid-cols-\[1\.25rem_minmax\(0,1fr\)\]/u)
 assert.match(sendQuotaSource, /\[overflow-wrap:anywhere\]/u)
 assert.match(sendQuotaSource, /\[&>span\]:truncate/u)
+assert.match(sendQuotaSource, /<MailQuotaRuleGuide/u)
+assert.match(sendQuotaSource, /<MailQuotaCompatibility/u)
+assert.match(quotaGuideSource, /aria-live="polite"/u)
+assert.match(quotaGuideSource, /unlimitedOverride/u)
 assert.match(accessPanelSource, /setUsageRevision\(value => value \+ 1\)/u)
 assert.match(accessPanelSource, /ALL_MAILBOX_BLOCK_DOMAINS/u)
 assert.match(accessPanelSource, /blocks\.allDomains/u)
@@ -204,6 +212,7 @@ console.log(JSON.stringify({
   accessPolicyLayoutCovered: true,
   allDomainMailboxBlocksLocalized: true,
   bidirectionalMailQuotaUiLocalized: true,
+  liveQuotaCompatibilityGuidance: true,
   quotaUsageRefreshAfterSave: true,
   quotaUserSearchLiveAndAbortable: true,
   compactMailuSettingsResponsive: true,

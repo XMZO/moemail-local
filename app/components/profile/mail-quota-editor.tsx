@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowRight, BarChart3, ChevronLeft, ChevronRight, Loader2, Pencil, Plus, RotateCcw, Search, Trash2, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import {
@@ -27,7 +27,9 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { normalizeMailboxCreationName } from "@/lib/email-address"
+import { analyzeMailQuotaRuleRelations } from "@/lib/mail-quota-rule-relations"
 import { ROLES, type Role } from "@/lib/permissions"
+import { MailQuotaCompatibility, MailQuotaRuleGuide } from "./mail-quota-rule-guide"
 import { SearchableUserSelect, type SearchableUser } from "./searchable-user-select"
 
 export type MailDirection = "send" | "receive"
@@ -88,10 +90,6 @@ function targetKey(target: MailQuotaTarget) {
   return target.type === "all" ? "all" : target.type === "domain" ? `domain:${target.domain}` : `mailbox:${target.address}`
 }
 
-function assignmentKey(assignment: Pick<MailQuotaAssignment, "direction" | "subject" | "target">) {
-  return `${assignment.direction}|${subjectKey(assignment.subject)}|${targetKey(assignment.target)}`
-}
-
 function validQuotaRule(rule: MailQuotaRule) {
   return Number.isSafeInteger(rule.limit)
     && rule.limit >= -1
@@ -111,6 +109,10 @@ function numericInput(raw: string) {
 
 function quotaMode(limit: number) {
   return limit < 0 ? "unlimited" : limit === 0 ? "blocked" : "custom"
+}
+
+function normalizeRuleSearch(value: string) {
+  return value.normalize("NFKC").trim().toLocaleLowerCase()
 }
 
 export function MailQuotaRuleFields({ id, rule, onChange }: {
@@ -187,19 +189,21 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
   const [query, setQuery] = useState("")
   const [subjectFilter, setSubjectFilter] = useState<"any" | MailQuotaSubject["type"]>("any")
   const [targetFilter, setTargetFilter] = useState<"any" | MailQuotaTarget["type"]>("any")
+  const [quotaFilter, setQuotaFilter] = useState<"any" | "unlimited" | "blocked" | "custom">("any")
   const [page, setPage] = useState(1)
   const editorRef = useRef<HTMLDivElement>(null)
   const userNames = useMemo(() => new Map(users.map(user => [user.id, identity(user)])), [users])
   const mailboxName = normalizeMailboxCreationName(mailboxLocalPart)
   const mailboxDomain = targetDomain || domains[0] || ""
-  const subject: MailQuotaSubject = subjectType === "all"
+  const subject = useMemo<MailQuotaSubject>(() => subjectType === "all"
     ? { type: "all" }
-    : subjectType === "role" ? { type: "role", role: subjectRole } : { type: "user", userId: subjectUserId }
-  const target: MailQuotaTarget = targetType === "all"
+    : subjectType === "role" ? { type: "role", role: subjectRole } : { type: "user", userId: subjectUserId }, [subjectRole, subjectType, subjectUserId])
+  const target = useMemo<MailQuotaTarget>(() => targetType === "all"
     ? { type: "all" }
-    : targetType === "domain" ? { type: "domain", domain: targetDomain || domains[0] || "" } : { type: "mailbox", address: `${mailboxName}@${mailboxDomain}` }
-  const draft = { direction, subject, target }
-  const duplicate = rules.some(rule => assignmentKey(rule) === assignmentKey(draft))
+    : targetType === "domain" ? { type: "domain", domain: targetDomain || domains[0] || "" } : { type: "mailbox", address: `${mailboxName}@${mailboxDomain}` }, [domains, mailboxDomain, mailboxName, targetDomain, targetType])
+  const draft = useMemo(() => ({ direction, subject, target }), [direction, subject, target])
+  const draftRelations = useMemo(() => analyzeMailQuotaRuleRelations(draft, rules), [draft, rules])
+  const duplicate = Boolean(draftRelations.duplicateId)
   const maximumReached = rules.length >= 2_000
   const valid = (subjectType !== "user" || Boolean(subjectUserId))
     && (targetType === "all" || Boolean(mailboxDomain))
@@ -216,25 +220,44 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
     ? t("targets.all")
     : value.type === "domain" ? t("targets.domainValue", { domain: value.domain }) : t("targets.mailboxValue", { address: value.address })
   const directionRules = useMemo(() => rules.filter(rule => rule.direction === direction), [direction, rules])
+  const indexedRules = useMemo(() => directionRules.map(rule => {
+    const localizedSubject = rule.subject.type === "all"
+      ? t("subjects.all")
+      : rule.subject.type === "role"
+        ? t("subjects.roleValue", { role: tRoles(roleTranslationKeys[rule.subject.role]) })
+        : t("subjects.userValue", { user: userNames.get(rule.subject.userId) ?? rule.subject.userId })
+    const localizedTarget = rule.target.type === "all"
+      ? t("targets.all")
+      : rule.target.type === "domain"
+        ? t("targets.domainValue", { domain: rule.target.domain })
+        : t("targets.mailboxValue", { address: rule.target.address })
+    const mode = quotaMode(rule.rolling.limit)
+    return {
+      rule,
+      mode,
+      searchText: normalizeRuleSearch([
+        localizedSubject,
+        localizedTarget,
+        subjectKey(rule.subject),
+        targetKey(rule.target),
+        String(rule.rolling.limit),
+        String(rule.rolling.windowValue),
+        rule.rolling.windowUnit,
+        t(`manager.modes.${mode}` as never),
+      ].join(" ")),
+    }
+  }), [directionRules, t, tRoles, userNames])
+  const deferredQuery = useDeferredValue(query)
+  const searchPending = query !== deferredQuery
   const filteredRules = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase()
-    return directionRules.filter(rule => {
+    const needle = normalizeRuleSearch(deferredQuery)
+    return indexedRules.filter(({ rule, mode, searchText }) => {
       if (subjectFilter !== "any" && rule.subject.type !== subjectFilter) return false
       if (targetFilter !== "any" && rule.target.type !== targetFilter) return false
-      if (!needle) return true
-      const localizedSubject = rule.subject.type === "all"
-        ? t("subjects.all")
-        : rule.subject.type === "role"
-          ? t("subjects.roleValue", { role: tRoles(roleTranslationKeys[rule.subject.role]) })
-          : t("subjects.userValue", { user: userNames.get(rule.subject.userId) ?? rule.subject.userId })
-      const localizedTarget = rule.target.type === "all"
-        ? t("targets.all")
-        : rule.target.type === "domain"
-          ? t("targets.domainValue", { domain: rule.target.domain })
-          : t("targets.mailboxValue", { address: rule.target.address })
-      return `${localizedSubject} ${localizedTarget} ${subjectKey(rule.subject)} ${targetKey(rule.target)}`.toLocaleLowerCase().includes(needle)
-    })
-  }, [directionRules, query, subjectFilter, t, tRoles, targetFilter, userNames])
+      if (quotaFilter !== "any" && mode !== quotaFilter) return false
+      return !needle || searchText.includes(needle)
+    }).map(({ rule }) => rule)
+  }, [deferredQuery, indexedRules, quotaFilter, subjectFilter, targetFilter])
   const totalPages = Math.max(1, Math.ceil(filteredRules.length / RULES_PER_PAGE))
   const pageRules = filteredRules.slice((page - 1) * RULES_PER_PAGE, page * RULES_PER_PAGE)
   const editingValid = editingRule !== null
@@ -244,6 +267,9 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
       && editingRule.lifetimeLimit >= -1
       && editingRule.lifetimeLimit <= 1_000_000_000
     ))
+  const editingRelations = useMemo(() => editingRule
+    ? analyzeMailQuotaRuleRelations(editingRule, rules, editingRule.id)
+    : null, [editingRule, rules])
 
   useEffect(() => {
     setPage(current => Math.min(current, totalPages))
@@ -280,6 +306,7 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
     setQuery("")
     setSubjectFilter("any")
     setTargetFilter("any")
+    setQuotaFilter("any")
     setPage(Math.ceil((directionRules.length + 1) / RULES_PER_PAGE))
     closeEditor()
   }
@@ -309,7 +336,7 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
   return (
     <section className="space-y-4">
       <div><h3 className="text-sm font-medium">{t("title")}</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("help")}</p></div>
-      <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground"><p>{t("precedence")}</p><p className="mt-1">{t("independent")}</p></div>
+      <MailQuotaRuleGuide />
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={direction} onValueChange={changeDirection}><TabsList className="flex h-auto w-full min-[420px]:w-auto"><TabsTrigger className="min-w-0 flex-1 min-[420px]:flex-none" value="send">{t("directions.send")}</TabsTrigger><TabsTrigger className="min-w-0 flex-1 min-[420px]:flex-none" value="receive">{t("directions.receive")}</TabsTrigger></TabsList></Tabs>
         <Button type="button" size="sm" className="w-full sm:w-auto" onClick={creating ? closeEditor : openCreate}>{creating ? <X className="mr-1 h-4 w-4" /> : <Plus className="mr-1 h-4 w-4" />}{creating ? t("manager.close") : t("manager.new")}</Button>
@@ -336,6 +363,7 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
           {subjectType === "all" && <QuotaToggle checked={ignoreEmperor} onChange={setIgnoreEmperor} label={t("ignoreEmperor")} help={t("ignoreEmperorHelp")} />}
           {subjectType === "role" && <QuotaToggle checked={shareWithinRole} onChange={setShareWithinRole} label={t("shareWithinRole")} help={t("shareWithinRoleHelp")} />}
           <p className={`min-w-0 text-xs leading-relaxed [overflow-wrap:anywhere] ${duplicate || maximumReached ? "text-destructive" : "text-muted-foreground"}`}>{maximumReached ? t("manager.maximum") : duplicate ? t("duplicate") : t("ruleHelp")}</p>
+          <MailQuotaCompatibility relations={draftRelations} unlimitedOverride={rolling.limit < 0 && draftRelations.overrides > 0} />
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" size="sm" onClick={closeEditor}>{t("manager.cancel")}</Button><Button type="button" size="sm" disabled={!valid || duplicate || maximumReached} onClick={addRule}><Plus className="mr-1 h-4 w-4" />{t("add")}</Button></div>
         </> : editingRule && <>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted/50 p-2.5 text-sm"><span className="min-w-0 font-medium [overflow-wrap:anywhere]">{subjectLabel(editingRule.subject)}</span><ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 break-all font-mono text-xs">{targetLabel(editingRule.target)}</span></div>
@@ -343,17 +371,19 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserRes
           {editingRule.subject.type === "all" && <QuotaToggle checked={editingRule.ignoreEmperor} onChange={value => setEditingRule(current => current ? { ...current, ignoreEmperor: value } : null)} label={t("ignoreEmperor")} help={t("ignoreEmperorHelp")} />}
           {editingRule.subject.type === "role" && <QuotaToggle checked={editingRule.shareWithinRole} onChange={value => setEditingRule(current => current ? { ...current, shareWithinRole: value } : null)} label={t("shareWithinRole")} help={t("shareWithinRoleHelp")} />}
           <p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("manager.identityLocked")}</p>
+          {editingRelations && <MailQuotaCompatibility relations={editingRelations} unlimitedOverride={editingRule.rolling.limit < 0 && editingRelations.overrides > 0} />}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" size="sm" onClick={closeEditor}>{t("manager.cancel")}</Button><Button type="button" size="sm" disabled={!editingValid} onClick={applyEdit}>{t("manager.apply")}</Button></div>
         </>}
       </div>}
 
       <div className="min-w-0 space-y-3 rounded-md border bg-muted/[0.15] p-3">
-        <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(12rem,1fr)_minmax(9rem,.45fr)_minmax(9rem,.45fr)]">
-          <div className="relative min-w-0"><Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" /><Input className="h-8 min-w-0 pl-8" value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder={t("manager.search")} aria-label={t("manager.search")} /></div>
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1fr)_minmax(9rem,.42fr)_minmax(9rem,.42fr)_minmax(9rem,.42fr)]">
+          <div className="relative min-w-0 sm:col-span-2 xl:col-span-1"><Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" /><Input className="h-8 min-w-0 px-8" value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder={t("manager.search")} aria-label={t("manager.search")} />{query && <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-8 w-8" onClick={() => { setQuery(""); setPage(1) }} aria-label={t("manager.clearSearch")} title={t("manager.clearSearch")}><X className="h-3.5 w-3.5" /></Button>}</div>
           <Select value={subjectFilter} onValueChange={value => { setSubjectFilter(value as typeof subjectFilter); setPage(1) }}><SelectTrigger className={compactSelectTrigger} aria-label={t("manager.subjectFilter")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="any">{t("manager.allSubjects")}</SelectItem><SelectItem value="all">{t("subjects.all")}</SelectItem><SelectItem value="role">{t("subjects.role")}</SelectItem><SelectItem value="user">{t("subjects.user")}</SelectItem></SelectContent></Select>
           <Select value={targetFilter} onValueChange={value => { setTargetFilter(value as typeof targetFilter); setPage(1) }}><SelectTrigger className={compactSelectTrigger} aria-label={t("manager.targetFilter")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="any">{t("manager.allTargets")}</SelectItem><SelectItem value="all">{t("targets.all")}</SelectItem><SelectItem value="domain">{t("targets.domain")}</SelectItem><SelectItem value="mailbox">{t("targets.mailbox")}</SelectItem></SelectContent></Select>
+          <Select value={quotaFilter} onValueChange={value => { setQuotaFilter(value as typeof quotaFilter); setPage(1) }}><SelectTrigger className={compactSelectTrigger} aria-label={t("manager.quotaFilter")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="any">{t("manager.allQuotaModes")}</SelectItem><SelectItem value="unlimited">{t("manager.modes.unlimited")}</SelectItem><SelectItem value="blocked">{t("manager.modes.blocked")}</SelectItem><SelectItem value="custom">{t("manager.modes.custom")}</SelectItem></SelectContent></Select>
         </div>
-        <p className="text-xs text-muted-foreground">{t("manager.count", { visible: filteredRules.length, total: directionRules.length })}</p>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite" aria-busy={searchPending}>{searchPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{t("manager.count", { visible: filteredRules.length, total: directionRules.length })}</p>
       </div>
 
       {directionRules.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-sm leading-relaxed text-muted-foreground sm:p-8">{t("empty")}</div> : filteredRules.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-sm leading-relaxed text-muted-foreground sm:p-8">{t("manager.noResults")}</div> : <>

@@ -129,6 +129,7 @@ jobs:
           pnpm validate:email-worker
           pnpm validate:mail-policies
           pnpm validate:send-quota
+          pnpm validate:quota-rule-relations
           pnpm validate:policy-migrations
           pnpm validate:imap-inbound
           pnpm validate:mailu

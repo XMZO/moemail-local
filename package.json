@@ -1,6 +1,6 @@
 {
   "name": "moemail",
-  "version": "0.19.8",
+  "version": "0.19.9",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -55,6 +55,7 @@
     "validate:email-worker": "tsx scripts/validation/email-worker.ts",
     "validate:mail-policies": "tsx scripts/validation/mail-policies.ts",
     "validate:send-quota": "tsx scripts/validation/send-quota.ts",
+    "validate:quota-rule-relations": "tsx scripts/validation/quota-rule-relations.ts",
     "validate:policy-migrations": "tsx scripts/validation/policy-migrations.ts",
     "validate:imap-inbound": "tsx scripts/validation/imap-inbound.ts",
     "validate:mailu": "tsx scripts/validation/mailu-integration.ts",
