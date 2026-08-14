@@ -42,6 +42,12 @@
     "searchPlaceholder": "Search by username or email",
     "selectUser": "Select a user",
     "selectUserHint": "Select a user to configure overrides",
+    "userPicker": {
+      "search": "Search name, username, or email as you type",
+      "select": "Select a user",
+      "empty": "No matching users",
+      "error": "User search failed. Try again."
+    },
     "emperorLocked": "Emperor permissions cannot be edited",
     "emperorLockedHint": "This invariant is enforced in both the application and API; even the emperor cannot override it.",
     "emperorQuotaEditableHint": "Emperor feature access, resource limits, and domain access are locked. Explicit emperor quota rules remain possible. A site-wide rule includes emperors unless its Ignore Emperor usage option is enabled.",
@@ -88,10 +94,12 @@
       "delete_email": "Delete mailboxes and messages",
       "receive_email": "Receive messages",
       "send_email": "Send messages",
+      "private_recipient_delivery": "Hide recipients with separate delivery",
       "share_email": "Create share links",
       "manage_webhook": "Manage webhooks",
       "promote_user": "Manage user roles",
       "manage_config": "Manage site and domain settings",
+      "manage_mailu": "Manage Mailu integration and credentials",
       "manage_api_key": "Manage API keys"
     },
     "quotas": {

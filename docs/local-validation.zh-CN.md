@@ -1,6 +1,6 @@
 # 本地化改造验证记录
 
-验证日期：2026-08-13。SQLite/Next.js 主开发验证环境为 Windows、Node.js 24.14.0、pnpm 11.21.0、better-sqlite3 12.4.1（SQLite 3.50.4）；PostgreSQL 使用独立临时 PostgreSQL 18 集群。另在 Debian 13 x86_64 VPS、Docker 29.7.2、Compose 5.4.0 上完成 SQLite 镜像实机部署。生产部署仍应在自己的目标机重做恢复演练。
+验证日期：2026-08-14。SQLite/Next.js 主开发验证环境为 Windows、Node.js 24.14.0、pnpm 11.21.0、better-sqlite3 12.4.1（SQLite 3.50.4）；PostgreSQL 使用独立临时 PostgreSQL 18 集群。另在 Debian 13 x86_64 VPS、Docker 29.7.2、Compose 5.4.0 上完成 SQLite 镜像实机部署。生产部署仍应在自己的目标机重做恢复演练。
 
 ## 构建与静态检查
 
@@ -16,12 +16,13 @@
 - `pnpm validate:maintenance-bundle` 通过：构建约 1.3 MiB 的维护 dispatcher/config reader，并只携带 SQLite native binding 等必要运行文件；真实完成 SQLite setup 后由 bundle 执行 self-check、完整 schema verify、原子 DB+LKG 配对备份和 cleanup。工具镜像不再继承 Web 文件，也不需要 Next、pnpm、tsx、TypeScript 或完整应用源码。
 - `v0.16.6` 的 [Publish Docker Images](https://github.com/XMZO/moemail-local/actions/runs/31595636029) 在原生 amd64/arm64 runner 上全部通过。Web smoke 实际启动 standalone server、health、首次向导、静态文件、WOFF2 字体和 Sharp 图片优化；维护 smoke 实际加载 Linux `better-sqlite3` native binding 与 rclone。amd64 Web 压缩层由 `v0.16.5` 的 290.54 MiB 降至 106.65 MiB（-63.3%），arm64 由 285.94 MiB 降至 107.17 MiB（-62.5%）；未压缩分别为 316.90/335.72 MiB，冷启动为 2/1 秒。按需维护镜像压缩后为 95.79/94.19 MiB，未压缩为 275.92/293.07 MiB。四种 `latest`/`latest-tools` 均与本次 version tag 的 OCI index digest 一致并包含 linux/amd64、linux/arm64。
 - `pnpm validate:email-worker` 通过：直连 Email Worker 使用 Cloudflare Workers 支持的 `redirect: "manual"`，并对模拟 302 保持 fail-closed，不会把投递 Secret 或原始邮件跟随到其他 Origin。
-- `pnpm validate:mail-policies` 通过：每个域可独立选择 Worker/IMAP/关闭收件和 Resend/SMTP/关闭发件，Resend 请求与真实 TCP SMTP `verify`/AUTH/发件使用各域自己的凭据；旧 SMTP 配置默认迁移为自动协商，另一个真实 TCP SMTP 会话验证强制 `AUTH LOGIN` 的用户名/密码挑战流程；角色与单用户覆盖的权限、邮箱数量、有效期、每日收发和消息大小额度按预期合并，皇帝策略固定为全权限且不限额。
-- `pnpm validate:send-quota` 通过：四种角色与单用户可分别配置收件/发件总量、单域名、每邮箱滚动窗口与每邮箱生命周期上限（秒、分、时、日、周、30 天月）；验证 `-1` 不限、`0` 禁止、总量与域名上限交集、角色共享/按用户统计、并发原子预留、失败释放、崩溃租约回收、删除重建邮箱不能规避生命周期额度、管理员精确重置，以及用户删除后审计历史保留。
+- `pnpm validate:mail-policies` 通过：每个域可独立选择 Worker/IMAP/关闭收件和 Resend/SMTP/关闭发件，Resend 请求与真实 TCP SMTP `verify`/AUTH/发件使用各域自己的凭据；公开群发保持单封多地址，获授权的隐藏收件人模式会通过 Resend batch 或 SMTP 独立投递生成每封仅一个 `To` 的邮件。旧客户端省略开关时默认公开，旧权限策略自动迁移；角色和单用户都可独立拒绝该权限，API 同步强制。旧 SMTP 配置默认迁移为自动协商，另一个真实 TCP SMTP 会话验证强制 `AUTH LOGIN` 的用户名/密码挑战流程；角色与单用户覆盖的权限、邮箱数量、有效期、收发额度和消息大小额度按预期合并，皇帝策略固定为全权限且不限额。
+- `pnpm validate:send-quota` 通过：四种角色与单用户可分别配置收件/发件总量、单域名、每邮箱滚动窗口与每邮箱生命周期上限（秒、分、时、日、周、30 天月）；验证 `-1` 不限、`0` 禁止、总量与域名上限交集、角色共享/按用户统计、并发原子预留、未越过外部传输边界时的安全释放、崩溃租约回收、删除重建邮箱不能规避生命周期额度、管理员精确重置，以及用户删除后审计历史保留。发件在调用外部提供商前提交额度；超时、断线或私密批次部分成功等无法证明“完全未投递”的结果会保留全部收件人计数，避免通过重试绕过额度，管理员调查后可精确重置。
 - `pnpm validate:policy-migrations` 通过：从上一版仅发件额度的 SQLite schema 实际迁移到双向邮件额度和邮箱名封禁结构，旧审计事件完整保留并回填为 `send`，新增约束、索引、外键及 Drizzle journal 全部通过完整性检查。
 - `pnpm validate:imap-inbound` 通过：在隔离 SQLite 数据库和随机 TCP 端口上完成真实 IMAP 登录、只读 mailbox、UID SEARCH/FETCH 对话；`X-Original-To` 正确映射到本地邮箱，伪造的 MIME `To` 不会旁路投递，原始 RFC822 入库，持久 UID 游标和 UIDVALIDITY 重置重扫都保持幂等，且客户端从未发送 STORE/MOVE/COPY/EXPUNGE。同一验证器也在临时 PostgreSQL 18 数据库、`poolMax=1` 下通过，短事务租约不会长期占住唯一连接。
+- `pnpm validate:mailu` 通过：验证器以本轮核对的 Mailu 源码快照 `a125b0cf8620941244563cc93c491ca0524af649` 的 v1 `domain`/`user`/`alias` 契约启动隔离 Mailu API、IMAP 与 SMTP mock，并在真实 SQLite setup 上完成服务账号及精确/catch-all 别名协调、仅收信域与可发信域隔离、禁用受管别名重建、独立密码轮换、`Delivered-To` 信封路由、未知收件人留存、同一原始邮件去重、数据库提交后延迟删除、私密多收件人逐封 SMTP 投递和发件人防伪。collector 强制 `allow_spoofing=false`；通配别名目标账号强制禁止登录；无 MoeMail 发件权限的有效邮箱只能指向禁用登录账号，过期邮箱的 collector 授权即使关闭普通 stale cleanup 也会撤销。缺少 `UIDPLUS`/安全 `MOVE` 时保留邮件并拒绝普通 `EXPUNGE`。外部同名对象不会被覆盖，API 令牌/服务密码不会进入错误响应。
 - `pnpm validate:runtime-fields` 通过：视觉运行配置编辑器的 metadata 与当前 strict schema 的全部叶字段一一对应，无缺项或幽灵字段；视觉/YAML 切换会同步草稿，字段可单独恢复默认值。
-- `pnpm validate:i18n` 通过：`en`、`zh-CN`、`zh-TW`、`ja`、`ko` 的 11 个独立消息模块叶子键完全一致；59 个运行配置字段均有五语标签和说明，首次向导有五套完整词典。自动门禁扫描 89 个 UI/Hook 文件、39 个 API 路由与 52 个核心后端文件：禁止写死中日韩文案、英文 JSX/无障碍属性、自然语言 API 错误/日志、直接回显 `Error.message`，并禁止在翻译调用外拼接固定标点、列表分隔符或自然语言片段；API 只返回已注册机器码，客户端从五语 `api.json` 翻译。角色名只在 `profile.card.roles` 词典中维护，验证代码不再复制任何语言的译文；语言导航保留路径、查询参数、锚点和管理面板 `tab` 状态，Auth.js 登录与错误兜底页同样由五语词典渲染。
+- `pnpm validate:i18n` 通过：`en`、`zh-CN`、`zh-TW`、`ja`、`ko` 的 11 个独立消息模块叶子键完全一致；59 个运行配置字段均有五语标签和说明，首次向导有五套完整词典。自动门禁扫描 91 个 UI/Hook 文件、41 个 API 路由与 58 个核心后端文件：禁止写死中日韩文案、英文 JSX/无障碍属性、自然语言 API 错误/日志、直接回显 `Error.message`，并禁止在翻译调用外拼接固定标点、列表分隔符或自然语言片段；API 只返回已注册机器码，客户端从五语 `api.json` 翻译。角色名只在 `profile.card.roles` 词典中维护，验证代码不再复制任何语言的译文；语言导航保留路径、查询参数、锚点和管理面板 `tab` 状态，Auth.js 登录与错误兜底页同样由五语词典渲染。
 - `pnpm validate:runtime-config` 通过：损坏 YAML、未知字段、不可打开或没有站主的 SQLite 目标均被拒绝且旧值继续生效；有效直接文件修改由约 1 秒 watcher 自动应用。进程内 revision 竞争、外部文件 fingerprint 失效，以及两个真实 Node 进程同时持同一 fingerprint 保存都恰好一个成功；跨进程保存锁在退出后无残留。
 - `pnpm validate:runtime-config:cold` 通过：首份配置、主文件与 LKG 相同、以及仅剩 LKG 三种路径都必须重新验证数据库中恰有一个站主后才开放完成态；不可读目标、空库与无站主 LKG 均被拒绝且不会创建目标文件。坏 PostgreSQL 主配置回退 SQLite LKG 时，实际绑定 driver 与维护 CLI 也只使用已验证的 SQLite 配置。坏配置仍允许 Web 恢复入口启动。
 - `pnpm validate:setup` 通过：首次 SQLite setup、已暂存 pepper 的同账号续跑、不同既有站主 409、两个真实 Node 进程争用同一 setup operation lock，以及坏 YAML/非对象 payload 拒绝均通过；另覆盖进程 A 完成后进程 B 持旧内存 token 的顺序竞争，B 在取锁后重新加载并以 409 拒绝。该测试构造等价的 staged 状态，不冒充进程崩溃注入测试。
@@ -96,7 +97,7 @@
 - 较早的真实 production HTTP 曾将注册/登录客户端上限临时设为 2，注册依次返回 `201/409/429`，Credentials callback 依次返回 `302/302/429`；两种 429 都带 `Retry-After` 和 `AUTH_RATE_LIMITED`。当前 `pnpm validate:auth-abuse` 已按配置对象覆盖进程全局上限、有界客户端 Map、代理头 opt-in、忽略 `X-User-Id` 与 scrypt 并发快速失败。
 - Webhook 保存前和发送时均执行 SSRF 校验；loopback、private、link-local、metadata、localhost 与 IPv4-mapped IPv6 被拒绝，发送时使用已验证 IP 且不跟随重定向。
 
-可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:maintenance-bundle`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:send-quota`、`pnpm validate:policy-migrations`、`pnpm validate:imap-inbound`、`pnpm validate:runtime-fields`、`pnpm validate:i18n`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
+可复跑入口：`pnpm validate:no-local-env`、`pnpm validate:deployment`、`pnpm validate:maintenance-bundle`、`pnpm validate:email-worker`、`pnpm validate:mail-policies`、`pnpm validate:send-quota`、`pnpm validate:policy-migrations`、`pnpm validate:imap-inbound`、`pnpm validate:mailu`、`pnpm validate:runtime-fields`、`pnpm validate:i18n`、`pnpm validate:runtime-config`、`pnpm validate:runtime-config:cold`、`pnpm validate:setup`、`pnpm validate:setup:http`、`pnpm validate:setup:http:redaction`、`pnpm validate:setup:http:postgres`、`pnpm validate:scheduler`、`pnpm validate:rclone-config`、`pnpm validate:restore`、`pnpm validate:password`、`pnpm validate:auth-abuse`。`pnpm validate:http`、`pnpm validate:ingest` 与 `pnpm load:polling` 是面向已启动部署的外部探针，分别需要目标 URL，以及显式的测试收件人/投递 secret 或负载测试凭据，不能当作无参数的自包含门禁运行。
 
 ## SQLite 轮询基线
 
@@ -129,6 +130,7 @@
 - GitHub/Google OAuth 完整回调、代理 Host 与 HTTPS Secure Cookie。
 - Cloudflare Email Routing 的真实 MX 入信，以及 durable 模式离线/恢复演练。
 - 外部 IMAP 服务商的 catch-all、原始收件人 Header、TLS/应用专用密码、UIDVALIDITY 重置、限流及停机恢复行为；自包含测试只覆盖标准 IMAP 协议和入库语义。
+- 真实 Mailu 实例的 REST API、默认 Sieve `Delivered-To`、Dovecot UIDPLUS/MOVE、Postfix sender-login、TLS、反垃圾、真实 SMTP 出站及删除/归档保留策略；当前自包含测试严格模拟了已核对的源码契约，但不把 mock 冒充目标 Mailu 部署验收。
 - 每域 Resend 与外部 SMTP 的真实发件、TLS、额度、退信和提供商限流行为。
 - Turnstile 真实 token 校验。
 - Caddy/Nginx 真实证书、代理头与日志权限。

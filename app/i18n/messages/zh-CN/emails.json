@@ -75,6 +75,11 @@
     "to": "收件人",
     "toPlaceholder": "多个收件人用逗号或分号分隔",
     "toHelp": "已识别 {count} 个不同收件人（最多 {maximum} 个）；重复地址会合并，每个收件人分别占用 1 封发件额度。",
+    "privateRecipients": {
+      "label": "隐藏其他收件人",
+      "help": "为每位收件人独立发送一封邮件，彼此看不到其他地址；额度计算不变。",
+      "permissionRequired": "你的角色没有独立投递权限，收件人仍会看到彼此的地址。"
+    },
     "subject": "主题",
     "subjectPlaceholder": "邮件主题",
     "content": "内容",

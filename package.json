@@ -1,6 +1,6 @@
 {
   "name": "moemail",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -56,6 +56,7 @@
     "validate:send-quota": "tsx scripts/validation/send-quota.ts",
     "validate:policy-migrations": "tsx scripts/validation/policy-migrations.ts",
     "validate:imap-inbound": "tsx scripts/validation/imap-inbound.ts",
+    "validate:mailu": "tsx scripts/validation/mailu-integration.ts",
     "load:polling": "tsx scripts/validation/load-polling.ts",
     "webhook-test-server": "bun run scripts/webhook-test-server.ts",
     "deploy:email": "wrangler deploy --config wrangler.email.json",

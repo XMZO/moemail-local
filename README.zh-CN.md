@@ -12,7 +12,7 @@
   <span>简体中文</span>
 </p>
 
-本仓库是 [beilunyang/moemail](https://github.com/beilunyang/moemail) 的本地化分支。Web/API、运行配置、数据库、邮件策略、周期维护和备份都运行在自己的 Linux 主机上。每个邮箱域名可以独立选择 Cloudflare Email Worker 或外部邮局 IMAP 收件，也可以独立选择 Resend、外部 SMTP 或关闭发件。
+本仓库是 [beilunyang/moemail](https://github.com/beilunyang/moemail) 的本地化分支。Web/API、运行配置、数据库、邮件策略、周期维护和备份都运行在自己的 Linux 主机上。每个邮箱域名可以独立选择 Cloudflare Email Worker、Mailu 或外部邮局 IMAP 收件，也可以独立选择 Mailu、Resend、外部 SMTP 或关闭发件。
 
 ## 功能
 
@@ -20,8 +20,8 @@
 - GHCR 同时发布 Linux `amd64` 与 `arm64` 镜像，由相同架构的 GitHub Runner 原生构建，不使用 QEMU 模拟。
 - 浏览器首次初始化，创建唯一的皇帝管理员账号。
 - YAML 运行配置提供完整视觉编辑器与原始 YAML 模式，支持逐项恢复默认、校验、热加载与最后一次有效配置（LKG）恢复。
-- 按域独立配置 Worker/IMAP 收件与 Resend/SMTP 发件；邮局账号、Resend Key 和 SMTP 凭据不会跨域共用。
-- 按角色和单用户配置查看、收发、创建、删除、分享、管理权限，以及邮箱数、有效期、每日收发量和邮件大小额度；皇帝权限固定全开且不可覆盖。
+- 按域独立配置 Worker/Mailu/IMAP 收件与 Mailu/Resend/SMTP 发件；普通邮局账号、Resend Key 和 SMTP 凭据不会跨域共用，可选 Mailu 集成则有意让所选域共用一个受管 collector。
+- 按角色和单用户配置查看、收发、创建、删除、分享、隐藏多收件人等权限，以及邮箱数、有效期、收发封数和邮件大小额度；皇帝权限固定全开且不可覆盖。
 - 临时邮箱、有效期与清理、API Key、Webhook、分享、可选 OAuth、Turnstile 和全站字体设置。
 - 周期清理、数据库备份、监控与 rclone 异地备份。
 - 提供 CLI 与 MCP 客户端，便于自动化及 AI Agent 使用。
@@ -190,7 +190,7 @@ mail.example.com {
 Worker 必须使用首次向导生成的同一个 `email.ingestSecret`。建议先部署直连模式；可以在安装了 Git、Node.js 22 和 Corepack 的电脑上完成，不必在 MoeMail 服务器上执行。只下载 Compose 的部署目录不含 Worker 源码，以下命令会取得完整的对应版本源码：
 
 ```bash
-git clone --branch v0.18.0 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.0 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -223,7 +223,24 @@ pnpm exec wrangler tail --config wrangler.email.json
 
 直连模式要求 `EMAIL_INGEST_URL` 是完整的公网 HTTPS `/api/internal/email` 地址，不能使用 `localhost` 或 Compose service 名；本地离线时不保证耐久重试。需要 R2 + Queue 缓冲时，改用[本地部署指南中的耐久模式](docs/local-deployment.zh-CN.md#62-r2--queue-耐久模式)。
 
-### 方式 B：外部邮局 IMAP
+### 方式 B：由 Mailu 管理收信与发信
+
+MoeMail 可以在不修改 Mailu 的前提下协调已有 Mailu。先在 Mailu 启用 REST API（`API=true`），通过 HTTPS 暴露所配置的 `WEB_API` 路径，并设置强随机 `API_TOKEN`。然后在 **个人中心 → 域名收发 → Mailu 集成** 填入完整 v1 基础地址（通常为 `https://mail.example.com/api/v1`）、API Token、IMAP/SMTP 端点，以及两个不同的服务账号地址和强随机密码。服务账号所在域及准备交给 Mailu 的每个域都必须已经在 Mailu 中创建。
+
+先用“发现域名”审阅 Mailu 域名，再明确添加所需域到 MoeMail 草稿，为其选择 Mailu 收件和/或发件，保存后点击“立即协调”。MoeMail 只创建带本集成所有权标记的对象：
+
+- 一个启用 IMAP 且 `allow_spoofing=false` 的 collector；
+- 一个禁止登录、不能进行 SMTP 鉴权、只负责转发的 catch-all 账号；
+- 每个有效收件地址及当前获准发件的地址各一个精确别名：只有邮箱所属用户同时拥有 MoeMail 发件权限和该域发件权时才指向 collector；仅收件或被撤销发件权的地址指向禁用登录的转发账号；
+- 可选的 `%@domain` catch-all 别名，目标是上述转发账号。
+
+收件只信任 Mailu Sieve 写入的 `Delivered-To` 真实 SMTP envelope 收件人，绝不使用 MIME `To`/`Cc` 路由。发件同时要求调用者拥有有效 MoeMail 邮箱，并且 Mailu 中存在对应的精确受管别名；catch-all 不会授权任意 From。密码只能通过专用随机轮换按钮更新。默认在 MoeMail 持久化成功 24 小时后删除上游邮件，也可选择保留、归档或更短延迟；只有已经提交或确认重复的邮件才进入删除/移动队列，且缺少安全的 UID 范围能力时会停止而不是普通 `EXPUNGE`。被拒绝或未知收件人的邮件留在 Mailu。
+
+关闭集成会立即暂停 IMAP 轮询、SMTP 使用和自动协调，但不会擅自删除 Mailu 远端对象。若希望清理 MoeMail 所有的别名，应先把相关域切换到其他收发方式，再执行最后一次协调。Mailu 的 SMTP sender-login 授权与收件路由共用精确别名，因此只启用 Mailu 发件的域，外部来信仍可能进入 collector；建议同时启用 Mailu 收件，或单独监控和清理 collector。MoeMail 支持的生产拓扑是单 Web 实例；IMAP collector 另有数据库租约，防止轮询任务重叠。
+
+Mailu 是独立邮件服务器，MX、TLS、DKIM/SPF/DMARC、反垃圾、存储和备份仍按 Mailu 文档部署。尽量只允许 MoeMail 主机或私网访问 Mailu API。API Token 和服务账号密码保存在 MoeMail 所选数据库中，因此也会进入数据库备份。
+
+### 方式 C：外部邮局 IMAP
 
 先在域名的 DNS/MX 和邮局控制台启用 catch-all（全域收件）或等价的别名转发，让该域所有地址进入一个外部邮箱。邮局必须在 `X-Original-To`、`Envelope-To`、`Delivered-To` 等投递追踪 Header 中保留并清洗原始收件地址；应用刻意不接受发件人可控的 MIME `To`。普通只接收固定地址或抹掉 envelope 信息的邮箱无法还原 MoeMail 临时地址。
 
@@ -237,7 +254,9 @@ docker compose logs -f moemail
 
 ## 出站发件
 
-每个域名在 **个人中心 → 域名收发** 中独立选择 **Resend**、**外部 SMTP** 或**关闭发件**。Resend 使用该域自己的 API Key；外部 SMTP 填写邮局主机、端口、TLS/STARTTLS、用户名与密码或应用专用密码、可选发件人名称，并可选择“自动协商 / 强制 PLAIN / 强制 LOGIN”。大多数邮局保持“自动协商”；Microsoft/Outlook 或其他邮局仍允许密码式 SMTP AUTH、但自动协商失败时再选择 `LOGIN`。如果 Microsoft 365 租户只允许 OAuth，切换 `LOGIN` 并不能绕过该限制，需要改用支持 OAuth 的中继/发件服务。点击“测试 SMTP 连接”只验证连接与鉴权，不会发送邮件。实际 From 仍是所选 MoeMail 地址，因此外部服务商必须允许该域/地址发信。
+每个域名在 **个人中心 → 域名收发** 中独立选择 **Mailu 集成**、**Resend**、**外部 SMTP** 或**关闭发件**。Resend 使用该域自己的 API Key；外部 SMTP 填写邮局主机、端口、TLS/STARTTLS、用户名与密码或应用专用密码、可选发件人名称，并可选择“自动协商 / 强制 PLAIN / 强制 LOGIN”。大多数邮局保持“自动协商”；Microsoft/Outlook 或其他邮局仍允许密码式 SMTP AUTH、但自动协商失败时再选择 `LOGIN`。如果 Microsoft 365 租户只允许 OAuth，切换 `LOGIN` 并不能绕过该限制，需要改用支持 OAuth 的中继/发件服务。点击“测试 SMTP 连接”只验证连接与鉴权，不会发送邮件。实际 From 仍是所选 MoeMail 地址，因此外部服务商必须允许该域/地址发信。
+
+普通多收件人投递会把全部地址写在同一封邮件的 `To` 中，因此收件人彼此可见。拥有“隐藏收件人并独立投递”权限的用户可在发信界面打开开关；API 调用方也可传入 `privateRecipients: true`。此时 MoeMail 会按去重后的每个收件人分别提交一封邮件，Header 中不会出现其他收件人；两种模式都按去重后的收件人数计算额度。
 
 IMAP、SMTP 与 Resend 凭据保存在所选数据库中，也会进入数据库备份；应把备份按密钥材料保护。发件额度、DKIM/SPF/DMARC、退信与滥用控制仍由外部服务商负责。
 
@@ -309,7 +328,7 @@ docker compose --profile offsite up -d offsite-backup
 ## 开发与验证
 
 ```bash
-git clone --branch v0.18.0 --depth 1 https://github.com/XMZO/moemail-local.git
+git clone --branch v0.19.0 --depth 1 https://github.com/XMZO/moemail-local.git
 cd moemail-local
 corepack enable
 pnpm install --frozen-lockfile
@@ -323,6 +342,7 @@ pnpm validate:mail-policies
 pnpm validate:send-quota
 pnpm validate:policy-migrations
 pnpm validate:imap-inbound
+pnpm validate:mailu
 pnpm validate:runtime-fields
 pnpm validate:i18n
 ```

@@ -136,7 +136,29 @@ const permissionShape = Object.fromEntries(
   Object.values(PERMISSIONS).map(permission => [permission, z.boolean()]),
 ) as Record<Permission, z.ZodBoolean>
 
+type LegacyPermission = Exclude<
+  Permission,
+  typeof PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY | typeof PERMISSIONS.MANAGE_MAILU
+>
+const legacyPermissionValues = Object.values(PERMISSIONS).filter(
+  (permission): permission is LegacyPermission => (
+    permission !== PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY
+    && permission !== PERMISSIONS.MANAGE_MAILU
+  ),
+)
+const legacyPermissionShape = Object.fromEntries(
+  legacyPermissionValues.map(permission => [permission, z.boolean()]),
+) as Record<LegacyPermission, z.ZodBoolean>
+
+function legacyPermissions(permissions: Partial<PermissionMap>) {
+  return Object.fromEntries(legacyPermissionValues.map(permission => [
+    permission,
+    permissions[permission] ?? false,
+  ])) as Record<LegacyPermission, boolean>
+}
+
 const permissionOverridesSchema = z.object(permissionShape).partial().strict()
+const legacyPermissionOverridesSchema = z.object(legacyPermissionShape).partial().strict()
 
 const quotaShape = {
   maxActiveMailboxes: z.number().int().min(0).max(100_000),
@@ -265,21 +287,21 @@ const version3MailQuotaOverrideSchema = z.object({
 }).strict()
 
 const legacyCompleteRolePolicySchema = z.object({
-  permissions: z.object(permissionShape).strict(),
+  permissions: z.object(legacyPermissionShape).strict(),
   quotas: z.object(legacyQuotaShape).strict(),
 }).strict()
 const version2CompleteRolePolicySchema = legacyCompleteRolePolicySchema.extend({
   allowedDomains: allowedDomainsSchema,
 }).strict()
 const version3CompleteRolePolicySchema = z.object({
-  permissions: z.object(permissionShape).strict(),
+  permissions: z.object(legacyPermissionShape).strict(),
   quotas: z.object(version3QuotaShape).strict(),
   allowedDomains: allowedDomainsSchema,
   sendQuota: version3MailQuotaPolicySchema,
 }).strict()
 
 const completeRolePolicySchema = z.object({
-  permissions: z.object(permissionShape).strict(),
+  permissions: z.object(legacyPermissionShape).strict(),
   quotas: z.object(quotaShape).strict(),
   domainAccess: domainAccessPolicySchema,
   sendQuota: mailQuotaPolicySchema,
@@ -287,20 +309,20 @@ const completeRolePolicySchema = z.object({
 }).strict()
 
 const legacyUserOverrideSchema = z.object({
-  permissions: permissionOverridesSchema.default({}),
+  permissions: legacyPermissionOverridesSchema.default({}),
   quotas: legacyQuotaOverridesSchema.default({}),
 }).strict()
 const version2UserOverrideSchema = legacyUserOverrideSchema.extend({
   allowedDomains: allowedDomainsSchema.optional(),
 }).strict()
 const version3UserOverrideSchema = z.object({
-  permissions: permissionOverridesSchema.default({}),
+  permissions: legacyPermissionOverridesSchema.default({}),
   quotas: version3QuotaOverridesSchema.default({}),
   allowedDomains: allowedDomainsSchema.optional(),
   sendQuota: version3MailQuotaOverrideSchema.optional(),
 }).strict()
 const userOverrideSchema = z.object({
-  permissions: permissionOverridesSchema.default({}),
+  permissions: legacyPermissionOverridesSchema.default({}),
   quotas: quotaOverridesSchema.default({}),
   domainAccess: domainAccessOverrideSchema.optional(),
   sendQuota: mailQuotaOverrideSchema.optional(),
@@ -443,8 +465,82 @@ const currentUserOverrideSchema = z.object({
   domainAccess: domainAccessOverrideSchema.optional(),
 }).strict()
 
-const accessPoliciesSchema = z.object({
+const version5AccessPoliciesSchema = z.object({
   version: z.literal(5),
+  roles: z.object({
+    [ROLES.EMPEROR]: z.object({
+      permissions: z.object(legacyPermissionShape).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+    [ROLES.DUKE]: z.object({
+      permissions: z.object(legacyPermissionShape).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+    [ROLES.KNIGHT]: z.object({
+      permissions: z.object(legacyPermissionShape).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+    [ROLES.CIVILIAN]: z.object({
+      permissions: z.object(legacyPermissionShape).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+  }).strict(),
+  users: z.record(userIdSchema, z.object({
+    permissions: legacyPermissionOverridesSchema.default({}),
+    quotas: quotaOverridesSchema.default({}),
+    domainAccess: domainAccessOverrideSchema.optional(),
+  }).strict()),
+  mailQuotaRules: mailQuotaAssignmentsSchema,
+}).strict()
+
+const version6AccessPoliciesSchema = z.object({
+  version: z.literal(6),
+  roles: z.object({
+    [ROLES.EMPEROR]: z.object({
+      permissions: z.object(legacyPermissionShape).extend({
+        [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: z.boolean(),
+      }).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+    [ROLES.DUKE]: z.object({
+      permissions: z.object(legacyPermissionShape).extend({
+        [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: z.boolean(),
+      }).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+    [ROLES.KNIGHT]: z.object({
+      permissions: z.object(legacyPermissionShape).extend({
+        [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: z.boolean(),
+      }).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+    [ROLES.CIVILIAN]: z.object({
+      permissions: z.object(legacyPermissionShape).extend({
+        [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: z.boolean(),
+      }).strict(),
+      quotas: z.object(quotaShape).strict(),
+      domainAccess: domainAccessPolicySchema,
+    }).strict(),
+  }).strict(),
+  users: z.record(userIdSchema, z.object({
+    permissions: z.object(legacyPermissionShape).extend({
+      [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: z.boolean().optional(),
+    }).partial().strict().default({}),
+    quotas: quotaOverridesSchema.default({}),
+    domainAccess: domainAccessOverrideSchema.optional(),
+  }).strict()),
+  mailQuotaRules: mailQuotaAssignmentsSchema,
+}).strict()
+
+const accessPoliciesSchema = z.object({
+  version: z.literal(7),
   roles: z.object({
     [ROLES.EMPEROR]: rolePolicySchema,
     [ROLES.DUKE]: rolePolicySchema,
@@ -604,7 +700,9 @@ function roleDefaults(maxActiveMailboxes: number, sendLimits: { duke: number; kn
     [ROLES.DUKE]: rolePolicy(
       enabledPermissions(
         ...commonMailPermissions,
-        ...(sendLimits.duke >= 0 ? [PERMISSIONS.SEND_EMAIL] : []),
+        ...(sendLimits.duke >= 0
+          ? [PERMISSIONS.SEND_EMAIL, PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]
+          : []),
         PERMISSIONS.MANAGE_WEBHOOK,
         PERMISSIONS.MANAGE_API_KEY,
       ),
@@ -613,7 +711,9 @@ function roleDefaults(maxActiveMailboxes: number, sendLimits: { duke: number; kn
     [ROLES.KNIGHT]: rolePolicy(
       enabledPermissions(
         ...commonMailPermissions,
-        ...(sendLimits.knight >= 0 ? [PERMISSIONS.SEND_EMAIL] : []),
+        ...(sendLimits.knight >= 0
+          ? [PERMISSIONS.SEND_EMAIL, PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]
+          : []),
         PERMISSIONS.MANAGE_WEBHOOK,
       ),
       generalQuotas(),
@@ -628,7 +728,7 @@ function roleDefaults(maxActiveMailboxes: number, sendLimits: { duke: number; kn
 export function createDefaultAccessPolicies(): AccessPolicies {
   const roles = roleDefaults(30, { duke: 5, knight: 2 })
   return {
-    version: 5,
+    version: 7,
     roles,
     users: {},
     mailQuotaRules: [
@@ -716,7 +816,10 @@ function migrateVersion3User(user: z.infer<typeof version3UserOverrideSchema>): 
 
 function stripLegacyRole(role: z.infer<typeof completeRolePolicySchema>) {
   return {
-    permissions: role.permissions,
+    permissions: {
+      ...role.permissions,
+      [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: role.permissions[PERMISSIONS.SEND_EMAIL],
+    },
     quotas: role.quotas,
     domainAccess: role.domainAccess,
   }
@@ -724,7 +827,12 @@ function stripLegacyRole(role: z.infer<typeof completeRolePolicySchema>) {
 
 function stripLegacyUser(user: z.infer<typeof userOverrideSchema>): UserAccessOverride {
   return {
-    permissions: user.permissions,
+    permissions: {
+      ...user.permissions,
+      ...(user.permissions[PERMISSIONS.SEND_EMAIL] === true
+        ? { [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: true }
+        : {}),
+    },
     quotas: user.quotas,
     ...(user.domainAccess ? { domainAccess: user.domainAccess } : {}),
   }
@@ -779,8 +887,14 @@ function migrateVersion4(input: z.infer<typeof version4AccessPoliciesSchema>): A
   const deduplicated = new Map<string, MailQuotaAssignment>()
   for (const assignment of [...roleRules, ...userRules]) deduplicated.set(assignmentKey(assignment), assignment)
   return accessPoliciesSchema.parse({
-    version: 5,
-    roles: Object.fromEntries(allRoles.map(role => [role, stripLegacyRole(input.roles[role])])),
+    version: 7,
+    roles: Object.fromEntries(allRoles.map(role => [role, {
+      ...stripLegacyRole(input.roles[role]),
+      permissions: {
+        ...stripLegacyRole(input.roles[role]).permissions,
+        [PERMISSIONS.MANAGE_MAILU]: role === ROLES.EMPEROR,
+      },
+    }])),
     users: Object.fromEntries(Object.entries(input.users).map(([id, user]) => [id, stripLegacyUser(user)])),
     mailQuotaRules: [...deduplicated.values()],
   })
@@ -792,7 +906,8 @@ function parseStoredAccessPolicies(input: unknown): AccessPolicies {
     : undefined
   if (version === 1) {
     const legacy = legacyAccessPoliciesSchema.parse(input)
-    const emperor = createDefaultAccessPolicies().roles[ROLES.EMPEROR]
+    const currentEmperor = createDefaultAccessPolicies().roles[ROLES.EMPEROR]
+    const emperor = { ...currentEmperor, permissions: legacyPermissions(currentEmperor.permissions) }
     return migrateVersion4(version4AccessPoliciesSchema.parse({
       version: 4,
       roles: {
@@ -808,7 +923,8 @@ function parseStoredAccessPolicies(input: unknown): AccessPolicies {
   }
   if (version === 2) {
     const legacy = version2AccessPoliciesSchema.parse(input)
-    const emperor = createDefaultAccessPolicies().roles[ROLES.EMPEROR]
+    const currentEmperor = createDefaultAccessPolicies().roles[ROLES.EMPEROR]
+    const emperor = { ...currentEmperor, permissions: legacyPermissions(currentEmperor.permissions) }
     return migrateVersion4(version4AccessPoliciesSchema.parse({
       version: 4,
       roles: {
@@ -831,6 +947,44 @@ function parseStoredAccessPolicies(input: unknown): AccessPolicies {
     }))
   }
   if (version === 4) return migrateVersion4(version4AccessPoliciesSchema.parse(input))
+  if (version === 5) {
+    const legacy = version5AccessPoliciesSchema.parse(input)
+    return accessPoliciesSchema.parse({
+      ...legacy,
+      version: 7,
+      roles: Object.fromEntries(allRoles.map(role => [role, {
+        ...legacy.roles[role],
+        permissions: {
+          ...legacy.roles[role].permissions,
+          [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: legacy.roles[role].permissions[PERMISSIONS.SEND_EMAIL],
+          [PERMISSIONS.MANAGE_MAILU]: role === ROLES.EMPEROR,
+        },
+      }])),
+      users: Object.fromEntries(Object.entries(legacy.users).map(([id, user]) => [id, {
+        ...user,
+        permissions: {
+          ...user.permissions,
+          ...(user.permissions[PERMISSIONS.SEND_EMAIL] === true
+            ? { [PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]: true }
+            : {}),
+        },
+      }])),
+    })
+  }
+  if (version === 6) {
+    const legacy = version6AccessPoliciesSchema.parse(input)
+    return accessPoliciesSchema.parse({
+      ...legacy,
+      version: 7,
+      roles: Object.fromEntries(allRoles.map(role => [role, {
+        ...legacy.roles[role],
+        permissions: {
+          ...legacy.roles[role].permissions,
+          [PERMISSIONS.MANAGE_MAILU]: role === ROLES.EMPEROR,
+        },
+      }])),
+    })
+  }
   return accessPoliciesSchema.parse(input)
 }
 
@@ -898,7 +1052,7 @@ async function legacyDefaults(): Promise<AccessPolicies> {
     knight: numberLimit("knight", 2),
   }
   return {
-    version: 5,
+    version: 7,
     roles: roleDefaults(safePositiveInteger(values.MAX_EMAILS, 30), sendLimits),
     users: {},
     mailQuotaRules: [

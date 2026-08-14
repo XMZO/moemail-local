@@ -130,6 +130,7 @@ jobs:
           pnpm validate:send-quota
           pnpm validate:policy-migrations
           pnpm validate:imap-inbound
+          pnpm validate:mailu
           pnpm validate:runtime-fields
           pnpm validate:i18n
           pnpm validate:no-local-env

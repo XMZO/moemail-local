@@ -54,6 +54,7 @@ assert.match(userPanelSource, /<SelectTrigger className="h-8 w-full min-w-0 text
 
 const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profile/access-policy-panel.tsx"), "utf8")
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
+const searchableUserSource = readFileSync(join(process.cwd(), "app/components/profile/searchable-user-select.tsx"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
 assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
 assert.match(accessPanelSource, /mailQuotaRules/u)
@@ -65,6 +66,11 @@ assert.match(sendQuotaSource, /min-\[520px\]:grid-cols-\[minmax\(5rem,.7fr\)_min
 assert.match(sendQuotaSource, /grid-cols-\[1\.25rem_minmax\(0,1fr\)\]/u)
 assert.match(sendQuotaSource, /\[overflow-wrap:anywhere\]/u)
 assert.match(sendQuotaSource, /\[&>span\]:truncate/u)
+assert.match(accessPanelSource, /setUsageRevision\(value => value \+ 1\)/u)
+assert.match(sendQuotaSource, /<SearchableUserSelect/u)
+assert.match(searchableUserSource, /setTimeout\(\(\) =>/u)
+assert.match(searchableUserSource, /\/api\/roles\/users\?\$\{params\}/u)
+assert.match(searchableUserSource, /AbortController/u)
 
 console.log(JSON.stringify({
   localeNavigationPreservesPath: true,
@@ -79,4 +85,6 @@ console.log(JSON.stringify({
   userRoleEditorResponsive: true,
   accessPolicyLayoutCovered: true,
   bidirectionalMailQuotaUiLocalized: true,
+  quotaUsageRefreshAfterSave: true,
+  quotaUserSearchLiveAndAbortable: true,
 }))

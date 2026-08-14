@@ -64,6 +64,11 @@ export async function PUT(request: Request) {
       ...(roles === undefined ? {} : { roles }),
       ...(mailQuotaRules === undefined ? {} : { mailQuotaRules }),
     }))
+    void import("@/lib/mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_access_policy_change_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
     return Response.json({ ok: true, policies }, { headers })
   } catch (error) {
     console.error("access_policy.save_failed", error)

@@ -32,6 +32,12 @@ export async function DELETE(
       return apiError("USER_NOT_FOUND", 404)
     }
 
+    void import("@/lib/mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_user_delete_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
+
     return Response.json({ success: true });
   } catch (error) {
     console.error("user.delete_failed", error);

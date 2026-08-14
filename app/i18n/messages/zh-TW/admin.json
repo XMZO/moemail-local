@@ -42,6 +42,12 @@
     "searchPlaceholder": "搜尋使用者名稱或電子郵件",
     "selectUser": "選擇使用者",
     "selectUserHint": "選擇使用者後設定覆寫值",
+    "userPicker": {
+      "search": "即時搜尋姓名、使用者名稱或電子郵件",
+      "select": "選擇使用者",
+      "empty": "沒有符合的使用者",
+      "error": "使用者搜尋失敗，請重試"
+    },
     "emperorLocked": "皇帝權限無法編輯",
     "emperorLockedHint": "這是應用程式與後端 API 共同強制的系統不變條件，皇帝本人也無法修改。",
     "emperorQuotaEditableHint": "皇帝的功能、資源與網域權限由系統鎖定；仍可用明確指向皇帝的額度規則限制。全站額度是否包含皇帝，由規則的「忽略皇帝用量」開關決定。",
@@ -88,10 +94,12 @@
       "delete_email": "刪除信箱與郵件",
       "receive_email": "接收郵件",
       "send_email": "傳送郵件",
+      "private_recipient_delivery": "隱藏收件者並個別投遞",
       "share_email": "建立分享連結",
       "manage_webhook": "管理 Webhook",
       "promote_user": "管理使用者角色",
       "manage_config": "管理站台與網域設定",
+      "manage_mailu": "管理 Mailu 整合與憑據",
       "manage_api_key": "管理 API Key"
     },
     "quotas": {

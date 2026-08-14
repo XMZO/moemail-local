@@ -42,6 +42,12 @@
     "searchPlaceholder": "사용자 이름 또는 이메일 검색",
     "selectUser": "사용자 선택",
     "selectUserHint": "재정의 값을 설정할 사용자를 선택하세요",
+    "userPicker": {
+      "search": "이름, 사용자 이름 또는 이메일 실시간 검색",
+      "select": "사용자 선택",
+      "empty": "일치하는 사용자가 없습니다",
+      "error": "사용자 검색에 실패했습니다. 다시 시도하세요"
+    },
     "emperorLocked": "황제 권한은 편집할 수 없습니다",
     "emperorLockedHint": "애플리케이션과 API가 함께 강제하는 시스템 불변 조건이며 황제 본인도 변경할 수 없습니다.",
     "emperorQuotaEditableHint": "황제의 기능, 리소스와 도메인 권한은 고정됩니다. 황제를 명시한 할당량 규칙은 설정할 수 있습니다. 사이트 전체 규칙의 황제 포함 여부는 ‘황제 사용량 제외’ 옵션으로 결정됩니다.",
@@ -88,10 +94,12 @@
       "delete_email": "메일함 및 메일 삭제",
       "receive_email": "메일 받기",
       "send_email": "메일 보내기",
+      "private_recipient_delivery": "받는 사람을 숨기고 개별 전송",
       "share_email": "공유 링크 만들기",
       "manage_webhook": "Webhook 관리",
       "promote_user": "사용자 역할 관리",
       "manage_config": "사이트 및 도메인 설정 관리",
+      "manage_mailu": "Mailu 통합 및 자격 증명 관리",
       "manage_api_key": "API Key 관리"
     },
     "quotas": {

@@ -25,6 +25,7 @@ export function ThreeColumnLayout() {
   const { copyToClipboard } = useCopy()
   const {
     canSend: canSendEmails,
+    canUsePrivateRecipientDelivery,
     checkPermission: refreshSendPermission,
   } = useSendPermission(selectedEmail?.id)
 
@@ -89,6 +90,7 @@ export function ThreeColumnLayout() {
                     <SendDialog 
                       emailId={selectedEmail.id} 
                       fromAddress={selectedEmail.address}
+                      canUsePrivateDelivery={canUsePrivateRecipientDelivery}
                       onSendSuccess={handleSendSuccess}
                     />
                   )}
@@ -170,6 +172,7 @@ export function ThreeColumnLayout() {
                     <SendDialog 
                       emailId={selectedEmail.id} 
                       fromAddress={selectedEmail.address}
+                      canUsePrivateDelivery={canUsePrivateRecipientDelivery}
                       onSendSuccess={handleSendSuccess}
                     />
                   )}

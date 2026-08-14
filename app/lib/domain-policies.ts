@@ -7,8 +7,8 @@ import {
   setConfigValues,
 } from "./config-store"
 
-export const INBOUND_MODES = ["worker", "imap", "disabled"] as const
-export const OUTBOUND_MODES = ["resend", "smtp", "disabled"] as const
+export const INBOUND_MODES = ["worker", "imap", "mailu", "disabled"] as const
+export const OUTBOUND_MODES = ["resend", "smtp", "mailu", "disabled"] as const
 export const MAIL_SECURITY_MODES = ["plain", "starttls", "tls"] as const
 export const SMTP_SECURITY_MODES = MAIL_SECURITY_MODES
 export const SMTP_AUTH_METHODS = ["auto", "plain", "login"] as const
@@ -71,6 +71,7 @@ export const imapInboundSchema = z.object({
 export type ImapInboundPolicy = z.infer<typeof imapInboundSchema>
 
 const workerInboundSchema = z.object({ mode: z.literal("worker") }).strict()
+const mailuInboundSchema = z.object({ mode: z.literal("mailu") }).strict()
 const disabledInboundSchema = z.object({ mode: z.literal("disabled") }).strict()
 
 const resendOutboundSchema = z.object({
@@ -85,6 +86,7 @@ const resendOutboundSchema = z.object({
 const disabledOutboundSchema = z.object({
   mode: z.literal("disabled"),
 }).strict()
+const mailuOutboundSchema = z.object({ mode: z.literal("mailu") }).strict()
 
 const domainPolicySchema = z.object({
   domain: z.string().transform((value, ctx) => {
@@ -98,11 +100,13 @@ const domainPolicySchema = z.object({
   inbound: z.discriminatedUnion("mode", [
     workerInboundSchema,
     imapInboundSchema,
+    mailuInboundSchema,
     disabledInboundSchema,
   ]),
   outbound: z.discriminatedUnion("mode", [
     resendOutboundSchema,
     smtpOutboundSchema,
+    mailuOutboundSchema,
     disabledOutboundSchema,
   ]),
 }).strict()
@@ -196,6 +200,11 @@ export async function getDomainPolicy(domain: string): Promise<DomainPolicy | nu
 
 export async function saveDomainPolicies(input: unknown): Promise<DomainPolicies> {
   const policies = domainPoliciesSchema.parse(input)
+  if (policies.some(policy => policy.inbound.mode === "mailu" || policy.outbound.mode === "mailu")) {
+    const { getMailuIntegration } = await import("./mailu/config")
+    const integration = await getMailuIntegration()
+    if (!integration?.enabled) throw new Error("MAILU_INTEGRATION_DISABLED")
+  }
   await setConfigValues({
     [CONFIG_KEYS.EMAIL_DOMAIN_POLICIES]: JSON.stringify(policies),
     // 兼容仍读取旧公开域名键的客户端；运行时权威来源是上面的强类型策略。

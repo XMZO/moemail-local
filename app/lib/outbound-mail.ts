@@ -59,6 +59,9 @@ export const outboundMessageSchema = z.object({
   // Legacy API clients sent HTML without a format field. The WebUI always
   // sends an explicit value, while omission retains the pre-format contract.
   format: z.enum(["text", "html"]).default("html"),
+  // When enabled by an authorized caller, deliver a separate message to each
+  // recipient so no recipient header exposes the rest of the list.
+  privateRecipients: z.boolean().default(false),
 }).strict()
 
 export type OutboundMessage = z.infer<typeof outboundMessageSchema>
@@ -103,19 +106,19 @@ async function sendWithResend(
 ) {
   const from = policy.fromName ? `${policy.fromName} <${fromAddress}>` : fromAddress
   const content = outboundContent(message)
-  const response = await fetch("https://api.resend.com/emails", {
+  const deliveries = message.privateRecipients
+    ? message.to.map(to => ({ from, to: [to], subject: message.subject, ...content }))
+    : [{ from, to: message.to, subject: message.subject, ...content }]
+  const response = await fetch(message.privateRecipients
+    ? "https://api.resend.com/emails/batch"
+    : "https://api.resend.com/emails", {
     method: "POST",
     redirect: "manual",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${policy.apiKey}`,
     },
-    body: JSON.stringify({
-      from,
-      to: message.to,
-      subject: message.subject,
-      ...content,
-    }),
+    body: JSON.stringify(message.privateRecipients ? deliveries : deliveries[0]),
     signal: AbortSignal.timeout(20_000),
   })
 
@@ -128,7 +131,7 @@ async function sendWithResend(
   }
 }
 
-function smtpTransport(policy: SmtpOutboundPolicy) {
+function smtpTransport(policy: SmtpOutboundPolicy, pooled = false) {
   const auth = policy.username && policy.password
     ? { user: policy.username, pass: policy.password }
     : undefined
@@ -146,6 +149,11 @@ function smtpTransport(policy: SmtpOutboundPolicy) {
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 30_000,
+    ...(pooled ? {
+      pool: true,
+      maxConnections: 4,
+      maxMessages: MAX_OUTBOUND_RECIPIENTS,
+    } : {}),
     disableFileAccess: true,
     disableUrlAccess: true,
   })
@@ -166,16 +174,29 @@ async function sendWithSmtp(
   fromAddress: string,
   message: OutboundMessage,
 ) {
-  const transport = smtpTransport(policy)
+  const transport = smtpTransport(policy, message.privateRecipients)
   const content = outboundContent(message)
 
   try {
-    await transport.sendMail({
-      from: sender(policy.fromName, fromAddress),
-      to: message.to,
-      subject: message.subject,
-      ...content,
-    })
+    if (message.privateRecipients) {
+      const results = await Promise.allSettled(message.to.map(to => (
+        transport.sendMail({
+          from: sender(policy.fromName, fromAddress),
+          to: [to],
+          subject: message.subject,
+          ...content,
+        })
+      )))
+      const failure = results.find(result => result.status === "rejected")
+      if (failure?.status === "rejected") throw failure.reason
+    } else {
+      await transport.sendMail({
+        from: sender(policy.fromName, fromAddress),
+        to: message.to,
+        subject: message.subject,
+        ...content,
+      })
+    }
   } finally {
     transport.close()
   }
@@ -198,8 +219,14 @@ export async function sendOutboundMessage(
 
   if (policy.outbound.mode === "resend") {
     await sendWithResend(policy.outbound, fromAddress, message)
-  } else {
+  } else if (policy.outbound.mode === "smtp") {
     await sendWithSmtp(policy.outbound, fromAddress, message)
+  } else {
+    const { getMailuIntegration } = await import("./mailu/config")
+    const integration = await getMailuIntegration()
+    if (!integration?.enabled) throw new Error("MAILU_INTEGRATION_DISABLED")
+    const { sendWithMailu } = await import("./mailu/outbound")
+    await sendWithMailu(integration, fromAddress, message)
   }
   return { message, mode: policy.outbound.mode }
 }

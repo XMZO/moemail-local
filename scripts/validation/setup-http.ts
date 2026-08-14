@@ -347,6 +347,8 @@ try {
     body: JSON.stringify({ kind: "imap", policy: {} }),
   })
   assert.equal(mailTestBeforeSetup.status, 503)
+  const mailuBeforeSetup = await fetch(`${baseUrl}/api/config/mailu`)
+  assert.equal(mailuBeforeSetup.status, 503)
 
   const setupPayload = {
     config: {
@@ -524,6 +526,35 @@ try {
     body: JSON.stringify({ kind: "imap", policy: {} }),
   })
   assert.equal(unauthenticatedMailTest.status, 401)
+  const unauthenticatedMailuConfig = await fetch(`${baseUrl}/api/config/mailu`)
+  assert.equal(unauthenticatedMailuConfig.status, 401)
+
+  const emperorMailuConfig = await request("/api/config/mailu")
+  assert.equal(emperorMailuConfig.status, 200)
+  const emperorMailuBody = await emperorMailuConfig.json() as {
+    configured?: boolean
+    integration?: { api?: { token?: string }; collector?: { password?: string }; catchAll?: { password?: string } }
+  }
+  assert.equal(emperorMailuBody.configured, false)
+  assert.ok((emperorMailuBody.integration?.api?.token?.length ?? 0) > 0)
+  assert.ok((emperorMailuBody.integration?.collector?.password?.length ?? 0) > 0)
+  assert.ok((emperorMailuBody.integration?.catchAll?.password?.length ?? 0) > 0)
+  const createEmperorApiKey = await request("/api/api-keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "mailu-secret-boundary" }),
+  })
+  assert.equal(createEmperorApiKey.status, 200)
+  const emperorApiKey = (await createEmperorApiKey.json() as { key?: string }).key
+  assert.match(emperorApiKey ?? "", /^mk_[A-Za-z0-9_-]{32}$/u)
+  const emperorApiMailuConfig = await fetch(`${baseUrl}/api/config/mailu`, {
+    headers: { "X-API-Key": emperorApiKey as string },
+  })
+  assert.equal(emperorApiMailuConfig.status, 403)
+  assert.equal(
+    (await emperorApiMailuConfig.json() as { code?: string }).code,
+    "API_KEY_ROUTE_FORBIDDEN",
+  )
 
   const validationMarker = "mail-connection-secret-must-not-echo"
   const invalidMailTest = await request("/api/config/domains", {
@@ -617,7 +648,12 @@ try {
 
   const sendPermission = await request(`/api/emails/send-permission?emailId=${mailbox.id}`)
   assert.equal(sendPermission.status, 200)
-  assert.equal((await sendPermission.json() as { canSend?: boolean }).canSend, true)
+  const sendPermissionBody = await sendPermission.json() as {
+    canSend?: boolean
+    canUsePrivateRecipientDelivery?: boolean
+  }
+  assert.equal(sendPermissionBody.canSend, true)
+  assert.equal(sendPermissionBody.canUsePrivateRecipientDelivery, true)
 
   const accessPoliciesResponse = await request("/api/access-policies")
   assert.equal(accessPoliciesResponse.status, 200)
@@ -756,6 +792,20 @@ try {
   const memberQuotaByApiKey = await memberApiRequest("/api/access-policies/me")
   assert.equal(memberQuotaByApiKey.status, 403)
   assert.equal((await memberQuotaByApiKey.json() as { code?: string }).code, "API_KEY_ROUTE_FORBIDDEN")
+  const memberMailuConfig = await memberRequest("/api/config/mailu")
+  assert.equal(memberMailuConfig.status, 403)
+  const memberApiMailuConfig = await memberApiRequest("/api/config/mailu")
+  assert.equal(memberApiMailuConfig.status, 403)
+  const crossOriginMailuMutation = await request("/api/config/mailu", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "https://attacker.invalid",
+      "Sec-Fetch-Site": "cross-site",
+    },
+    body: JSON.stringify({ kind: "reconcile" }),
+  })
+  assert.equal(crossOriginMailuMutation.status, 403)
   const mailboxPayload = (name: string) => JSON.stringify({
     name,
     domain: validationDomain,
@@ -914,6 +964,83 @@ try {
   assert.equal(smtpSink.messages.length, 1)
   assert.match(smtpSink.messages[0], /first-recipient@example\.net/iu)
   assert.match(smtpSink.messages[0], /second-recipient@example\.net/iu)
+
+  const resetVisibleDeliveryCharge = await request("/api/access-policies/usage", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ direction: "send" satisfies MailDirection, role: "duke" }),
+  })
+  assert.equal(resetVisibleDeliveryCharge.status, 200)
+  assert.equal((await resetVisibleDeliveryCharge.json() as { deleted?: number }).deleted, 2)
+
+  accessPoliciesBody.policies.roles.duke.permissions.private_recipient_delivery = false
+  const denyPrivateDeliveryPermission = await request("/api/access-policies", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
+  })
+  assert.equal(denyPrivateDeliveryPermission.status, 200)
+  const privateDeliveryCapabilityDenied = await memberRequest(
+    `/api/emails/send-permission?emailId=${encodeURIComponent(memberMailbox.id)}`,
+  )
+  assert.equal(privateDeliveryCapabilityDenied.status, 200)
+  assert.equal(
+    (await privateDeliveryCapabilityDenied.json() as { canUsePrivateRecipientDelivery?: boolean })
+      .canUsePrivateRecipientDelivery,
+    false,
+  )
+  const privateDeliveryDenied = await memberRequest(`/api/emails/${memberMailbox.id}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: "private-one@example.net, private-two@example.net",
+      subject: "private permission denied",
+      content: "must not reach SMTP",
+      format: "text",
+      privateRecipients: true,
+    }),
+  })
+  assert.equal(privateDeliveryDenied.status, 403)
+  assert.equal(
+    (await privateDeliveryDenied.json() as { code?: string }).code,
+    "PRIVATE_RECIPIENT_DELIVERY_FORBIDDEN",
+  )
+  assert.equal(smtpSink.messages.length, 1)
+
+  accessPoliciesBody.policies.roles.duke.permissions.private_recipient_delivery = true
+  const allowPrivateDeliveryPermission = await request("/api/access-policies", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: accessPoliciesBody.policies.roles }),
+  })
+  assert.equal(allowPrivateDeliveryPermission.status, 200)
+  const privateDeliveryCapabilityAllowed = await memberRequest(
+    `/api/emails/send-permission?emailId=${encodeURIComponent(memberMailbox.id)}`,
+  )
+  assert.equal(privateDeliveryCapabilityAllowed.status, 200)
+  assert.equal(
+    (await privateDeliveryCapabilityAllowed.json() as { canUsePrivateRecipientDelivery?: boolean })
+      .canUsePrivateRecipientDelivery,
+    true,
+  )
+  const privateDelivery = await memberRequest(`/api/emails/${memberMailbox.id}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: "private-one@example.net, private-two@example.net",
+      subject: "private recipient delivery",
+      content: "private delivery marker",
+      format: "text",
+      privateRecipients: true,
+    }),
+  })
+  assert.equal(privateDelivery.status, 200)
+  assert.equal((await privateDelivery.json() as { remainingEmails?: number }).remainingEmails, 0)
+  assert.equal(smtpSink.messages.length, 3)
+  assert.match(smtpSink.messages[1], /To: private-one@example\.net/iu)
+  assert.doesNotMatch(smtpSink.messages[1], /private-two@example\.net/iu)
+  assert.match(smtpSink.messages[2], /To: private-two@example\.net/iu)
+  assert.doesNotMatch(smtpSink.messages[2], /private-one@example\.net/iu)
   const sendAfterAtomicCharge = await memberRequest(`/api/emails/${memberMailbox.id}/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -926,7 +1053,7 @@ try {
   })
   assert.equal(sendAfterAtomicCharge.status, 429)
   assert.equal((await sendAfterAtomicCharge.json() as { code?: string }).code, "SEND_DOMAIN_QUOTA_EXCEEDED")
-  assert.equal(smtpSink.messages.length, 1)
+  assert.equal(smtpSink.messages.length, 3)
   const resetMultiRecipientCharge = await request("/api/access-policies/usage", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
@@ -1554,11 +1681,13 @@ try {
     stagedMemoryOnlySecretsRedacted: stagedRedactionProbe,
     publicHealthConfigErrorsRedacted: true,
     mailConnectionTestAuthAndRedaction: true,
+    mailuConfigSessionPermissionAndOriginGate: true,
     domainPolicyAndWorkerIngestion: true,
     accessDomainAndSendQuotaApis: true,
     roleToUserFourStateDomainEnforcementE2e: true,
     userSendQuotaEnforcementE2e: true,
     multiRecipientAtomicQuotaAndSmtpE2e: true,
+    privateRecipientPermissionAndDeliveryE2e: true,
     sessionAndApiKeyPolicyParityE2e: true,
     atomicMailboxQuotaE2e: true,
     globalUserAndRoleMailboxBlocksE2e: true,

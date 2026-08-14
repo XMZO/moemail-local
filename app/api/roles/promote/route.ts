@@ -45,6 +45,12 @@ export async function POST(request: Request) {
 
     await assignRoleToUser(db, userId, targetRole.id, { preserveEmperor: true });
 
+    void import("@/lib/mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_role_change_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
+
     return Response.json({ 
       success: true,
     });

@@ -36,6 +36,12 @@ export async function DELETE(
     await db.delete(emails)
       .where(and(eq(emails.id, id), eq(emails.userId, userId)))
 
+    void import("@/lib/mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_mailbox_delete_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("mailbox.delete_failed", error)

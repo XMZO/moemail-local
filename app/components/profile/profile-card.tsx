@@ -61,15 +61,17 @@ export function ProfileCard({ user }: ProfileCardProps) {
   const canManageApiKey = checkPermission(PERMISSIONS.MANAGE_API_KEY)
   const canPromote = checkPermission(PERMISSIONS.PROMOTE_USER)
   const canManageConfig = checkPermission(PERMISSIONS.MANAGE_CONFIG)
+  const canManageMailu = checkPermission(PERMISSIONS.MANAGE_MAILU)
   const isEmperor = user.roles?.some(role => role.name === ROLES.EMPEROR) ?? false
   const allowedTabs = useMemo(() => new Set<ProfileTab>([
     "account",
-    ...(canManageConfig ? ["domains", "site", "appearance"] as const : []),
+    ...(canManageConfig || canManageMailu ? ["domains"] as const : []),
+    ...(canManageConfig ? ["site", "appearance"] as const : []),
     ...(isEmperor ? ["access", "runtime"] as const : []),
     ...(canPromote ? ["users"] as const : []),
     ...(canManageWebhook ? ["webhook"] as const : []),
     ...(canManageApiKey ? ["keys"] as const : []),
-  ]), [canManageApiKey, canManageConfig, canManageWebhook, canPromote, isEmperor])
+  ]), [canManageApiKey, canManageConfig, canManageMailu, canManageWebhook, canPromote, isEmperor])
   const requestedTab = searchParams.get("tab")
   const requestedActiveTab: ProfileTab = profileTabs.includes(requestedTab as ProfileTab)
     && allowedTabs.has(requestedTab as ProfileTab)
@@ -133,7 +135,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
         <div className="overflow-x-auto pb-1">
           <TabsList className="h-auto min-w-max justify-start">
             <TabsTrigger value="account"><TabLabel icon={User2}>{tAdminNav("account")}</TabLabel></TabsTrigger>
-            {canManageConfig && <TabsTrigger value="domains"><TabLabel icon={Mail}>{tAdminNav("domains")}</TabLabel></TabsTrigger>}
+            {(canManageConfig || canManageMailu) && <TabsTrigger value="domains"><TabLabel icon={Mail}>{tAdminNav("domains")}</TabLabel></TabsTrigger>}
             {isEmperor && <TabsTrigger value="access"><TabLabel icon={SlidersHorizontal}>{tAdminNav("access")}</TabLabel></TabsTrigger>}
             {canPromote && <TabsTrigger value="users"><TabLabel icon={Users}>{tAdminNav("users")}</TabLabel></TabsTrigger>}
             {canManageConfig && <TabsTrigger value="site"><TabLabel icon={Settings}>{tAdminNav("site")}</TabLabel></TabsTrigger>}
@@ -162,7 +164,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
           <MyQuotaPanel />
           </div>
         </TabsContent>}
-        {canManageConfig && visitedTabs.has("domains") && <TabsContent value="domains" forceMount className={persistentTabClass}><DomainPolicyPanel /></TabsContent>}
+        {(canManageConfig || canManageMailu) && visitedTabs.has("domains") && <TabsContent value="domains" forceMount className={persistentTabClass}><DomainPolicyPanel canManageConfig={canManageConfig} canManageMailu={canManageMailu} /></TabsContent>}
         {isEmperor && visitedTabs.has("access") && <TabsContent value="access" forceMount className={persistentTabClass}><AccessPolicyPanel /></TabsContent>}
         {canPromote && visitedTabs.has("users") && <TabsContent value="users" forceMount className={persistentTabClass}><PromotePanel /></TabsContent>}
         {canManageConfig && visitedTabs.has("site") && <TabsContent value="site" forceMount className={persistentTabClass}><WebsiteConfigPanel /></TabsContent>}

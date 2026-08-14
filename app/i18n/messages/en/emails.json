@@ -75,6 +75,11 @@
     "to": "To",
     "toPlaceholder": "Separate recipients with commas or semicolons",
     "toHelp": "{count} unique recipients detected (maximum {maximum}). Duplicates are merged; each recipient consumes one sending quota unit.",
+    "privateRecipients": {
+      "label": "Hide recipients",
+      "help": "Send a separate message to each recipient. No recipient can see the other addresses; quota usage is unchanged.",
+      "permissionRequired": "Your role does not allow private recipient delivery. Recipients will remain visible to one another."
+    },
     "subject": "Subject",
     "subjectPlaceholder": "Email subject",
     "content": "Content",

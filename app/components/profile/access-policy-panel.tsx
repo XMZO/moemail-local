@@ -36,6 +36,7 @@ import { readApiErrorCode } from "@/lib/api-error-client"
 import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 import { ROLES, type Permission, type Role } from "@/lib/permissions"
 import { normalizeMailboxCreationName } from "@/lib/email-address"
+import { SearchableUserSelect, type SearchableUser } from "@/components/profile/searchable-user-select"
 
 const quotaKeys = ["maxActiveMailboxes", "maxMailboxLifetimeDays", "maxMessageBytes"] as const
 type QuotaKey = typeof quotaKeys[number]
@@ -57,7 +58,7 @@ type UserOverride = {
   quotas: Partial<Record<QuotaKey, number>>
   domainAccess?: DomainAccessOverride
 }
-interface AccessPolicies { version: 5; roles: Record<Role, RolePolicy>; users: Record<string, UserOverride>; mailQuotaRules: MailQuotaAssignment[] }
+interface AccessPolicies { version: 7; roles: Record<Role, RolePolicy>; users: Record<string, UserOverride>; mailQuotaRules: MailQuotaAssignment[] }
 interface UserItem { id: string; name: string | null; username: string | null; email: string | null; role: string | null; accessOverride: UserOverride | null }
 interface MailboxBlock {
   id: string
@@ -205,18 +206,29 @@ export function AccessPolicyPanel() {
     }
   }, [t, tApi])
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({ page: "1", pageSize: "100" })
       if (search.trim()) params.set("search", search.trim())
-      const response = await fetch(`/api/roles/users?${params}`, { cache: "no-store" })
+      const response = await fetch(`/api/roles/users?${params}`, { cache: "no-store", signal })
       const body = await response.clone().json() as { users?: UserItem[] }
       if (!response.ok || !body.users) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "USERS_READ_FAILED") as never))
       setUsers(body.users)
     } catch (caught) {
+      if (caught instanceof Error && caught.name === "AbortError") return
       setError(localizedUiErrorMessage(caught, t("errors.loadUsers")))
     }
   }, [search, t, tApi])
+
+  const rememberUser = useCallback((user: SearchableUser) => {
+    const resolved = {
+      ...user,
+      accessOverride: (user.accessOverride ?? null) as UserOverride | null,
+    }
+    setUsers(previous => previous.some(item => item.id === user.id)
+      ? previous.map(item => item.id === user.id ? { ...item, ...resolved } : item)
+      : [...previous, resolved])
+  }, [])
 
   const loadBlocks = useCallback(async () => {
     try {
@@ -230,7 +242,11 @@ export function AccessPolicyPanel() {
   }, [t, tApi])
 
   useEffect(() => { void Promise.all([loadPolicies(), loadBlocks()]) }, [loadBlocks, loadPolicies])
-  useEffect(() => { const timer = setTimeout(() => void loadUsers(), 200); return () => clearTimeout(timer) }, [loadUsers])
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => void loadUsers(controller.signal), 200)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [loadUsers])
 
   const selectedUser = useMemo(() => users.find(user => user.id === selectedUserId) ?? null, [selectedUserId, users])
   const selectedUserRole = roleForUser(selectedUser)
@@ -247,7 +263,9 @@ export function AccessPolicyPanel() {
       const response = await fetch("/api/access-policies", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roles: policies.roles, mailQuotaRules: policies.mailQuotaRules }) })
       const body = await response.clone().json() as { policies?: AccessPolicies }
       if (!response.ok || !body.policies) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "ACCESS_POLICIES_SAVE_FAILED") as never))
-      setPolicies(body.policies); toast({ title: t("success.savePolicies") })
+      setPolicies(body.policies)
+      setUsageRevision(value => value + 1)
+      toast({ title: t("success.savePolicies") })
     } catch (caught) { setError(localizedUiErrorMessage(caught, t("errors.savePolicies"))) } finally { setSaving(false) }
   }
 
@@ -259,7 +277,7 @@ export function AccessPolicyPanel() {
       const response = await fetch(`/api/access-policies/users/${encodeURIComponent(selectedUser.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(override) })
       const body = await response.clone().json() as { override?: UserOverride }
       if (!response.ok || !body.override) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "USER_ACCESS_OVERRIDE_SAVE_FAILED") as never))
-      setOverride(copyOverride(body.override)); setUsers(previous => previous.map(user => user.id === selectedUser.id ? { ...user, accessOverride: body.override! } : user)); toast({ title: t("success.saveUser") })
+      setOverride(copyOverride(body.override)); setUsers(previous => previous.map(user => user.id === selectedUser.id ? { ...user, accessOverride: body.override! } : user)); setUsageRevision(value => value + 1); toast({ title: t("success.saveUser") })
     } catch (caught) { setError(localizedUiErrorMessage(caught, t("errors.saveUser"))) } finally { setSaving(false) }
   }
 
@@ -269,7 +287,7 @@ export function AccessPolicyPanel() {
     try {
       const response = await fetch(`/api/access-policies/users/${encodeURIComponent(selectedUser.id)}`, { method: "DELETE" })
       if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "USER_ACCESS_OVERRIDE_RESET_FAILED") as never))
-      setOverride(emptyOverride()); setUsers(previous => previous.map(user => user.id === selectedUser.id ? { ...user, accessOverride: null } : user)); toast({ title: t("success.resetUser") })
+      setOverride(emptyOverride()); setUsers(previous => previous.map(user => user.id === selectedUser.id ? { ...user, accessOverride: null } : user)); setUsageRevision(value => value + 1); toast({ title: t("success.resetUser") })
     } catch (caught) { setError(localizedUiErrorMessage(caught, t("errors.resetUser"))) } finally { setSaving(false) }
   }
 
@@ -327,7 +345,7 @@ export function AccessPolicyPanel() {
           <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(15rem,.8fr)]"><div className="relative min-w-0"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("searchPlaceholder")} className="min-w-0 pl-9" /></div><Select value={selectedUserId} onValueChange={selectUser}><SelectTrigger className="min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("selectUser")} /></SelectTrigger><SelectContent>{users.map(user => <SelectItem key={user.id} value={user.id}>{tFormat("identityRole", { identity: user.name || user.username || user.email || user.id, role: tRoles(roleTranslationKeys[roleForUser(user)]) })}</SelectItem>)}</SelectContent></Select></div>
           {!selectedUser ? <div className="rounded border border-dashed p-8 text-center text-sm text-muted-foreground"><UserCog className="mx-auto mb-2 h-6 w-6" />{t("selectUserHint")}</div> : <div className="space-y-4"><p className="text-xs text-muted-foreground">{selectedUserIsEmperor ? t("emperorLockedHint") : t("overrideHint")}</p><div className="grid gap-4 xl:grid-cols-2">{!selectedUserIsEmperor && <><section className="rounded border p-4"><h3 className="mb-3 text-sm font-medium">{t("sections.permissionOverrides")}</h3><div className="space-y-2">{permissions.map(permission => <div key={permission} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-2"><span className="text-sm">{t(`permissions.${permission}` as never)}</span><Select value={override.permissions[permission] === undefined ? "inherit" : override.permissions[permission] ? "allow" : "deny"} onValueChange={value => setOverride(previous => { const next = { ...previous, permissions: { ...previous.permissions } }; if (value === "inherit") delete next.permissions[permission]; else next.permissions[permission] = value === "allow"; return next })}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inherit">{t("inherit")}</SelectItem><SelectItem value="allow">{t("allow")}</SelectItem><SelectItem value="deny">{t("deny")}</SelectItem></SelectContent></Select></div>)}</div></section><section className="rounded border p-4"><h3 className="text-sm font-medium">{t("sections.quotaOverrides")}</h3><p className="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">{t("quotas.overrideHelp")}</p><GeneralQuotaFields values={override.quotas} inherited={policies.roles[selectedUserRole].quotas} onChange={(key, value) => setOverride(previous => { const quotas = { ...previous.quotas }; if (value === undefined) delete quotas[key]; else quotas[key] = value; return { ...previous, quotas } })} /></section><section className="space-y-3 rounded border p-4 xl:col-span-2"><div><h3 className="flex items-center gap-2 text-sm font-medium"><Globe2 className="h-4 w-4 text-primary" />{t("sections.domainOverrides")}</h3><p className="mt-1 text-xs text-muted-foreground">{t("domains.userHelp")}</p></div><Select value={userDomainMode} onValueChange={value => setUserDomainMode(value as "inherit" | "custom")}><SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inherit">{t("domains.inherit")}</SelectItem><SelectItem value="custom">{t("domains.custom")}</SelectItem></SelectContent></Select>{override.domainAccess && <><div className="flex items-center justify-between gap-3 rounded border p-2"><span className="text-sm">{t("domains.default")}</span><DomainModeSelect value={override.domainAccess.default ?? policies.roles[selectedUserRole].domainAccess.default} onChange={defaultMode => setOverride(previous => ({ ...previous, domainAccess: { ...previous.domainAccess, default: defaultMode } }))} /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{domains.map(domain => <div key={domain} className="flex items-center justify-between gap-3 rounded border p-2"><span className="min-w-0 truncate font-mono text-xs">{domain}</span><DomainModeSelect value={userDomainValue(domain)} onChange={mode => setOverride(previous => ({ ...previous, domainAccess: { ...previous.domainAccess, domains: { ...previous.domainAccess?.domains, [domain]: mode } } }))} /></div>)}</div></>}</section></>}</div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void resetUserOverride()} disabled={saving}><RotateCcw className="mr-1 h-4 w-4" />{t("actions.inheritAll")}</Button><Button onClick={() => void saveUserOverride()} disabled={saving}><Save className="mr-1 h-4 w-4" />{t("actions.saveUser")}</Button></div></div>}
         </TabsContent>
-        <TabsContent value="mailQuotas" className="min-w-0 space-y-4 pt-2"><MailQuotaRuleEditor rules={policies.mailQuotaRules} domains={domains} users={users} onChange={mailQuotaRules => setPolicies(previous => previous ? { ...previous, mailQuotaRules } : previous)} /><MailQuotaUsageManager users={users} revision={usageRevision} onReset={() => { setUsageRevision(value => value + 1); toast({ title: t("success.resetUsage") }) }} /><div className="flex justify-end"><Button className="w-full sm:w-auto" onClick={() => void saveRoles()} disabled={saving}><Save className="mr-1 h-4 w-4 shrink-0" />{t("actions.save")}</Button></div></TabsContent>
+        <TabsContent value="mailQuotas" className="min-w-0 space-y-4 pt-2"><MailQuotaRuleEditor rules={policies.mailQuotaRules} domains={domains} users={users} onUserResolved={rememberUser} onChange={mailQuotaRules => setPolicies(previous => previous ? { ...previous, mailQuotaRules } : previous)} /><MailQuotaUsageManager users={users} revision={usageRevision} onUserResolved={rememberUser} onReset={() => { setUsageRevision(value => value + 1); toast({ title: t("success.resetUsage") }) }} /><div className="flex justify-end"><Button className="w-full sm:w-auto" onClick={() => void saveRoles()} disabled={saving}><Save className="mr-1 h-4 w-4 shrink-0" />{t("actions.save")}</Button></div></TabsContent>
         <TabsContent value="blocks" className="space-y-4 pt-2">
           <div><h3 className="text-sm font-medium">{t("blocks.title")}</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("blocks.help")}</p></div>
           <div className="space-y-3 rounded border p-3">
@@ -335,7 +353,7 @@ export function AccessPolicyPanel() {
               <Input className="h-8 min-w-0" value={blockLocalPart} onChange={event => setBlockLocalPart(event.target.value.split("@", 1)[0].slice(0, 64))} placeholder={t("blocks.localPart")} maxLength={64} pattern="[A-Za-z0-9._+-]+" autoCapitalize="none" autoComplete="off" spellCheck={false} />
               <Select value={blockDomain} onValueChange={setBlockDomain}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("blocks.domain")} /></SelectTrigger><SelectContent>{domains.map(domain => <SelectItem key={domain} value={domain}>{domain}</SelectItem>)}</SelectContent></Select>
               <Select value={blockScope} onValueChange={value => setBlockScope(value as "global" | "user" | "roles")}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="global">{t("blocks.global")}</SelectItem><SelectItem value="user">{t("blocks.user")}</SelectItem><SelectItem value="roles">{t("blocks.roles")}</SelectItem></SelectContent></Select>
-              {blockScope === "user" ? <Select value={blockUserId} onValueChange={setBlockUserId}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("blocks.selectUser")} /></SelectTrigger><SelectContent>{users.map(user => <SelectItem key={user.id} value={user.id}>{user.name || user.username || user.email || user.id}</SelectItem>)}</SelectContent></Select> : <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1 text-xs">{blockScope === "roles" ? roles.filter(item => item !== ROLES.EMPEROR).map(item => <label key={item} className="flex items-center gap-1"><Checkbox checked={blockAllowedRoles.includes(item)} onChange={checked => setBlockAllowedRoles(previous => checked ? [...new Set([...previous, item])] : previous.filter(roleName => roleName !== item))} />{tRoles(roleTranslationKeys[item])}</label>) : <span className="min-w-0 leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("blocks.globalHint")}</span>}</div>}
+              {blockScope === "user" ? <SearchableUserSelect value={blockUserId} onValueChange={setBlockUserId} knownUsers={users} onUserResolved={rememberUser} /> : <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1 text-xs">{blockScope === "roles" ? roles.filter(item => item !== ROLES.EMPEROR).map(item => <label key={item} className="flex items-center gap-1"><Checkbox checked={blockAllowedRoles.includes(item)} onChange={checked => setBlockAllowedRoles(previous => checked ? [...new Set([...previous, item])] : previous.filter(roleName => roleName !== item))} />{tRoles(roleTranslationKeys[item])}</label>) : <span className="min-w-0 leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("blocks.globalHint")}</span>}</div>}
               <Button type="button" size="sm" className="min-h-8 h-auto w-full whitespace-normal lg:col-span-2 lg:w-auto lg:justify-self-end xl:col-span-1" disabled={!normalizedBlockLocalPart || !blockDomain || (blockScope === "user" && !blockUserId)} onClick={() => void createBlock()}>{t("blocks.add")}</Button>
             </div>
             {blockScope === "roles" && <p className="text-xs leading-relaxed text-muted-foreground">{t("blocks.rolesHelp")}</p>}

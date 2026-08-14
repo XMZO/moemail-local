@@ -19,7 +19,7 @@ import type { ApiErrorCode } from "./api-codes"
 import { callWebhook, type EmailMessage } from "./webhook"
 
 export const MAX_RAW_EMAIL_SIZE = 25 * 1024 * 1024
-export type InboundTransport = "worker" | "imap"
+export type InboundTransport = "worker" | "imap" | "mailu"
 
 export const INBOUND_INGESTION_ERROR = {
   INVALID_ENVELOPE_RECIPIENT: "INVALID_ENVELOPE_RECIPIENT",

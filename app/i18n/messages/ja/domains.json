@@ -24,6 +24,7 @@
   "inboundModes": {
     "worker": "Cloudflare Email Worker",
     "imap": "外部メールボックス（IMAP）",
+    "mailu": "Mailu 連携",
     "disabled": "受信を無効化"
   },
   "outbound": "送信",
@@ -32,6 +33,7 @@
   "outboundModes": {
     "resend": "Resend",
     "smtp": "外部 SMTP",
+    "mailu": "Mailu 連携",
     "disabled": "送信を無効化"
   },
   "common": {
@@ -91,6 +93,23 @@
   "secrets": {
     "show": "シークレットを表示",
     "hide": "シークレットを隠す"
+  },
+  "mailu": {
+    "title": "Mailu 連携",
+    "description": "Mailu v1 API で完全一致エイリアスを同期し、単一の IMAP collector で受信、同じアカウントで SMTP 送信します。ワイルドカードから送信者偽装権限は付与しません。",
+    "enabled": "Mailu を有効化", "showSecret": "シークレットを表示", "hideSecret": "シークレットを隠す", "host": "ホスト", "port": "ポート", "security": "セキュリティーモード", "strictCertificate": "証明書を厳密に検証",
+    "securityOptions": { "tls": "TLS", "starttls": "STARTTLS", "plain": "平文" },
+    "domainHelp": "このドメインはグローバル Mailu collector を使用します。明示的に設定した信頼済み配信ヘッダーのみを受け入れ、MIME To/Cc で MoeMail メールボックスを選択しません。",
+    "senderSafety": "Mailu 送信には、有効な MoeMail メールボックスと collector 宛ての完全一致管理エイリアスが必要です。catch-all は From を許可しません。",
+    "api": { "title": "Mailu インターフェース", "baseUrl": "v1 インターフェースのベース URL", "token": "認証トークン", "timeout": "タイムアウト（秒）" },
+    "accounts": { "title": "管理サービスアカウント", "collector": "Collector アドレス", "collectorPassword": "Collector パスワード", "catchAll": "Catch-all 転送アカウント", "catchAllPassword": "Catch-all パスワード", "safety": "別々の Mailu ユーザーが必要です。MoeMail は allow_spoofing と catch-all アカウントのログインを無効にします。このアカウントは collector への転送専用で SMTP 認証できません。" },
+    "imap": { "title": "IMAP 収集", "mailbox": "取得元メールボックス", "recipientHeader": "信頼済み受信者ヘッダー", "initialSync": "初回同期範囲", "initialSyncOptions": { "new": "保存後に到着したメールのみ", "unseen": "未読メールも取り込む" }, "pollInterval": "ポーリング間隔（秒）", "maxMessages": "1 回の最大処理件数" },
+    "smtp": { "title": "SMTP 配信", "authMethod": "認証方式", "fromName": "送信者名（任意）" },
+    "retention": { "title": "上流保持ポリシー", "action": "MoeMail の永続化成功後", "actions": { "keep": "Mailu に保持", "delete": "Mailu から削除", "archive": "アーカイブへ移動" }, "delay": "保持遅延（秒）", "mailbox": "アーカイブメールボックス", "safety": "MoeMail がコミット済み、または既存重複を確認した場合だけ削除・移動を予約します。拒否・不明な受信者のメールは上流に残します。" },
+    "reconcile": { "title": "Mailu 同期", "enabled": "自動同期", "createCatchAll": "Catch-all エイリアスを作成", "removeStaleAliases": "古い管理エイリアスを削除", "interval": "間隔（秒）", "safety": "この連携の所有権マーカー付きオブジェクトのみ更新・削除します。他のユーザーやエイリアスとの競合は安全に拒否します。" },
+    "actions": { "testApi": "API をテスト", "discover": "ドメインを検出", "importDomains": "{count} 件を下書きへ追加", "testImap": "IMAP をテスト", "testSmtp": "SMTP をテスト", "reconcile": "今すぐ同期", "generateCollector": "Collector シークレットを生成", "generateCatchAll": "Catch-all シークレットを生成", "rotateCollector": "Collector シークレットを生成・更新", "rotateCatchAll": "Catch-all シークレットを生成・更新", "save": "Mailu 設定を保存", "saving": "保存中" },
+    "errors": { "load": "Mailu 設定を読み込めませんでした", "save": "Mailu 設定を保存できませんでした", "testApi": "Mailu API テストに失敗しました", "discover": "Mailu リソースの取得に失敗しました", "testImap": "Mailu IMAP テストに失敗しました", "testSmtp": "Mailu SMTP テストに失敗しました", "reconcile": "Mailu 同期に失敗しました", "rotateCollector": "Collector シークレットの更新に失敗しました", "rotateCatchAll": "Catch-all シークレットの更新に失敗しました" },
+    "success": { "saved": "Mailu 設定を保存しました", "testApi": "Mailu API に接続しました", "discover": "Mailu ドメインを検出しました", "testImap": "Mailu IMAP に接続しました", "testSmtp": "Mailu SMTP 認証に成功しました", "reconcile": "Mailu 同期が完了しました", "rotateCollector": "Collector シークレットを更新しました", "rotateCatchAll": "Catch-all シークレットを更新しました", "reconcileCounts": "作成 {created}、更新 {updated}、削除 {removed}", "domainsAdded": "{count} 個の Mailu ドメインを下書きに追加しました" }
   },
   "deleteConfirm": {
     "title": "このドメインを削除しますか？",

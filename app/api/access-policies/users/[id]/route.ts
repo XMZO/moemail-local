@@ -46,6 +46,11 @@ export async function PUT(
     if (result === "emperor_immutable") {
       return apiError("EMPEROR_POLICY_IMMUTABLE", 400, { headers })
     }
+    void import("@/lib/mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_user_policy_change_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
     return Response.json({ ok: true, override }, { headers })
   } catch (error) {
     console.error("access_policy.user_override_save_failed", error)
@@ -66,6 +71,11 @@ export async function DELETE(
     if (result === "not_found") {
       return apiError("USER_NOT_FOUND", 404, { headers })
     }
+    void import("@/lib/mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_user_policy_change_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
     return Response.json({ ok: true }, { headers })
   } catch (error) {
     console.error("access_policy.user_override_reset_failed", error)

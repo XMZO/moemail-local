@@ -1,11 +1,12 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Send } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
@@ -20,10 +21,11 @@ import {
 interface SendDialogProps {
   emailId: string
   fromAddress: string
+  canUsePrivateDelivery: boolean
   onSendSuccess?: () => void
 }
 
-export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogProps) {
+export function SendDialog({ emailId, fromAddress, canUsePrivateDelivery, onSendSuccess }: SendDialogProps) {
   const formatList = useFormatter()
   const t = useTranslations("emails.send")
   const tList = useTranslations("emails.list")
@@ -36,7 +38,9 @@ export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogPr
   const [subject, setSubject] = useState("")
   const [content, setContent] = useState("")
   const [format, setFormat] = useState<"text" | "html">("text")
+  const [privateRecipients, setPrivateRecipients] = useState(false)
   const { toast } = useToast()
+  const privateRecipientsId = useId()
   const recipientCount = useMemo(() => new Set(
     to.split(/[;,]/u).map(value => value.trim().toLowerCase()).filter(Boolean),
   ).size, [to])
@@ -58,7 +62,13 @@ export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogPr
       const response = await fetch(`/api/emails/${emailId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, content, format })
+        body: JSON.stringify({
+          to,
+          subject,
+          content,
+          format,
+          privateRecipients: privateRecipients && recipientCount > 1,
+        })
       })
 
       if (!response.ok) {
@@ -80,6 +90,7 @@ export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogPr
       setSubject("")
       setContent("")
       setFormat("text")
+      setPrivateRecipients(false)
       
       onSendSuccess?.()
     
@@ -131,6 +142,27 @@ export function SendDialog({ emailId, fromAddress, onSendSuccess }: SendDialogPr
           <p className="text-xs text-muted-foreground">
             {t("toHelp", { count: recipientCount, maximum: 50 })}
           </p>
+          {recipientCount > 1 && (
+            <div className="flex min-w-0 items-start justify-between gap-4 rounded-md border p-3">
+              <div className="min-w-0 space-y-1">
+                <label htmlFor={privateRecipientsId} className="block text-sm font-medium">
+                  {t("privateRecipients.label")}
+                </label>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {canUsePrivateDelivery
+                    ? t("privateRecipients.help")
+                    : t("privateRecipients.permissionRequired")}
+                </p>
+              </div>
+              <Switch
+                id={privateRecipientsId}
+                checked={privateRecipients}
+                onCheckedChange={setPrivateRecipients}
+                disabled={!canUsePrivateDelivery}
+                aria-label={t("privateRecipients.label")}
+              />
+            </div>
+          )}
           <Input
             value={subject}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSubject(e.target.value)}

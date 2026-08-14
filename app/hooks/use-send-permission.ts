@@ -7,6 +7,7 @@ interface SendPermissionResponse {
   canSend: boolean
   error?: string
   remainingEmails?: number
+  canUsePrivateRecipientDelivery?: boolean
 }
 
 export function useSendPermission(emailId?: string) {
@@ -16,11 +17,13 @@ export function useSendPermission(emailId?: string) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [remainingEmails, setRemainingEmails] = useState<number | undefined>()
+  const [canUsePrivateRecipientDelivery, setCanUsePrivateRecipientDelivery] = useState(false)
 
   const checkPermission = useCallback(async () => {
     if (!emailId) {
       setCanSend(false)
       setRemainingEmails(undefined)
+      setCanUsePrivateRecipientDelivery(false)
       setError(null)
       setLoading(false)
       return
@@ -33,6 +36,7 @@ export function useSendPermission(emailId?: string) {
       
       if (!response.ok) {
         setCanSend(false)
+        setCanUsePrivateRecipientDelivery(false)
         setError(t("permissionCheckFailed"))
         return
       }
@@ -40,12 +44,14 @@ export function useSendPermission(emailId?: string) {
       const data = await response.json() as SendPermissionResponse
       setCanSend(data.canSend)
       setRemainingEmails(data.remainingEmails)
+      setCanUsePrivateRecipientDelivery(Boolean(data.canUsePrivateRecipientDelivery))
       
       setError(data.canSend ? null : tApi.has(data.error as never)
         ? tApi(data.error as never)
         : t("permissionDenied"))
     } catch {
       setCanSend(false)
+      setCanUsePrivateRecipientDelivery(false)
       setError(t("permissionCheckFailed"))
     } finally {
       setLoading(false)
@@ -61,6 +67,7 @@ export function useSendPermission(emailId?: string) {
     loading,
     error,
     remainingEmails,
+    canUsePrivateRecipientDelivery,
     checkPermission
   }
 }

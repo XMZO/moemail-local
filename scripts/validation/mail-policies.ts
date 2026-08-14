@@ -99,7 +99,7 @@ assert.equal(
 )
 
 const accessDefaults = parseAccessPolicies(createDefaultAccessPolicies())
-assert.equal(accessDefaults.version, 5)
+assert.equal(accessDefaults.version, 7)
 assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "duke-user", ["duke"]), "send", "box@example.test")?.rolling.limit, 5)
 assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "knight-user", ["knight"]), "send", "box@example.test")?.rolling.limit, 2)
 assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(accessDefaults, "civilian-user", ["civilian"]), "send", "box@example.test")?.rolling.limit, 0)
@@ -112,13 +112,47 @@ assert.equal(Object.isFrozen(EMPEROR_ACCESS_POLICY.permissions), true)
 assert.equal(Object.isFrozen(EMPEROR_ACCESS_POLICY.quotas), true)
 assert.equal(EMPEROR_ACCESS_POLICY.allowedDomains, null)
 
+const version5Access = structuredClone(createDefaultAccessPolicies()) as unknown as Record<string, unknown> & {
+  version: number
+  roles: Record<string, { permissions: Record<string, boolean> }>
+  users: Record<string, { permissions: Record<string, boolean>; quotas: Record<string, number> }>
+}
+version5Access.version = 5
+for (const role of Object.values(version5Access.roles)) delete role.permissions.private_recipient_delivery
+for (const role of Object.values(version5Access.roles)) delete role.permissions.manage_mailu
+version5Access.users.allowedBeforeUpgrade = { permissions: { send_email: true }, quotas: {} }
+version5Access.users.deniedBeforeUpgrade = { permissions: { send_email: false }, quotas: {} }
+const migratedVersion5 = parseAccessPolicies(version5Access)
+assert.equal(migratedVersion5.roles.duke.permissions.private_recipient_delivery, true)
+assert.equal(migratedVersion5.roles.civilian.permissions.private_recipient_delivery, false)
+assert.equal(migratedVersion5.users.allowedBeforeUpgrade.permissions.private_recipient_delivery, true)
+assert.equal(migratedVersion5.users.deniedBeforeUpgrade.permissions.private_recipient_delivery, undefined)
+
+const version6Access = structuredClone(createDefaultAccessPolicies()) as unknown as Record<string, unknown> & {
+  version: number
+  roles: Record<string, { permissions: Record<string, boolean> }>
+  users: Record<string, { permissions: Record<string, boolean> }>
+}
+version6Access.version = 6
+for (const role of Object.values(version6Access.roles)) delete role.permissions.manage_mailu
+version6Access.users.explicitOverrides = {
+  permissions: { private_recipient_delivery: false },
+}
+const migratedVersion6 = parseAccessPolicies(version6Access)
+assert.equal(migratedVersion6.roles.emperor.permissions.manage_mailu, true)
+assert.equal(migratedVersion6.roles.duke.permissions.manage_mailu, false)
+assert.equal(migratedVersion6.users.explicitOverrides.permissions.private_recipient_delivery, false)
+
 const legacyDefaults = createDefaultAccessPolicies()
 const legacyAccess = {
   version: 1,
   roles: Object.fromEntries((["duke", "knight", "civilian"] as const).map(role => {
     const current = legacyDefaults.roles[role]
     return [role, {
-      permissions: current.permissions,
+      permissions: Object.fromEntries(Object.entries(current.permissions).filter(
+        ([permission]) => permission !== PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY
+          && permission !== PERMISSIONS.MANAGE_MAILU,
+      )),
       quotas: {
         ...current.quotas,
         dailyReceiveLimit: 0,
@@ -130,6 +164,9 @@ const legacyAccess = {
 }
 const migratedLegacyAccess = parseAccessPolicies(legacyAccess)
 assert.equal(migratedLegacyAccess.roles.duke.domainAccess.default, "allow")
+assert.equal(migratedLegacyAccess.version, 7)
+assert.equal(migratedLegacyAccess.roles.duke.permissions.private_recipient_delivery, true)
+assert.equal(migratedLegacyAccess.roles.civilian.permissions.private_recipient_delivery, false)
 assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(migratedLegacyAccess, "legacy-duke", ["duke"]), "send", "box@example.test")?.rolling.limit, 5)
 assert.equal(resolveMailQuotaAssignment(resolveAccessPolicy(migratedLegacyAccess, "legacy-civilian", ["civilian"]), "send", "box@example.test")?.rolling.limit, -1)
 
@@ -146,11 +183,16 @@ const version4Quota = (scope: "user" | "role" = "user"): MailQuotaPolicy => ({
 })
 const version4Access = {
   version: 4,
-  roles: Object.fromEntries(((["emperor", "duke", "knight", "civilian"] as const)).map(role => [role, {
-    ...structuredClone(version4Defaults.roles[role]),
-    sendQuota: version4Quota(role === "duke" ? "role" : "user"),
-    receiveQuota: version4Quota(),
-  }])),
+  roles: Object.fromEntries(((["emperor", "duke", "knight", "civilian"] as const)).map(role => {
+    const current = structuredClone(version4Defaults.roles[role])
+    delete (current.permissions as Partial<Record<string, boolean>>)[PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]
+    delete (current.permissions as Partial<Record<string, boolean>>)[PERMISSIONS.MANAGE_MAILU]
+    return [role, {
+      ...current,
+      sendQuota: version4Quota(role === "duke" ? "role" : "user"),
+      receiveQuota: version4Quota(),
+    }]
+  })),
   users: {},
 }
 version4Access.roles.duke.sendQuota.mailbox = {
@@ -170,6 +212,8 @@ version4Access.roles.duke.sendQuota.mailboxes = {
   },
 }
 const migratedVersion4 = parseAccessPolicies(version4Access)
+assert.equal(migratedVersion4.roles.duke.permissions.private_recipient_delivery, true)
+assert.equal(migratedVersion4.roles.civilian.permissions.private_recipient_delivery, false)
 const migratedDukeRules = migratedVersion4.mailQuotaRules.filter(rule => (
   rule.direction === "send" && rule.subject.type === "role" && rule.subject.role === "duke"
 ))
@@ -265,6 +309,34 @@ assert.equal(resendBody.from, "Domain One <sender@resend.example>")
 assert.deepEqual(resendBody.to, ["recipient@example.net", "second@example.net"])
 assert.match(resendBody.html, /^<!doctype html><html>/i)
 assert.equal(resendBody.text, "hello")
+
+const privateResendRequests: Request[] = []
+globalThis.fetch = async (input, init) => {
+  privateResendRequests.push(new Request(input, init))
+  return Response.json({ data: [{ id: "mail_private_one" }, { id: "mail_private_two" }] }, { status: 200 })
+}
+try {
+  await sendOutboundMessage(
+    "sender@resend.example",
+    {
+      to: "private-one@example.net; private-two@example.net",
+      subject: "Private Resend",
+      content: "hello",
+      format: "text",
+      privateRecipients: true,
+    },
+    domainPolicies[0],
+  )
+} finally {
+  globalThis.fetch = originalFetch
+}
+assert.equal(privateResendRequests.length, 1)
+assert.equal(new URL(privateResendRequests[0].url).pathname, "/emails/batch")
+const privateResendBody = await privateResendRequests[0].json() as Array<{ to: string[] }>
+assert.deepEqual(privateResendBody.map(delivery => delivery.to), [
+  ["private-one@example.net"],
+  ["private-two@example.net"],
+])
 assert.equal(
   outboundMessageSchema.parse({
     to: "recipient@example.net",
@@ -282,6 +354,12 @@ assert.deepEqual(
   }).to,
   ["first@example.net", "second@example.net"],
 )
+assert.equal(outboundMessageSchema.parse({
+  to: "recipient@example.net",
+  subject: "Default visibility",
+  content: "hello",
+  format: "text",
+}).privateRecipients, false)
 assert.equal(outboundMessageSchema.safeParse({
   to: "recipient@example.net, ",
   subject: "Trailing separator",
@@ -289,7 +367,7 @@ assert.equal(outboundMessageSchema.safeParse({
   format: "text",
 }).success, false)
 assert.deepEqual(
-  outboundContent({ to: ["recipient@example.net"], subject: "Text", content: "<unsafe>&", format: "text" }),
+  outboundContent({ to: ["recipient@example.net"], subject: "Text", content: "<unsafe>&", format: "text", privateRecipients: false }),
   {
     text: "<unsafe>&",
     html: "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><pre style=\"white-space:pre-wrap;font:inherit\">&lt;unsafe&gt;&amp;</pre></body></html>",
@@ -301,6 +379,7 @@ assert.deepEqual(
     subject: "Image fallback",
     content: '<head><style>hidden</style></head><p>Hello&nbsp;<strong>world</strong></p><img src="pixel" alt="chart &amp; summary"><script>alert(1)</script>',
     format: "html",
+    privateRecipients: false,
   }),
   {
     text: "Hello world\nchart & summary",
@@ -313,6 +392,7 @@ assert.equal(
     subject: "Image-only message",
     content: '<img src="pixel">',
     format: "html",
+    privateRecipients: false,
   }).text,
   "Image-only message",
 )
@@ -324,6 +404,7 @@ assert.equal(
     subject: "Adversarial fallback",
     content: adversarialHtml,
     format: "html",
+    privateRecipients: false,
   }).text,
   "Adversarial fallback",
 )
@@ -403,6 +484,70 @@ assert.match(smtpRaw, /Content-Type: text\/plain/i)
 assert.match(smtpRaw, /smtp hello/i)
 assert.equal(smtpAuthenticated, true)
 
+const privateSmtpMessages: string[] = []
+{
+  const privateSmtpServer = createServer(socket => {
+    socket.setEncoding("utf8")
+    socket.write("220 private.example ESMTP\r\n")
+    let input = ""
+    let data = ""
+    let dataMode = false
+    socket.on("data", chunk => {
+      input += chunk
+      while (true) {
+        const end = input.indexOf("\r\n")
+        if (end < 0) break
+        const line = input.slice(0, end)
+        input = input.slice(end + 2)
+        if (dataMode) {
+          if (line === ".") {
+            dataMode = false
+            privateSmtpMessages.push(data)
+            data = ""
+            socket.write("250 queued\r\n")
+          } else data += `${line}\r\n`
+        } else if (/^EHLO /iu.test(line)) socket.write("250 private.example\r\n")
+        else if (/^DATA$/iu.test(line)) { dataMode = true; socket.write("354 end\r\n") }
+        else if (/^QUIT$/iu.test(line)) socket.end("221 bye\r\n")
+        else socket.write("250 ok\r\n")
+      }
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    privateSmtpServer.once("error", reject)
+    privateSmtpServer.listen(0, "127.0.0.1", resolve)
+  })
+  const privateAddress = privateSmtpServer.address()
+  assert.ok(privateAddress && typeof privateAddress === "object")
+  const privatePolicy: DomainPolicy = {
+    ...domainPolicies[1],
+    outbound: {
+      ...(domainPolicies[1].outbound as Extract<DomainPolicy["outbound"], { mode: "smtp" }>),
+      port: privateAddress.port,
+      username: null,
+      password: null,
+    },
+  }
+  try {
+    await sendOutboundMessage("sender@smtp.example", {
+      to: "private-one@example.net, private-two@example.net",
+      subject: "Private delivery",
+      content: "private",
+      format: "text",
+      privateRecipients: true,
+    }, privatePolicy)
+  } finally {
+    await new Promise<void>(resolve => privateSmtpServer.close(() => resolve()))
+  }
+  assert.equal(privateSmtpMessages.length, 2)
+  const privateOne = privateSmtpMessages.find(message => /To: private-one@example\.net/iu.test(message))
+  const privateTwo = privateSmtpMessages.find(message => /To: private-two@example\.net/iu.test(message))
+  assert.ok(privateOne)
+  assert.ok(privateTwo)
+  assert.doesNotMatch(privateOne, /private-two@example\.net/iu)
+  assert.doesNotMatch(privateTwo, /private-one@example\.net/iu)
+}
+
 let smtpLoginAuthenticated = false
 let smtpLoginStep: "idle" | "username" | "password" = "idle"
 const smtpLoginServer = createServer(socket => {
@@ -462,6 +607,8 @@ console.log(JSON.stringify({
   domainPolicyValidation: true,
   independentResendKey: true,
   independentSmtpCredentials: true,
+  privateRecipientResendBatchVerified: true,
+  privateRecipientSmtpDeliveryVerified: true,
   smtpConnectionAndAuthenticationVerified: true,
   smtpLegacyConfigDefaultsToAuto: true,
   smtpForcedLoginVerified: true,

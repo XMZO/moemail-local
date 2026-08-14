@@ -28,6 +28,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { normalizeMailboxCreationName } from "@/lib/email-address"
 import { ROLES, type Role } from "@/lib/permissions"
+import { SearchableUserSelect, type SearchableUser } from "./searchable-user-select"
 
 export type MailDirection = "send" | "receive"
 export type MailQuotaUnit = "second" | "minute" | "hour" | "day" | "week" | "month"
@@ -126,11 +127,12 @@ function QuotaToggle({ checked, onChange, label, help }: {
   )
 }
 
-export function MailQuotaRuleEditor({ rules, domains, users, onChange }: {
+export function MailQuotaRuleEditor({ rules, domains, users, onChange, onUserResolved }: {
   rules: MailQuotaAssignment[]
   domains: string[]
   users: QuotaUser[]
   onChange: (rules: MailQuotaAssignment[]) => void
+  onUserResolved?: (user: SearchableUser) => void
 }) {
   const t = useTranslations("admin.access.mailQuota")
   const tRoles = useTranslations("profile.card.roles")
@@ -182,7 +184,7 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange }: {
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="min-w-0 space-y-2">
             <Label className="text-xs">{t("subject")}</Label>
-            <div className="grid min-w-0 gap-2 md:grid-cols-2"><Select value={subjectType} onValueChange={value => setSubjectType(value as MailQuotaSubject["type"])}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("subjects.all")}</SelectItem><SelectItem value="role">{t("subjects.role")}</SelectItem><SelectItem value="user">{t("subjects.user")}</SelectItem></SelectContent></Select>{subjectType === "role" ? <Select value={subjectRole} onValueChange={value => setSubjectRole(value as Role)}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent>{roles.map(role => <SelectItem key={role} value={role}>{tRoles(roleTranslationKeys[role])}</SelectItem>)}</SelectContent></Select> : subjectType === "user" ? <Select value={subjectUserId} onValueChange={setSubjectUserId}><SelectTrigger className={compactSelectTrigger}><SelectValue placeholder={t("subjects.selectUser")} /></SelectTrigger><SelectContent>{users.map(user => <SelectItem key={user.id} value={user.id}>{identity(user)}</SelectItem>)}</SelectContent></Select> : <p className="min-w-0 self-center text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("subjects.allHelp")}</p>}</div>
+            <div className="grid min-w-0 gap-2 md:grid-cols-2"><Select value={subjectType} onValueChange={value => setSubjectType(value as MailQuotaSubject["type"])}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("subjects.all")}</SelectItem><SelectItem value="role">{t("subjects.role")}</SelectItem><SelectItem value="user">{t("subjects.user")}</SelectItem></SelectContent></Select>{subjectType === "role" ? <Select value={subjectRole} onValueChange={value => setSubjectRole(value as Role)}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent>{roles.map(role => <SelectItem key={role} value={role}>{tRoles(roleTranslationKeys[role])}</SelectItem>)}</SelectContent></Select> : subjectType === "user" ? <SearchableUserSelect value={subjectUserId} onValueChange={setSubjectUserId} knownUsers={users} onUserResolved={onUserResolved} /> : <p className="min-w-0 self-center text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("subjects.allHelp")}</p>}</div>
           </div>
           <div className="min-w-0 space-y-2">
             <Label className="text-xs">{t("target")}</Label>
@@ -199,10 +201,11 @@ export function MailQuotaRuleEditor({ rules, domains, users, onChange }: {
   )
 }
 
-export function MailQuotaUsageManager({ users, revision, onReset }: {
+export function MailQuotaUsageManager({ users, revision, onReset, onUserResolved }: {
   users: QuotaUser[]
   revision: number
   onReset: () => void
+  onUserResolved?: (user: SearchableUser) => void
 }) {
   const t = useTranslations("admin.access.mailQuota")
   const tRoles = useTranslations("profile.card.roles")
@@ -279,7 +282,7 @@ export function MailQuotaUsageManager({ users, revision, onReset }: {
       <div className="grid min-w-0 gap-2 md:grid-cols-3">
         <Select value={direction} onValueChange={value => setDirection(value as MailDirection)}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="send">{t("directions.send")}</SelectItem><SelectItem value="receive">{t("directions.receive")}</SelectItem></SelectContent></Select>
         <Select value={subjectType} onValueChange={value => setSubjectType(value as MailQuotaSubject["type"])}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("subjects.all")}</SelectItem><SelectItem value="role">{t("subjects.role")}</SelectItem><SelectItem value="user">{t("subjects.user")}</SelectItem></SelectContent></Select>
-        {subjectType === "role" ? <Select value={role} onValueChange={value => setRole(value as Role)}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent>{roles.map(item => <SelectItem key={item} value={item}>{tRoles(roleTranslationKeys[item])}</SelectItem>)}</SelectContent></Select> : subjectType === "user" ? <Select value={userId} onValueChange={setUserId}><SelectTrigger className={compactSelectTrigger}><SelectValue placeholder={t("subjects.selectUser")} /></SelectTrigger><SelectContent>{users.map(user => <SelectItem key={user.id} value={user.id}>{identity(user)}</SelectItem>)}</SelectContent></Select> : <div className="flex min-h-8 min-w-0 items-center rounded border px-3 py-1.5 text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("usage.siteWideHint")}</div>}
+        {subjectType === "role" ? <Select value={role} onValueChange={value => setRole(value as Role)}><SelectTrigger className={compactSelectTrigger}><SelectValue /></SelectTrigger><SelectContent>{roles.map(item => <SelectItem key={item} value={item}>{tRoles(roleTranslationKeys[item])}</SelectItem>)}</SelectContent></Select> : subjectType === "user" ? <SearchableUserSelect value={userId} onValueChange={setUserId} knownUsers={users} onUserResolved={onUserResolved} /> : <div className="flex min-h-8 min-w-0 items-center rounded border px-3 py-1.5 text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("usage.siteWideHint")}</div>}
       </div>
       {failed && <p className="text-xs text-destructive">{t("usage.error")}</p>}
       {loading ? <div className="flex min-h-20 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-primary" /></div> : usage && <div className="space-y-2"><div className="text-xs text-muted-foreground">{tFormat("labelValue", { label: t("usage.allTime"), value: usage.allTimeCompleted })}</div>{usage.rules.length === 0 ? <div className="rounded border border-dashed p-4 text-center text-xs text-muted-foreground">{t("usage.empty")}</div> : usage.rules.map(item => <div key={item.assignment.id} className="grid min-w-0 gap-1.5 rounded border bg-muted/20 px-2 py-1.5 text-xs lg:grid-cols-[minmax(0,1fr)_minmax(0,auto)] lg:items-center"><span className="min-w-0 break-all font-mono">{t("usage.targetPool", { target: targetLabel(item.assignment), pool: t(item.assignment.subject.type === "all" ? "pools.global" : item.assignment.subject.type === "role" && item.assignment.shareWithinRole ? "pools.role" : "pools.user") })}</span><span className="min-w-0 leading-relaxed text-muted-foreground [overflow-wrap:anywhere] lg:text-right">{item.assignment.target.type === "mailbox" && item.assignment.lifetimeLimit >= 0 ? t("usage.ruleWithLifetime", { used: item.rolling.used, limit: amount(item.rolling.remaining === null ? null : item.rolling.rule.limit), pending: item.rolling.pending, lifetimeUsed: item.lifetimeUsed, lifetimeLimit: item.assignment.lifetimeLimit }) : t("usage.ruleLine", { used: item.rolling.used, limit: amount(item.rolling.remaining === null ? null : item.rolling.rule.limit), pending: item.rolling.pending })}</span></div>)}</div>}

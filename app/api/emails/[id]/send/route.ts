@@ -37,7 +37,6 @@ export async function POST(
     if (!parsedMessage.success) {
       return apiError("OUTBOUND_MESSAGE_INVALID", 400)
     }
-
     const email = await findOwnedActiveMailbox(userId, id)
 
     if (!email) {
@@ -58,6 +57,12 @@ export async function POST(
     }
 
     const currentAccess = await getUserAccessPolicy(userId)
+    if (
+      parsedMessage.data.privateRecipients
+      && !currentAccess.permissions[PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY]
+    ) {
+      return apiError("PRIVATE_RECIPIENT_DELIVERY_FORBIDDEN", 403)
+    }
     if (!isDomainOperationAllowed(currentAccess, domain, "send")) {
       return apiError("MAIL_DOMAIN_SEND_FORBIDDEN", 403)
     }
@@ -119,6 +124,7 @@ export async function POST(
       code: "OUTBOUND_MESSAGE_SENT",
       remainingEmails: permissionResult.remainingEmails,
       transport: domainPolicy.outbound.mode,
+      privateRecipients: message.privateRecipients,
       historyStored: persistence[0].status === "fulfilled",
     })
   } catch (error) {

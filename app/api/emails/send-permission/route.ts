@@ -46,7 +46,10 @@ export async function GET(request: Request) {
     }
     const result = await checkSendPermission(userId, senderAddress, access)
     
-    return NextResponse.json(result)
+    return NextResponse.json({
+      ...result,
+      canUsePrivateRecipientDelivery: access.permissions[PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY],
+    })
   } catch (error) {
     console.error("outbound.permission_check_failed", error)
     return NextResponse.json({

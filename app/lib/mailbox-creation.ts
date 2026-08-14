@@ -164,7 +164,16 @@ async function postgresCreateMailbox(input: MailboxCreationInput): Promise<Mailb
 }
 
 export function createMailbox(input: MailboxCreationInput) {
-  return getDatabaseDriver() === "sqlite"
+  const created = getDatabaseDriver() === "sqlite"
     ? Promise.resolve(sqliteCreateMailbox(input))
     : postgresCreateMailbox(input)
+  void created.then(result => {
+    if (!result.ok) return
+    void import("./mailu/reconcile")
+      .then(({ reconcileCurrentMailuIfEnabled }) => reconcileCurrentMailuIfEnabled())
+      .catch(error => console.error("mailu.reconcile_after_mailbox_create_failed", {
+        message: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+      }))
+  })
+  return created
 }

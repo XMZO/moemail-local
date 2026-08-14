@@ -71,11 +71,22 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const policies = await saveDomainPolicies(parsed.data)
+    // A policy save must not race a Mailu reconcile captured from the previous
+    // domain set. The production deployment supports one Web instance, and
+    // this process-wide mutation queue keeps those remote/local changes in
+    // order without holding a database transaction across network I/O.
+    const { withMailuMutation } = await import("@/lib/mailu/reconcile")
+    const policies = await withMailuMutation(() => saveDomainPolicies(parsed.data))
     return Response.json({ ok: true, policies }, { headers })
   } catch (error) {
     console.error("domain_policy.save_failed", error)
-    return apiError("DOMAIN_POLICIES_SAVE_FAILED", 500, { headers })
+    return apiError(
+      error instanceof Error && error.message === "MAILU_INTEGRATION_DISABLED"
+        ? "MAILU_INTEGRATION_DISABLED"
+        : "DOMAIN_POLICIES_SAVE_FAILED",
+      error instanceof Error && error.message === "MAILU_INTEGRATION_DISABLED" ? 409 : 500,
+      { headers },
+    )
   }
 }
 

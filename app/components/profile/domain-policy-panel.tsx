@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { readApiErrorCode } from "@/lib/api-error-client"
 import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 import { SecretInput } from "@/components/ui/secret-input"
+import { MailuIntegrationPanel } from "@/components/profile/mailu-integration-panel"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +32,7 @@ import {
 
 type Inbound =
   | { mode: "worker" }
+  | { mode: "mailu" }
   | { mode: "disabled" }
   | {
       mode: "imap"
@@ -48,6 +50,7 @@ type Inbound =
     }
 type Outbound =
   | { mode: "disabled" }
+  | { mode: "mailu" }
   | { mode: "resend"; apiKey: string; fromName: string | null }
   | {
       mode: "smtp"
@@ -100,7 +103,10 @@ const imapDefaults = (): Extract<Inbound, { mode: "imap" }> => ({
   maxMessagesPerPoll: 100,
 })
 
-export function DomainPolicyPanel() {
+export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
+  canManageConfig: boolean
+  canManageMailu: boolean
+}) {
   const format = useFormatter()
   const t = useTranslations("domains")
   const tFormat = useTranslations("common.format")
@@ -116,6 +122,10 @@ export function DomainPolicyPanel() {
   const { toast } = useToast()
 
   const load = useCallback(async () => {
+    if (!canManageConfig) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError("")
     try {
@@ -133,7 +143,7 @@ export function DomainPolicyPanel() {
     } finally {
       setLoading(false)
     }
-  }, [t, tApi])
+  }, [canManageConfig, t, tApi])
 
   useEffect(() => { void load() }, [load])
 
@@ -149,7 +159,9 @@ export function DomainPolicyPanel() {
         ? { mode: "disabled" }
         : mode === "resend"
           ? { mode: "resend", apiKey: "", fromName: null }
-          : smtpDefaults(),
+          : mode === "mailu"
+            ? { mode: "mailu" }
+            : smtpDefaults(),
     }))
   }
 
@@ -248,6 +260,18 @@ export function DomainPolicyPanel() {
     setSelected(policies.length)
   }
 
+  const addMailuDomains = (domains: string[]) => {
+    setPolicies(previous => {
+      const existing = new Set(previous.map(policy => policy.domain))
+      return [...previous, ...domains.filter(domain => !existing.has(domain)).map(domain => ({
+        domain,
+        inbound: { mode: "mailu" as const },
+        outbound: { mode: "mailu" as const },
+      }))]
+    })
+    toast({ title: t("mailu.success.domainsAdded", { count: domains.filter(domain => !policies.some(policy => policy.domain === domain)).length }) })
+  }
+
   const removeCurrent = () => {
     if (policies.length <= 1) return
     setPolicies(previous => previous.filter((_, index) => index !== selected))
@@ -268,7 +292,10 @@ export function DomainPolicyPanel() {
   }
 
   return (
-    <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-5">
+    <div className="space-y-4">
+      {canManageMailu && <MailuIntegrationPanel canImportDomains={canManageConfig} onDomainsDiscovered={addMailuDomains} />}
+      {canManageConfig && (
+      <div className="rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 font-semibold"><Globe2 className="h-5 w-5 text-primary" />{t("title")}</div>
@@ -315,6 +342,7 @@ export function DomainPolicyPanel() {
                   <SelectContent>
                     <SelectItem value="worker">{t("inboundModes.worker")}</SelectItem>
                     <SelectItem value="imap">{t("inboundModes.imap")}</SelectItem>
+                    <SelectItem value="mailu">{t("inboundModes.mailu")}</SelectItem>
                     <SelectItem value="disabled">{t("inboundModes.disabled")}</SelectItem>
                   </SelectContent>
                 </Select>
@@ -336,6 +364,7 @@ export function DomainPolicyPanel() {
                   <p className="text-xs text-muted-foreground sm:col-span-2">{t("imap.readOnlyHelp")}</p>
                 </div>
               )}
+              {current.inbound.mode === "mailu" && <p className="rounded border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">{t("mailu.domainHelp")}</p>}
               <Button type="button" variant="outline" size="sm" onClick={() => updateCurrent(() => freshPolicy(current.domain))}>
                 <RotateCcw className="mr-1 h-4 w-4" />{t("resetDomain")}
               </Button>
@@ -350,6 +379,7 @@ export function DomainPolicyPanel() {
                   <SelectContent>
                     <SelectItem value="resend">{t("outboundModes.resend")}</SelectItem>
                     <SelectItem value="smtp">{t("outboundModes.smtp")}</SelectItem>
+                    <SelectItem value="mailu">{t("outboundModes.mailu")}</SelectItem>
                     <SelectItem value="disabled">{t("outboundModes.disabled")}</SelectItem>
                   </SelectContent>
                 </Select>
@@ -375,6 +405,7 @@ export function DomainPolicyPanel() {
                   <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => void testSmtp()} disabled={testingSmtp}><PlugZap className="mr-1 h-4 w-4" />{testingSmtp ? t("smtp.testing") : t("smtp.test")}</Button></div>
                 </div>
               )}
+              {current.outbound.mode === "mailu" && <p className="rounded border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">{t("mailu.senderSafety")}</p>}
             </section>
           </div>
         </>
@@ -391,6 +422,8 @@ export function DomainPolicyPanel() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
+      )}
     </div>
   )
 }

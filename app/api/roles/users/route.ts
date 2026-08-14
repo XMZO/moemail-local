@@ -15,9 +15,13 @@ export async function GET(request: Request) {
   if (!authorization.ok) return authorization.response
 
   const { searchParams } = new URL(request.url)
-  const page = Math.max(1, Number(searchParams.get("page") || "1"))
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || "20")))
-  const search = searchParams.get("search")?.trim()
+  const pageValue = Number(searchParams.get("page") || "1")
+  const pageSizeValue = Number(searchParams.get("pageSize") || "20")
+  const page = Number.isSafeInteger(pageValue) && pageValue >= 1 ? pageValue : 1
+  const pageSize = Number.isSafeInteger(pageSizeValue)
+    ? Math.min(100, Math.max(1, pageSizeValue))
+    : 20
+  const search = searchParams.get("search")?.trim().slice(0, 200)
 
   const db = createDb()
 

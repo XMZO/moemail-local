@@ -4,7 +4,7 @@
 
 选择 Cloudflare Email Routing 时，Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。选择外部 IMAP 时无需 Cloudflare，但邮局必须提供 catch-all/全域转发，并保留可识别原始收件地址的 Header。
 
-仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.18.0`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
+仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.19.0`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会同时刷新 `latest` 与应用维护用的 `latest-tools`。必须等待整个发布 Action 的四个 manifest 全部成功后再执行 `pull`；回滚时把所选方案的 Web、维护、数据库和数据库工具标签一起固定到同一旧版本或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -346,11 +346,11 @@ Compose 不再内置代理服务；宿主机上的 Caddy/Nginx 应直接反代 `
 
 用户名密码注册/登录即使关闭 Turnstile，也会受 `auth.rateLimit` 限制。多实例仍需在可信入口增加共享限流；应用内计数只覆盖单进程。
 
-## 6. 入站邮件：Worker 或外部 IMAP
+## 6. 入站邮件：Worker、Mailu 或外部 IMAP
 
 每个邮箱域在“个人中心 → 域名收发”中独立选择一种收件方式。一个域不能同时走两个入口；切换时应先完成外部 Email Routing 或邮局 catch-all 配置，再观察旧入口重试结束。收件权限、每日收件额度和单封大小上限在“权限配额”中按角色或用户设置。
 
-Cloudflare Worker 适合已经使用 Cloudflare Email Routing、希望隐藏源站或需要 R2 + Queue 缓冲的部署；外部 IMAP 适合已有企业邮局/catch-all 邮箱的部署，宿主无需开放邮件端口。
+Cloudflare Worker 适合已经使用 Cloudflare Email Routing、希望隐藏源站或需要 R2 + Queue 缓冲的部署；Mailu 集成适合已经自托管完整邮件服务器、希望自动维护真实邮箱地址别名并同时发信的部署；通用外部 IMAP 适合其他已有企业邮局/catch-all 邮箱的部署。后两者都是 MoeMail 主动出站连接，宿主无需为 MoeMail 开放邮件端口。
 
 ### 6.1 直连模式
 
@@ -392,7 +392,28 @@ pnpm deploy:email:durable
 
 Worker URL 必须是公网 HTTPS 地址，不能写 Compose service 名。本地 YAML 和 Wrangler Secret 的 `EMAIL_INGEST_SECRET` 必须完全相同。Wrangler 自己的登录态/API token 仅属于 Cloudflare 工具边界，本地 Web/API 不读取。
 
-### 6.3 外部邮局 IMAP
+### 6.3 Mailu API + IMAP/SMTP 集成
+
+该模式连接一个单独部署的 Mailu，不会把 Mailu 服务塞进 MoeMail Compose，也不会修改 Mailu 源码。Mailu 必须先完成域名、MX、TLS、DKIM/SPF/DMARC、存储和备份部署，并启用 REST API：`API=true`、通过 HTTPS 暴露所配置的 `WEB_API`，同时设置强随机 `API_TOKEN`。尽量在防火墙或私网中只允许 MoeMail 主机访问 API。Mailu 的 v1 基础地址通常是 `https://mail.example.com/api/v1`。
+
+在 MoeMail **个人中心 → 域名收发 → Mailu 集成**：
+
+1. 填入 v1 API 地址和 Token；填入 Mailu 的 IMAP/SMTP 主机、端口、TLS 与证书校验方式。
+2. 准备两个不同且所在域已存在于 Mailu 的服务账号地址，使用强随机密码。collector 用于 IMAP 和 SMTP；catch-all 账号只转发，MoeMail 会强制将其设为禁止登录。
+3. “测试 API”后用“发现域名”审阅结果；发现操作不会改域名草稿，必须点击“添加域名”并保存。目标域也必须预先存在于 Mailu。
+4. 为目标域选择 Mailu 收件和/或 Mailu 发件，保存后点击“立即协调”。
+
+协调只管理带当前随机 `integrationId` 所有权标记的对象：一个 IMAP/SMTP collector、一个禁用登录的转发账号、有效收件地址及当前获准发件地址的精确别名，以及可选的 `%@domain` catch-all 别名。只有地址所属用户同时拥有 MoeMail 发件权限和该域发件权时，精确别名才指向 collector；仅收件或被撤销发件权的地址指向禁用登录的转发账号。权限撤销、角色变化、用户/邮箱删除和过期都会触发或由周期协调收口；任何仍指向 collector 的失效受管别名都会删除，即使关闭了普通的“移除过期别名”。外部已有用户/别名同名时会拒绝，不覆盖。不要手工移除或改写这些 ownership comment。
+
+Mailu 默认 Sieve 会清洗来信自带的 `Delivered-To`，再从第二个 `Received ... for <recipient>` 写入真实 SMTP envelope 收件人。MoeMail 只接受这一个明确配置的投递 Header，不使用 MIME `To`/`Cc`；重复或畸形 Header 会安全跳过并让邮件留在 Mailu。发件时，MoeMail API 先校验调用者拥有仍有效的本地邮箱，再确认 Mailu 中有指向 collector 的精确受管别名；`allow_spoofing` 始终为 false，通配别名不会授权任意 From。
+
+默认上游策略是在 MoeMail 数据库成功提交邮件 24 小时后从 Mailu 删除，也可改为保留、移动到归档文件夹或设更短延迟。只有 `created` 或已由内容摘要证明的 `duplicate` 才会进入删除/移动队列；未知邮箱、权限/额度拒绝、格式错误和超大邮件均留在上游。游标、待处理保留动作和短租约存储在数据库中，多进程不会并行处理同一 collector。删除要求 `UIDPLUS`，移动要求原生 `MOVE` 或 `UIDPLUS`；缺少安全 UID 范围能力时任务会失败并保留邮件，不会发送可能清除其他客户端邮件的普通 `EXPUNGE`。
+
+两个服务账号密码启用后不能直接覆盖，应使用界面的随机轮换按钮；操作先更新 Mailu，再提交本地密钥，本地提交失败时会尽力回滚远端。Mailu API Token 与服务密码保存在 MoeMail 当前数据库中并进入数据库备份，应按密钥材料保护。
+
+关闭 Mailu 集成会停止轮询、发信和自动协调，但不会直接删除远端账号或别名。若需要清理受管别名，先把相关域切换到其他模式并保存，再执行最后一次协调。Mailu 的精确别名同时参与 SMTP sender-login 与收件路由，所以“仅 Mailu 发件”的地址仍可能把外部来信送入 collector；建议同时启用 Mailu 收件，或为 collector 建立独立监控/清理策略。当前生产部署契约是单 Web 实例，collector 轮询同时使用数据库租约避免重复执行。
+
+### 6.4 外部邮局 IMAP
 
 1. 在域名 DNS/MX 与邮局控制台启用 catch-all/全域收件，或配置覆盖所有 MoeMail 地址的别名规则，让邮件进入一个专用外部邮箱。
 2. 确认邮局会清洗同名入站 Header，并把可信的 `X-Original-To`、`Envelope-To`、`X-Envelope-To` 或 `Delivered-To` 放在最前。应用不接受发件人可控的普通 MIME `To`；若邮局不保证投递追踪 Header 的来源和顺序，就不能安全确定实际临时地址，应改用 Worker。
@@ -405,9 +426,11 @@ Web 进程每 5 秒检查策略，按各域设置的 15–86400 秒间隔调度�
 
 IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也不会在外部邮局自动创建 MoeMail 的临时地址。若服务商不支持全域收件或不保留原始收件人，请使用 Worker 模式。
 
-### 6.4 按域外部发件
+### 6.5 按域外部发件
 
-每个域在同一“域名收发”面板独立选择 Resend、外部 SMTP 或关闭发件。Resend 填该域专用 API Key；SMTP 填外部邮局主机、端口、TLS/STARTTLS、用户名/密码或应用专用密码和可选 From name，并选择自动协商、强制 PLAIN 或强制 LOGIN。现有配置默认补为“自动协商”；Microsoft/Outlook 等仍允许密码式 SMTP AUTH 但协商失败时可选 LOGIN。OAuth-only 的 Microsoft 365 租户不能靠 LOGIN 兼容，应改用支持 OAuth 的 SMTP 中继/发件服务。点击“测试 SMTP 连接”只执行 transport verify，不发送测试邮件。真正发件仍以 MoeMail 当前地址作为 From，因此必须先在服务商验证域名并完成其要求的 SPF/DKIM/DMARC。
+每个域在同一“域名收发”面板独立选择 Mailu 集成、Resend、外部 SMTP 或关闭发件。Mailu 模式使用 6.3 节的全局 collector 与精确别名；Resend 填该域专用 API Key；SMTP 填外部邮局主机、端口、TLS/STARTTLS、用户名/密码或应用专用密码和可选 From name，并选择自动协商、强制 PLAIN 或强制 LOGIN。现有配置默认补为“自动协商”；Microsoft/Outlook 等仍允许密码式 SMTP AUTH 但协商失败时可选 LOGIN。OAuth-only 的 Microsoft 365 租户不能靠 LOGIN 兼容，应改用支持 OAuth 的 SMTP 中继/发件服务。点击“测试 SMTP 连接”只执行 transport verify，不发送测试邮件。真正发件仍以 MoeMail 当前地址作为 From，因此必须先在服务商验证域名并完成其要求的 SPF/DKIM/DMARC。
+
+普通多收件人发信会让所有地址出现在同一个 `To` Header。拥有“隐藏收件人并独立投递”权限时，可在 Web 发信框打开开关，或在 `POST /api/emails/{emailId}/send` 的 JSON 中传 `privateRecipients: true`；服务端会再次验权并按每个去重后的收件人分别提交，任何一封都不会暴露其他地址。无论是否独立投递，额度都按去重后的实际收件人数计算。
 
 这些 IMAP/SMTP/Resend 凭据和 IMAP 游标保存在数据库 `site_config`，会随数据库备份和异地副本一起导出。备份文件必须保持 `0600`、加密传输并限制 rclone remote 权限；不要把凭据复制到 Compose、`.env` 或公开日志。供应商退信、限流和滥用策略属于外部边界，上线前应对每个启用的域各发送一封真实测试邮件。
 
@@ -417,7 +440,7 @@ IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也�
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.18.0 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.19.0 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \
@@ -648,6 +671,7 @@ pnpm validate:setup:http
 pnpm validate:email-worker
 pnpm validate:mail-policies
 pnpm validate:imap-inbound
+pnpm validate:mailu
 pnpm validate:runtime-fields
 # 目标机装有 PostgreSQL 客户端/服务端工具时：
 pnpm validate:setup:http:postgres

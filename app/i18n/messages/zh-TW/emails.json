@@ -75,6 +75,11 @@
     "to": "收件者",
     "toPlaceholder": "多個收件者請用逗號或分號分隔",
     "toHelp": "已辨識 {count} 個不同收件者（最多 {maximum} 個）；重複地址會合併，每位收件者各占用 1 封寄件額度。",
+    "privateRecipients": {
+      "label": "隱藏其他收件者",
+      "help": "為每位收件者個別寄送一封郵件，彼此看不到其他地址；額度計算不變。",
+      "permissionRequired": "你的角色沒有個別投遞權限，收件者仍會看到彼此的地址。"
+    },
     "subject": "主旨",
     "subjectPlaceholder": "郵件主旨",
     "content": "內容",

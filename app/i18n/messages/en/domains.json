@@ -24,6 +24,7 @@
   "inboundModes": {
     "worker": "Cloudflare Email Worker",
     "imap": "External mailbox via IMAP",
+    "mailu": "Mailu integration",
     "disabled": "Disable inbound mail"
   },
   "outbound": "Outbound mail",
@@ -32,6 +33,7 @@
   "outboundModes": {
     "resend": "Resend",
     "smtp": "External SMTP",
+    "mailu": "Mailu integration",
     "disabled": "Disable outbound mail"
   },
   "common": {
@@ -91,6 +93,50 @@
   "secrets": {
     "show": "Show secret",
     "hide": "Hide secret"
+  },
+  "mailu": {
+    "title": "Mailu integration",
+    "description": "Use the Mailu v1 API to reconcile exact aliases, ingest through one IMAP collector, and send through the same collector without granting wildcard sender spoofing.",
+    "enabled": "Enable Mailu",
+    "showSecret": "Show secret",
+    "hideSecret": "Hide secret",
+    "host": "Host",
+    "port": "Port",
+    "security": "Security mode",
+    "strictCertificate": "Strict certificate verification",
+    "securityOptions": { "tls": "TLS", "starttls": "STARTTLS", "plain": "Plaintext" },
+    "domainHelp": "This domain uses the global Mailu collector. Only the configured trusted delivery header is accepted; MIME To/Cc never selects a MoeMail mailbox.",
+    "senderSafety": "Mailu sending requires an active MoeMail mailbox and an exact managed Mailu alias to the collector. Catch-all aliases never authorize a From address.",
+    "api": { "title": "Mailu API", "baseUrl": "v1 API base URL", "token": "API token", "timeout": "Timeout (seconds)" },
+    "accounts": {
+      "title": "Managed service accounts",
+      "collector": "Collector address",
+      "collectorPassword": "Collector password",
+      "catchAll": "Catch-all forwarding account",
+      "catchAllPassword": "Catch-all account password",
+      "safety": "They must be two distinct Mailu users. MoeMail forces allow_spoofing off and disables login for the catch-all account; it only forwards to the collector and cannot authenticate to SMTP."
+    },
+    "imap": { "title": "IMAP collection", "mailbox": "Source mailbox", "recipientHeader": "Trusted recipient header", "initialSync": "Initial synchronization", "initialSyncOptions": { "new": "Only messages arriving after save", "unseen": "Also import unread messages" }, "pollInterval": "Polling interval (seconds)", "maxMessages": "Maximum messages per poll" },
+    "smtp": { "title": "SMTP delivery", "authMethod": "Authentication method", "fromName": "Sender name (optional)" },
+    "retention": {
+      "title": "Upstream retention",
+      "action": "After durable MoeMail commit",
+      "actions": { "keep": "Keep in Mailu", "delete": "Delete from Mailu", "archive": "Move to archive mailbox" },
+      "delay": "Retention delay (seconds)",
+      "mailbox": "Archive mailbox",
+      "safety": "Delete or move is queued only after MoeMail commits the message or proves an existing duplicate. Rejected and unknown-recipient messages remain upstream."
+    },
+    "reconcile": {
+      "title": "Mailu reconciliation",
+      "enabled": "Automatic reconciliation",
+      "createCatchAll": "Create catch-all aliases",
+      "removeStaleAliases": "Remove stale managed aliases",
+      "interval": "Interval (seconds)",
+      "safety": "Only objects carrying this integration's ownership marker are updated or removed. Foreign users and aliases fail closed."
+    },
+    "actions": { "testApi": "Test API", "discover": "Discover domains", "importDomains": "Add {count} domains to draft", "testImap": "Test IMAP", "testSmtp": "Test SMTP", "reconcile": "Reconcile now", "generateCollector": "Generate collector secret", "generateCatchAll": "Generate catch-all secret", "rotateCollector": "Generate and rotate collector secret", "rotateCatchAll": "Generate and rotate catch-all secret", "save": "Save Mailu settings", "saving": "Saving" },
+    "errors": { "load": "Failed to load Mailu settings", "save": "Failed to save Mailu settings", "testApi": "Mailu API test failed", "discover": "Mailu inventory discovery failed", "testImap": "Mailu IMAP test failed", "testSmtp": "Mailu SMTP test failed", "reconcile": "Mailu reconciliation failed", "rotateCollector": "Collector secret rotation failed", "rotateCatchAll": "Catch-all secret rotation failed" },
+    "success": { "saved": "Mailu settings saved", "testApi": "Mailu API connected", "discover": "Mailu domains discovered", "testImap": "Mailu IMAP connected", "testSmtp": "Mailu SMTP authenticated", "reconcile": "Mailu reconciliation completed", "rotateCollector": "Collector secret rotated", "rotateCatchAll": "Catch-all secret rotated", "reconcileCounts": "Created {created}, updated {updated}, removed {removed}", "domainsAdded": "Added {count} Mailu domains to the draft" }
   },
   "deleteConfirm": {
     "title": "Remove this domain?",

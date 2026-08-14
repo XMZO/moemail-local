@@ -13,10 +13,12 @@ export const PERMISSIONS = {
   DELETE_EMAIL: 'delete_email',
   RECEIVE_EMAIL: 'receive_email',
   SEND_EMAIL: 'send_email',
+  PRIVATE_RECIPIENT_DELIVERY: 'private_recipient_delivery',
   SHARE_EMAIL: 'share_email',
   MANAGE_WEBHOOK: 'manage_webhook',
   PROMOTE_USER: 'promote_user',
   MANAGE_CONFIG: 'manage_config',
+  MANAGE_MAILU: 'manage_mailu',
   MANAGE_API_KEY: 'manage_api_key',
 } as const;
 
@@ -30,6 +32,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DELETE_EMAIL,
     PERMISSIONS.RECEIVE_EMAIL,
     PERMISSIONS.SEND_EMAIL,
+    PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY,
     PERMISSIONS.SHARE_EMAIL,
     PERMISSIONS.MANAGE_WEBHOOK,
     PERMISSIONS.MANAGE_API_KEY,
@@ -40,6 +43,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DELETE_EMAIL,
     PERMISSIONS.RECEIVE_EMAIL,
     PERMISSIONS.SEND_EMAIL,
+    PERMISSIONS.PRIVATE_RECIPIENT_DELIVERY,
     PERMISSIONS.SHARE_EMAIL,
     PERMISSIONS.MANAGE_WEBHOOK,
   ],

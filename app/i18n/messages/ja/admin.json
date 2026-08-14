@@ -42,6 +42,12 @@
     "searchPlaceholder": "ユーザー名またはメールアドレスを検索",
     "selectUser": "ユーザーを選択",
     "selectUserHint": "オーバーライドを設定するユーザーを選択してください",
+    "userPicker": {
+      "search": "名前・ユーザー名・メールをリアルタイム検索",
+      "select": "ユーザーを選択",
+      "empty": "一致するユーザーはいません",
+      "error": "ユーザー検索に失敗しました。再試行してください"
+    },
     "emperorLocked": "皇帝の権限は編集できません",
     "emperorLockedHint": "これはアプリケーションと API の両方で強制されるシステム不変条件であり、皇帝本人も変更できません。",
     "emperorQuotaEditableHint": "皇帝の機能・リソース・ドメイン権限は固定です。皇帝を明示したクォータ規則は設定できます。サイト全体規則に皇帝を含めるかは「皇帝の使用量を除外」で決まります。",
@@ -88,10 +94,12 @@
       "delete_email": "メールボックスとメールを削除",
       "receive_email": "メールを受信",
       "send_email": "メールを送信",
+      "private_recipient_delivery": "宛先を隠して個別に配信",
       "share_email": "共有リンクを作成",
       "manage_webhook": "Webhook を管理",
       "promote_user": "ユーザーロールを管理",
       "manage_config": "サイトとドメイン設定を管理",
+      "manage_mailu": "Mailu 連携と認証情報を管理",
       "manage_api_key": "API Key を管理"
     },
     "quotas": {

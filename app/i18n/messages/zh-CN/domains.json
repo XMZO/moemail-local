@@ -24,6 +24,7 @@
   "inboundModes": {
     "worker": "Cloudflare Email Worker",
     "imap": "外部邮箱 IMAP",
+    "mailu": "Mailu 集成",
     "disabled": "关闭收件"
   },
   "outbound": "发件",
@@ -32,6 +33,7 @@
   "outboundModes": {
     "resend": "Resend",
     "smtp": "外部 SMTP",
+    "mailu": "Mailu 集成",
     "disabled": "关闭发件"
   },
   "common": {
@@ -91,6 +93,50 @@
   "secrets": {
     "show": "显示密钥",
     "hide": "隐藏密钥"
+  },
+  "mailu": {
+    "title": "Mailu 集成",
+    "description": "通过 Mailu v1 API 协调精确别名，用一个 IMAP collector 收件并用同一账号 SMTP 发件，同时不给通配别名发件人伪造权限。",
+    "enabled": "启用 Mailu",
+    "showSecret": "显示密钥",
+    "hideSecret": "隐藏密钥",
+    "host": "主机",
+    "port": "端口",
+    "security": "安全模式",
+    "strictCertificate": "严格校验证书",
+    "securityOptions": { "tls": "TLS", "starttls": "STARTTLS", "plain": "明文" },
+    "domainHelp": "该域名使用全局 Mailu collector。只接受明确配置的可信投递头，绝不会用 MIME To/Cc 选择 MoeMail 邮箱。",
+    "senderSafety": "Mailu 发信同时要求有效的 MoeMail 邮箱和指向 collector 的精确受管别名；catch-all 别名不会授权任何 From 地址。",
+    "api": { "title": "Mailu 接口", "baseUrl": "v1 接口基础地址", "token": "接口令牌", "timeout": "超时（秒）" },
+    "accounts": {
+      "title": "受管服务账号",
+      "collector": "Collector 地址",
+      "collectorPassword": "Collector 密码",
+      "catchAll": "Catch-all 转发账号",
+      "catchAllPassword": "Catch-all 账号密码",
+      "safety": "必须是两个不同的 Mailu 用户。MoeMail 会强制关闭 allow_spoofing，并禁用 catch-all 账号登录；它只负责向 collector 转发，不能用于 SMTP 鉴权。"
+    },
+    "imap": { "title": "IMAP 收取", "mailbox": "来源文件夹", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步范围", "initialSyncOptions": { "new": "只收取保存后到达的邮件", "unseen": "同时导入未读邮件" }, "pollInterval": "轮询间隔（秒）", "maxMessages": "每轮最多处理邮件数" },
+    "smtp": { "title": "SMTP 投递", "authMethod": "鉴权方式", "fromName": "发件人名称（可选）" },
+    "retention": {
+      "title": "上游保留策略",
+      "action": "MoeMail 持久化成功后",
+      "actions": { "keep": "保留在 Mailu", "delete": "从 Mailu 删除", "archive": "移动到归档文件夹" },
+      "delay": "延迟时间（秒）",
+      "mailbox": "归档文件夹",
+      "safety": "只有 MoeMail 已提交邮件或确认已有重复项后才会排队删除/移动。被拒绝或未知收件人的邮件继续保留在上游。"
+    },
+    "reconcile": {
+      "title": "Mailu 协调",
+      "enabled": "自动协调",
+      "createCatchAll": "创建 catch-all 别名",
+      "removeStaleAliases": "移除过期受管别名",
+      "interval": "间隔（秒）",
+      "safety": "只更新或删除带有本集成所有权标记的对象；遇到外部用户或别名冲突会安全拒绝。"
+    },
+    "actions": { "testApi": "测试 API", "discover": "发现域名", "importDomains": "向草稿添加 {count} 个域名", "testImap": "测试 IMAP", "testSmtp": "测试 SMTP", "reconcile": "立即协调", "generateCollector": "随机生成 Collector 密钥", "generateCatchAll": "随机生成 Catch-all 密钥", "rotateCollector": "随机生成并轮换 Collector 密钥", "rotateCatchAll": "随机生成并轮换 Catch-all 密钥", "save": "保存 Mailu 配置", "saving": "保存中" },
+    "errors": { "load": "读取 Mailu 配置失败", "save": "保存 Mailu 配置失败", "testApi": "Mailu API 测试失败", "discover": "读取 Mailu 资源失败", "testImap": "Mailu IMAP 测试失败", "testSmtp": "Mailu SMTP 测试失败", "reconcile": "Mailu 协调失败", "rotateCollector": "Collector 密钥轮换失败", "rotateCatchAll": "Catch-all 密钥轮换失败" },
+    "success": { "saved": "Mailu 配置已保存", "testApi": "Mailu API 连接成功", "discover": "已发现 Mailu 域名", "testImap": "Mailu IMAP 连接成功", "testSmtp": "Mailu SMTP 鉴权成功", "reconcile": "Mailu 协调完成", "rotateCollector": "Collector 密钥已轮换", "rotateCatchAll": "Catch-all 密钥已轮换", "reconcileCounts": "新建 {created}、更新 {updated}、移除 {removed}", "domainsAdded": "已向草稿添加 {count} 个 Mailu 域名" }
   },
   "deleteConfirm": {
     "title": "移除此域名？",

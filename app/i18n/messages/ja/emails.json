@@ -75,6 +75,11 @@
     "to": "宛先",
     "toPlaceholder": "複数の宛先はカンマまたはセミコロンで区切ります",
     "toHelp": "{count} 件の異なる宛先を認識しました（最大 {maximum} 件）。重複は統合され、宛先 1 件ごとに送信枠を 1 通消費します。",
+    "privateRecipients": {
+      "label": "他の宛先を隠す",
+      "help": "宛先ごとに別々のメールを送信し、他のアドレスを表示しません。送信枠の計算は変わりません。",
+      "permissionRequired": "このロールには個別配信の権限がないため、宛先同士にアドレスが表示されます。"
+    },
     "subject": "件名",
     "subjectPlaceholder": "メールの件名",
     "content": "内容",
