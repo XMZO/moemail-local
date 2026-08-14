@@ -1,24 +1,17 @@
 import { Header } from "@/components/layout/header"
 import { ProfileCard } from "@/components/profile/profile-card"
 import { redirect } from "next/navigation"
-import type { Locale } from "@/i18n/config"
 import { requireCompletedSetup } from "@/lib/setup-navigation"
 
 export const runtime = "nodejs"
 
-export default async function ProfilePage({
-  params,
-}: {
-  params: Promise<{ locale: string }>
-}) {
-  const { locale: localeFromParams } = await params
-  const locale = localeFromParams as Locale
-  requireCompletedSetup(locale)
+export default async function ProfilePage() {
+  requireCompletedSetup()
   const { auth } = await import("@/lib/auth")
   const session = await auth()
   
   if (!session?.user) {
-    redirect(`/${locale}`)
+    redirect("/")
   }
 
   return (

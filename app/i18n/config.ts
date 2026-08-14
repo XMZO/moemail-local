@@ -6,5 +6,5 @@ export const defaultLocale: Locale = 'en'
 export const i18n = {
   locales,
   defaultLocale,
-  localePrefix: 'as-needed',
+  localePrefix: 'never',
 }

@@ -2,11 +2,10 @@
 
 import { ShieldAlert } from "lucide-react"
 import Link from "next/link"
-import { useLocale, useTranslations } from "next-intl"
+import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 
 export function AuthErrorContent() {
-  const locale = useLocale()
   const t = useTranslations("auth.authError")
 
   return (
@@ -18,8 +17,8 @@ export function AuthErrorContent() {
         <h1 className="mt-4 text-xl font-semibold">{t("title")}</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("description")}</p>
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
-          <Button asChild><Link href={`/${locale}/login`}>{t("retry")}</Link></Button>
-          <Button asChild variant="outline"><Link href={`/${locale}`}>{t("home")}</Link></Button>
+          <Button asChild><Link href="/login">{t("retry")}</Link></Button>
+          <Button asChild variant="outline"><Link href="/">{t("home")}</Link></Button>
         </div>
       </section>
     </main>

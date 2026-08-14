@@ -1,26 +1,23 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { i18n, type Locale } from "@/i18n/config"
 
-export function middleware(request: Request) {
-  const url = new URL(request.url)
+const localeCookie = "NEXT_LOCALE"
+const localeCookieMaxAge = 365 * 24 * 60 * 60
+const internalLocaleRewriteHeader = "x-moemail-internal-locale-rewrite"
+
+export function middleware(request: NextRequest) {
+  const url = request.nextUrl.clone()
   const pathname = url.pathname
 
   if (pathname.startsWith('/api')) {
     return NextResponse.next()
   }
 
-  // Pages: 语言前缀
   const segments = pathname.split('/')
   const maybeLocale = segments[1]
-  const hasLocalePrefix = i18n.locales.includes(maybeLocale as any)
-  if (!hasLocalePrefix) {
-    const cookieLocale = request.headers.get('Cookie')?.match(/NEXT_LOCALE=([^;]+)/)?.[1]
-    const acceptLanguage = request.headers.get('Accept-Language')
-    const preferredLocale = resolvePreferredLocale(cookieLocale, acceptLanguage)
-    const targetLocale = preferredLocale ?? i18n.defaultLocale
-    const redirectURL = new URL(`/${targetLocale}${pathname}${url.search}`, request.url)
-    return NextResponse.redirect(redirectURL)
-  }
+  const prefixedLocale = i18n.locales.includes(maybeLocale as Locale)
+    ? maybeLocale as Locale
+    : null
 
   const requestHeaders = new Headers(request.headers)
   if (url.searchParams.get("safe-appearance") === "1") {
@@ -28,7 +25,46 @@ export function middleware(request: Request) {
   } else {
     requestHeaders.delete("x-moemail-safe-appearance")
   }
-  return NextResponse.next({ request: { headers: requestHeaders } })
+
+  // Next.js may run middleware again for the internal rewrite. Only this
+  // marked pass may keep the internal /[locale] route without canonicalizing it.
+  if (prefixedLocale && request.headers.get(internalLocaleRewriteHeader) === "1") {
+    requestHeaders.delete(internalLocaleRewriteHeader)
+    const response = NextResponse.next({ request: { headers: requestHeaders } })
+    response.headers.set('Content-Language', prefixedLocale)
+    response.headers.set('Vary', 'Cookie, Accept-Language')
+    return response
+  }
+
+  // 旧的带语言前缀链接仍然直接渲染，并通过 Cookie 保留链接明确
+  // 指定的语言。客户端在水合时原地清理地址栏，避免任何 Host 重定向。
+  if (prefixedLocale) {
+    const response = NextResponse.next({ request: { headers: requestHeaders } })
+    response.cookies.set(localeCookie, prefixedLocale, {
+      maxAge: localeCookieMaxAge,
+      path: '/',
+      sameSite: 'lax',
+      secure: request.nextUrl.protocol === 'https:',
+    })
+    response.headers.set('Content-Language', prefixedLocale)
+    response.headers.set('Vary', 'Cookie, Accept-Language')
+    return response
+  }
+
+  const cookieLocale = request.cookies.get(localeCookie)?.value
+  const preferredLocale = resolvePreferredLocale(
+    cookieLocale,
+    request.headers.get('Accept-Language'),
+  )
+  const targetLocale = preferredLocale ?? i18n.defaultLocale
+  const rewriteUrl = request.nextUrl.clone()
+  rewriteUrl.pathname = pathname === '/' ? `/${targetLocale}` : `/${targetLocale}${pathname}`
+  requestHeaders.set(internalLocaleRewriteHeader, "1")
+
+  const response = NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } })
+  response.headers.set('Content-Language', targetLocale)
+  response.headers.set('Vary', 'Cookie, Accept-Language')
+  return response
 }
 
 function resolvePreferredLocale(cookieLocale: string | undefined, acceptLanguageHeader: string | null): Locale | null {

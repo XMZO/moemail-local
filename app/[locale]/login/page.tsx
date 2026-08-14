@@ -1,24 +1,17 @@
 import { LoginForm } from "@/components/auth/login-form"
 import { redirect } from "next/navigation"
-import type { Locale } from "@/i18n/config"
 import { requireCompletedSetup } from "@/lib/setup-navigation"
 
 export const runtime = "nodejs"
 
-export default async function LoginPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>
-}) {
-  const { locale: localeFromParams } = await params
-  const locale = localeFromParams as Locale
-  requireCompletedSetup(locale)
+export default async function LoginPage() {
+  requireCompletedSetup()
   const { auth } = await import("@/lib/auth")
   const { getTurnstileConfig } = await import("@/lib/turnstile")
   const session = await auth()
   
   if (session?.user) {
-    redirect(`/${locale}`)
+    redirect("/")
   }
 
   const turnstile = await getTurnstileConfig()

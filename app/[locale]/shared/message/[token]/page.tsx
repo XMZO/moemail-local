@@ -10,8 +10,8 @@ interface PageProps {
 }
 
 export default async function SharedMessagePage({ params }: PageProps) {
-  const { token, locale } = await params
-  requireCompletedSetup(locale)
+  const { token } = await params
+  requireCompletedSetup()
   const { getSharedMessage } = await import("@/lib/shared-data")
   
   // 服务端获取数据

@@ -47,6 +47,10 @@ type MailQuotaAssignment = { id: string; direction: "send" | "receive"; subject:
 class CookieJar {
   private readonly values = new Map<string, string>()
 
+  set(name: string, value: string) {
+    this.values.set(name, value)
+  }
+
   apply(headers: Headers) {
     if (this.values.size > 0) {
       headers.set("Cookie", [...this.values].map(([name, value]) => `${name}=${value}`).join("; "))
@@ -274,6 +278,11 @@ try {
 
   const port = await freePort()
   const baseUrl = `http://127.0.0.1:${port}`
+  const localizedPage = (path: string, locale: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers)
+    headers.set("Cookie", `NEXT_LOCALE=${locale}`)
+    return fetch(`${baseUrl}${path}`, { ...init, headers })
+  }
   server = launchServer(port)
 
   await waitFor(async () => {
@@ -283,9 +292,14 @@ try {
     return body.status === "setup-required" ? body : null
   })
 
-  const root = await fetch(`${baseUrl}/zh-CN`, { redirect: "manual" })
+  const legacySetup = await fetch(`${baseUrl}/zh-CN/setup`, { redirect: "manual" })
+  assert.equal(legacySetup.status, 200)
+  assert.match(legacySetup.headers.get("set-cookie") ?? "", /NEXT_LOCALE=zh-CN/u)
+  assert.match(await legacySetup.text(), /一次性初始化令牌/u)
+
+  const root = await localizedPage("/", "zh-CN", { redirect: "manual" })
   assert.equal(root.status, 307)
-  assert.equal(new URL(root.headers.get("location") as string, baseUrl).pathname, "/zh-CN/setup")
+  assert.equal(new URL(root.headers.get("location") as string, baseUrl).pathname, "/setup")
 
   const localizedSetupExpectations = {
     en: { marker: "Set up MoeMail", configPath: "Config file: <code" },
@@ -296,7 +310,7 @@ try {
   } as const
   const localizedSetupHtml = new Map<string, string>()
   for (const [locale, expectation] of Object.entries(localizedSetupExpectations)) {
-    const setupPage = await fetch(`${baseUrl}/${locale}/setup`)
+    const setupPage = await localizedPage("/setup", locale)
     assert.equal(setupPage.status, 200)
     const html = await setupPage.text()
     assert.ok(html.includes(expectation.marker), `${locale} setup page must render its own translation`)
@@ -322,7 +336,7 @@ try {
     rmSync(join(temporaryRoot, "data/config.yaml"), { force: true })
     rmSync(join(temporaryRoot, "data/config.yaml.lkg"), { force: true })
     await new Promise(resolvePromise => setTimeout(resolvePromise, 1_200))
-    const memoryOnlySetupPage = await fetch(`${baseUrl}/zh-CN/setup`)
+    const memoryOnlySetupPage = await localizedPage("/setup", "zh-CN")
     assert.equal(memoryOnlySetupPage.status, 200)
     const memoryOnlyHtml = await memoryOnlySetupPage.text()
     assert.doesNotMatch(memoryOnlyHtml, new RegExp(stagedRcloneSecret))
@@ -439,11 +453,8 @@ try {
   const authSignInEntry = new URL(authSignInFallback.headers.get("location") as string, baseUrl)
   assert.equal(authSignInEntry.pathname, "/login")
   const localizedAuthSignIn = await fetch(authSignInEntry, { redirect: "manual" })
-  assert.ok([302, 303, 307, 308].includes(localizedAuthSignIn.status))
-  assert.equal(
-    new URL(localizedAuthSignIn.headers.get("location") as string, baseUrl).pathname,
-    "/en/login",
-  )
+  assert.equal(localizedAuthSignIn.status, 200)
+  assert.equal(new URL(localizedAuthSignIn.url).pathname, "/login")
   const authErrorMarkers = {
     en: "Authentication failed",
     "zh-CN": "身份验证失败",
@@ -452,7 +463,7 @@ try {
     ko: "인증에 실패했습니다",
   } as const
   for (const [locale, marker] of Object.entries(authErrorMarkers)) {
-    const authErrorPage = await fetch(`${baseUrl}/${locale}/auth-error`)
+    const authErrorPage = await localizedPage("/auth-error", locale)
     assert.equal(authErrorPage.status, 200)
     assert.ok(
       (await authErrorPage.text()).includes(marker),
@@ -486,7 +497,7 @@ try {
       csrfToken,
       username: adminUsername,
       password: adminPassword,
-      callbackUrl: `${baseUrl}/zh-CN`,
+      callbackUrl: `${baseUrl}/`,
     }),
   })
   assert.ok([302, 303].includes(login.status))
@@ -513,7 +524,8 @@ try {
     ko: "이 패널에는 평문 비밀값이 포함되어 있습니다",
   } as const
   for (const [locale, marker] of Object.entries(localizedRuntimeTabs)) {
-    const profile = await request(`/${locale}/profile?tab=runtime`)
+    jar.set("NEXT_LOCALE", locale)
+    const profile = await request("/profile?tab=runtime")
     assert.equal(profile.status, 200)
     const html = await profile.text()
     assert.ok(html.includes(marker), `${locale} profile must render the selected localized runtime panel`)
@@ -759,7 +771,7 @@ try {
       username: memberUsername,
       password: memberPassword,
       registrationTicket: member.registrationTicket,
-      callbackUrl: `${baseUrl}/zh-CN`,
+      callbackUrl: `${baseUrl}/`,
     }),
   })
   assert.ok([302, 303].includes(memberLogin.status))
@@ -1419,7 +1431,7 @@ try {
       username: deletionUsername,
       password: deletionPassword,
       registrationTicket: deletionRegistrationBody.registrationTicket,
-      callbackUrl: `${baseUrl}/zh-CN`,
+      callbackUrl: `${baseUrl}/`,
     }),
   })
   assert.ok([302, 303].includes(deletionLogin.status))
@@ -1568,11 +1580,12 @@ try {
   assert.equal(appearanceRead.status, 200)
   assert.match(await appearanceRead.text(), new RegExp(appearanceMarker))
 
-  const appearancePage = await request("/zh-CN/profile")
+  jar.set("NEXT_LOCALE", "zh-CN")
+  const appearancePage = await request("/profile")
   assert.equal(appearancePage.status, 200)
   assert.match(await appearancePage.text(), new RegExp(appearanceMarker))
 
-  const safeAppearancePage = await request("/zh-CN/profile?safe-appearance=1")
+  const safeAppearancePage = await request("/profile?safe-appearance=1")
   assert.equal(safeAppearancePage.status, 200)
   assert.doesNotMatch(await safeAppearancePage.text(), new RegExp(appearanceMarker))
 

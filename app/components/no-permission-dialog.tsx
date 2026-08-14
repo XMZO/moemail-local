@@ -2,12 +2,11 @@
 
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
-import { useTranslations, useLocale } from "next-intl"
+import { useTranslations } from "next-intl"
 import { useConfig } from "@/hooks/use-config"
 
 export function NoPermissionDialog() {
   const router = useRouter()
-  const locale = useLocale()
   const t = useTranslations("emails.noPermission")
   const { config } = useConfig()
 
@@ -26,7 +25,7 @@ export function NoPermissionDialog() {
               )
             }
             <Button 
-              onClick={() => router.push(`/${locale}`)}
+              onClick={() => router.push("/")}
               className="mt-4 w-full md:w-auto"
             >
               {t("backToHome")}

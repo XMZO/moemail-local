@@ -1,15 +1,54 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { NextRequest } from "next/server"
+import { middleware } from "../../middleware"
 import { localizedHref } from "../../app/i18n/navigation"
 
 assert.equal(
-  localizedHref("/zh-CN/profile", "tab=runtime&safe-appearance=1", "advanced", "ja"),
-  "/ja/profile?tab=runtime&safe-appearance=1#advanced",
+  localizedHref("/zh-CN/profile", "tab=runtime&safe-appearance=1", "advanced"),
+  "/profile?tab=runtime&safe-appearance=1#advanced",
 )
-assert.equal(localizedHref("/en", "", "", "ko"), "/ko")
-assert.equal(localizedHref("/shared/token", "cursor=abc", "message", "zh-TW"), "/zh-TW/shared/token?cursor=abc#message")
-assert.equal(localizedHref("profile/", "?tab=domains", "#mail", "en"), "/en/profile?tab=domains#mail")
+assert.equal(localizedHref("/en", "", ""), "/")
+assert.equal(localizedHref("/shared/token", "cursor=abc", "message"), "/shared/token?cursor=abc#message")
+assert.equal(localizedHref("profile/", "?tab=domains", "#mail"), "/profile?tab=domains#mail")
+
+const cookieRewrite = middleware(new NextRequest("https://mail.example/profile?tab=runtime", {
+  headers: { cookie: "NEXT_LOCALE=zh-CN" },
+}))
+assert.equal(cookieRewrite.status, 200)
+assert.equal(cookieRewrite.headers.get("location"), null)
+assert.equal(
+  new URL(cookieRewrite.headers.get("x-middleware-rewrite") as string).pathname,
+  "/zh-CN/profile",
+)
+assert.equal(cookieRewrite.headers.get("content-language"), "zh-CN")
+assert.match(cookieRewrite.headers.get("vary") ?? "", /Cookie/u)
+assert.match(cookieRewrite.headers.get("vary") ?? "", /Accept-Language/u)
+
+const headerRewrite = middleware(new NextRequest("https://mail.example/login", {
+  headers: { "accept-language": "zh-TW,zh;q=0.9,en;q=0.8" },
+}))
+assert.equal(
+  new URL(headerRewrite.headers.get("x-middleware-rewrite") as string).pathname,
+  "/zh-TW/login",
+)
+
+const legacyPass = middleware(new NextRequest("https://mail.example/ja/profile?tab=appearance"))
+assert.equal(legacyPass.status, 200)
+assert.equal(legacyPass.headers.get("x-middleware-next"), "1")
+assert.equal(legacyPass.headers.get("location"), null)
+assert.match(legacyPass.headers.get("set-cookie") ?? "", /NEXT_LOCALE=ja/u)
+
+const internalRewritePass = middleware(new NextRequest("https://mail.example/ja/profile", {
+  headers: { "x-moemail-internal-locale-rewrite": "1" },
+}))
+assert.equal(internalRewritePass.headers.get("x-middleware-next"), "1")
+assert.equal(internalRewritePass.headers.get("location"), null)
+
+const apiPassThrough = middleware(new NextRequest("https://mail.example/api/internal/health"))
+assert.equal(apiPassThrough.headers.get("x-middleware-next"), "1")
+assert.equal(apiPassThrough.headers.get("x-middleware-rewrite"), null)
 
 const switcherSource = readFileSync(join(process.cwd(), "app/hooks/use-locale-switcher.ts"), "utf8")
 assert.doesNotMatch(switcherSource, /useRouter|router\.(?:push|replace|refresh)\s*\(/u, "locale switching must not wait for navigation")
@@ -49,12 +88,12 @@ assert.match(authSource, /signIn:\s*"\/login"/u)
 assert.match(authSource, /error:\s*"\/auth-error"/u)
 assert.match(authErrorSource, /<AuthErrorContent\s*\/>/u)
 assert.match(authErrorContentSource, /useTranslations\("auth\.authError"\)/u)
-assert.match(authErrorContentSource, /useLocale\(\)/u)
-assert.match(signButtonSource, /useCurrentOriginSignOut\(locale\)/u)
-assert.match(profileSource, /useCurrentOriginSignOut\(locale\)/u)
+assert.doesNotMatch(authErrorContentSource, /useLocale\(\)/u)
+assert.match(signButtonSource, /useCurrentOriginSignOut\(\)/u)
+assert.match(profileSource, /useCurrentOriginSignOut\(\)/u)
 assert.match(currentOriginSignOutSource, /signOut\(\{ redirect: false \}\)/u)
-assert.match(currentOriginSignOutSource, /new URL\(`\/\$\{locale\}`, window\.location\.origin\)/u)
-assert.match(currentOriginSignOutSource, /window\.location\.replace\(localizedHome\.href\)/u)
+assert.match(currentOriginSignOutSource, /new URL\("\/", window\.location\.origin\)/u)
+assert.match(currentOriginSignOutSource, /window\.location\.replace\(new URL\("\/", window\.location\.origin\)\.href\)/u)
 assert.doesNotMatch(`${signButtonSource}\n${profileSource}`, /callbackUrl/u)
 assert.doesNotMatch(loginFormSource, /min-h-\[220px\]/u)
 assert.match(loginFormSource, /grid gap-3 min-\[480px\]:grid-cols-2/u)
@@ -62,6 +101,7 @@ assert.match(loginFormSource, /usernameField\("min-\[480px\]:col-span-2"\)/u)
 assert.match(loginFormSource, /className="mt-4 min-h-\[65px\] items-center"/u)
 assert.match(loginFormSource, /type="submit"/u)
 assert.match(loginFormSource, /activeTab === "login" \? t\("actions\.login"\) : t\("actions\.register"\)/u)
+assert.match(loginFormSource, /max-w-lg/u)
 assert.match(loginPageSource, /min-h-\[100dvh\]/u)
 
 const userPanelSource = readFileSync(join(process.cwd(), "app/components/profile/promote-panel.tsx"), "utf8")
@@ -127,6 +167,8 @@ assert.match(mailuPanelSource, /sm:grid-cols-2 xl:grid-cols-5/u)
 assert.doesNotMatch(mailuPanelSource, /<fieldset/u)
 
 console.log(JSON.stringify({
+  localePrefixHidden: true,
+  legacyLocaleLinksCanonicalized: true,
   localeNavigationPreservesPath: true,
   queryAndHashPreserved: true,
   profileTabPreserved: true,

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useLocale, useTranslations } from "next-intl"
+import { useTranslations } from "next-intl"
 import type setupMessages from "@/i18n/messages/en/setup.json"
 import {
   AlertTriangle,
@@ -115,7 +115,6 @@ export function SetupWizard({
   const t = useSetupDictionary()
   const tApi = useTranslations("api")
   const tCommon = useTranslations("common")
-  const locale = useLocale()
 
   const [setupToken, setSetupToken] = useState("")
 
@@ -174,7 +173,7 @@ export function SetupWizard({
     if (advancedValuesPreserved && !advancedYamlEdited) {
       setAdvancedYaml(preservedAdvancedYaml)
     }
-  }, [advancedValuesPreserved, advancedYamlEdited, locale, preservedAdvancedYaml])
+  }, [advancedValuesPreserved, advancedYamlEdited, preservedAdvancedYaml])
 
   // 任一会影响候选数据库连接的字段变化后，旧测试结果都不再可信。
   useEffect(() => setTestResult(null), [
@@ -370,7 +369,7 @@ export function SetupWizard({
         <Button
           className="w-full"
           disabled={!serverBack}
-          onClick={() => window.location.assign(`/${locale}`)}
+          onClick={() => window.location.assign("/")}
         >
           {serverBack ? t.enter : (
             <>

@@ -34,6 +34,18 @@ export function InstantLocaleProvider({
   const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
+    const canonicalHref = localizedHref(
+      window.location.pathname,
+      window.location.search,
+      window.location.hash,
+    )
+    const visibleHref = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (canonicalHref !== visibleHref) {
+      window.history.replaceState(window.history.state, "", canonicalHref)
+    }
+  }, [])
+
+  useEffect(() => {
     document.documentElement.lang = locale
     const metadata = catalogs[locale].metadata as { title?: unknown }
     if (typeof metadata.title === "string") document.title = metadata.title
@@ -48,7 +60,6 @@ export function InstantLocaleProvider({
         window.location.pathname,
         window.location.search,
         window.location.hash,
-        nextLocale,
       )
       flushSync(() => setLocale(nextLocale))
       window.history.replaceState(window.history.state, "", target)

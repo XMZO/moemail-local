@@ -2,7 +2,7 @@
 
 import type { User } from "next-auth"
 import { useEffect, useMemo, useState } from "react"
-import { useLocale, useTranslations } from "next-intl"
+import { useTranslations } from "next-intl"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Crown, Gem, Github, KeyRound, Mail, Settings, SlidersHorizontal, Sword, Type, User2, Users } from "lucide-react"
@@ -53,8 +53,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
   const tNav = useTranslations("common.nav")
   const tFormat = useTranslations("common.format")
   const tAdminNav = useTranslations("admin.navigation")
-  const locale = useLocale()
-  const { isSigningOut, signOutFromCurrentOrigin } = useCurrentOriginSignOut(locale)
+  const { isSigningOut, signOutFromCurrentOrigin } = useCurrentOriginSignOut()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { checkPermission } = useRolePermission()
@@ -159,7 +158,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
                 <p className="mt-1 truncate text-sm text-muted-foreground">{user.email || tFormat("labelValue", { label: t("name"), value: user.username ?? "" })}</p>
                 <div className="mt-2 flex flex-wrap gap-2">{user.roles?.map(({ name }) => { const role = roleConfigs[name as keyof typeof roleConfigs]; if (!role) return null; const Icon = role.icon; return <span key={name} className="flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"><Icon className="h-3 w-3" />{t(`roles.${role.key}` as never)}</span> })}</div>
               </div>
-              <div className="flex shrink-0 gap-2 sm:flex-col"><Button onClick={() => router.push(`/${locale}/moe`)} className="flex-1 gap-2"><Mail className="h-4 w-4" />{tNav("backToMailbox")}</Button><Button variant="outline" disabled={isSigningOut} onClick={() => void signOutFromCurrentOrigin()} className="flex-1">{tAuth("logout")}</Button></div>
+              <div className="flex shrink-0 gap-2 sm:flex-col"><Button onClick={() => router.push("/moe")} className="flex-1 gap-2"><Mail className="h-4 w-4" />{tNav("backToMailbox")}</Button><Button variant="outline" disabled={isSigningOut} onClick={() => void signOutFromCurrentOrigin()} className="flex-1">{tAuth("logout")}</Button></div>
             </div>
           </div>
           <MyQuotaPanel />

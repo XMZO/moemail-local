@@ -57,12 +57,6 @@ export async function generateMetadata({
     // 初始化前或配置文件损坏且没有 LKG 时使用安全的展示默认值。
   }
   
-  // Generate hreflang links for all supported locales
-  const languages: Record<string, string> = {}
-  i18n.locales.forEach((loc) => {
-    languages[loc] = `${baseUrl}/${loc}`
-  })
-
   return {
     title: t("title"),
     description: t("description"),
@@ -81,7 +75,7 @@ export async function generateMetadata({
     openGraph: {
       type: "website",
       locale: locale === "zh-CN" ? "zh_CN" : locale === "zh-TW" ? "zh_TW" : locale,
-      url: `${baseUrl}/${locale}`,
+      url: baseUrl,
       title: t("title"),
       description: t("description"),
       siteName: "MoeMail",
@@ -92,8 +86,7 @@ export async function generateMetadata({
       description: t("description"),
     },
     alternates: {
-      canonical: `${baseUrl}/${locale}`,
-      languages,
+      canonical: baseUrl,
     },
     manifest: '/manifest.json',
     icons: [

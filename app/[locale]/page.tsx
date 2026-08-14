@@ -1,18 +1,11 @@
 import { Header } from "@/components/layout/header"
 import { HomeContent } from "@/components/home/home-content"
-import type { Locale } from "@/i18n/config"
 import { requireCompletedSetup } from "@/lib/setup-navigation"
 
 export const runtime = "nodejs"
 
-export default async function Home({
-  params,
-}: {
-  params: Promise<{ locale: string }>
-}) {
-  const { locale: localeFromParams } = await params
-  const locale = localeFromParams as Locale
-  requireCompletedSetup(locale)
+export default async function Home() {
+  requireCompletedSetup()
   const { auth } = await import("@/lib/auth")
   const session = await auth()
 

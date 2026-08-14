@@ -8,22 +8,15 @@ import {
 } from "@/lib/config/runtime"
 import { readLastKnownGoodFile } from "@/lib/config/file"
 import { ensureSetupToken, getSetupTokenPath } from "@/lib/setup-token"
-import type { Locale } from "@/i18n/config"
 import { stringify } from "yaml"
 import { SetupHeader } from "@/components/layout/setup-header"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-export default async function SetupPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>
-}) {
-  const { locale: localeFromParams } = await params
-  const locale = localeFromParams as Locale
+export default async function SetupPage() {
   if (isSetupCompleted()) {
-    redirect(`/${locale}`)
+    redirect("/")
   }
 
   const status = getConfigStatus()
