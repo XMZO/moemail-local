@@ -551,6 +551,29 @@ try {
   assert.ok((emperorMailuBody.integration?.api?.token?.length ?? 0) > 0)
   assert.ok((emperorMailuBody.integration?.collector?.password?.length ?? 0) > 0)
   assert.ok((emperorMailuBody.integration?.catchAll?.password?.length ?? 0) > 0)
+  const apiOnlyMailuTest = await request("/api/config/mailu", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      kind: "testApi",
+      integration: {
+        ...emperorMailuBody.integration,
+        enabled: true,
+        api: {
+          ...emperorMailuBody.integration?.api,
+          baseUrl: "http://127.0.0.1:1/api/v1",
+          token: "mailu-api-only-validation-token",
+          timeoutSeconds: 2,
+        },
+      },
+    }),
+  })
+  assert.equal(apiOnlyMailuTest.status, 502)
+  assert.equal(
+    (await apiOnlyMailuTest.json() as { code?: string }).code,
+    "MAILU_CONNECTION_FAILED",
+    "Mailu API testing must not validate unrelated placeholder service-account passwords",
+  )
   const createEmperorApiKey = await request("/api/api-keys", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

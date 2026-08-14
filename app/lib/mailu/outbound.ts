@@ -4,7 +4,9 @@ import { MAX_OUTBOUND_RECIPIENTS, outboundContent } from "../outbound-mail"
 import type { MailuIntegration } from "./config"
 import { ensureMailuSenderAlias } from "./reconcile"
 
-function transport(integration: MailuIntegration, pooled = false) {
+type MailuSmtpConnection = Pick<MailuIntegration, "collector" | "smtp">
+
+function transport(integration: MailuSmtpConnection, pooled = false) {
   return nodemailer.createTransport({
     host: integration.smtp.host,
     port: integration.smtp.port,
@@ -25,7 +27,7 @@ function transport(integration: MailuIntegration, pooled = false) {
   })
 }
 
-export async function testMailuSmtpConnection(integration: MailuIntegration) {
+export async function testMailuSmtpConnection(integration: MailuSmtpConnection) {
   const client = transport(integration)
   try {
     await client.verify()

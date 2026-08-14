@@ -49,7 +49,7 @@ const collectorAddress = z.string().transform((value, ctx) => {
   return normalized
 })
 
-export const mailuIntegrationSchema = z.object({
+export const mailuIntegrationFieldsSchema = z.object({
   version: z.literal(1),
   integrationId: z.string().uuid(),
   enabled: z.boolean(),
@@ -107,7 +107,9 @@ export const mailuIntegrationSchema = z.object({
       mailbox,
     }).strict(),
   ]),
-}).strict().superRefine((integration, ctx) => {
+}).strict()
+
+export const mailuIntegrationSchema = mailuIntegrationFieldsSchema.superRefine((integration, ctx) => {
   if (integration.enabled) {
     const placeholders: Array<[Array<string | number>, string]> = [
       [["api", "token"], integration.api.token],

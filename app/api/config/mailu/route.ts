@@ -8,6 +8,7 @@ import { MailuClient } from "@/lib/mailu/client"
 import {
   defaultMailuIntegration,
   getMailuIntegration,
+  mailuIntegrationFieldsSchema,
   mailuIntegrationSchema,
   saveMailuIntegration,
 } from "@/lib/mailu/config"
@@ -23,11 +24,41 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const headers = { "Cache-Control": "private, no-store" }
+const apiActionIntegrationSchema = mailuIntegrationFieldsSchema
+  .pick({ api: true })
+  .strip()
+  .superRefine((integration, ctx) => {
+    if (integration.api.token === "replace-me") ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["api", "token"],
+      message: "MAILU_PLACEHOLDER_SECRET_FORBIDDEN",
+    })
+  })
+const imapActionIntegrationSchema = mailuIntegrationFieldsSchema
+  .pick({ collector: true, imap: true, retention: true })
+  .strip()
+  .superRefine((integration, ctx) => {
+    if (integration.collector.password === "replace-me") ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["collector", "password"],
+      message: "MAILU_PLACEHOLDER_SECRET_FORBIDDEN",
+    })
+  })
+const smtpActionIntegrationSchema = mailuIntegrationFieldsSchema
+  .pick({ collector: true, smtp: true })
+  .strip()
+  .superRefine((integration, ctx) => {
+    if (integration.collector.password === "replace-me") ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["collector", "password"],
+      message: "MAILU_PLACEHOLDER_SECRET_FORBIDDEN",
+    })
+  })
 const actionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("discover"), integration: mailuIntegrationSchema }).strict(),
-  z.object({ kind: z.literal("testApi"), integration: mailuIntegrationSchema }).strict(),
-  z.object({ kind: z.literal("testImap"), integration: mailuIntegrationSchema }).strict(),
-  z.object({ kind: z.literal("testSmtp"), integration: mailuIntegrationSchema }).strict(),
+  z.object({ kind: z.literal("discover"), integration: apiActionIntegrationSchema }).strict(),
+  z.object({ kind: z.literal("testApi"), integration: apiActionIntegrationSchema }).strict(),
+  z.object({ kind: z.literal("testImap"), integration: imapActionIntegrationSchema }).strict(),
+  z.object({ kind: z.literal("testSmtp"), integration: smtpActionIntegrationSchema }).strict(),
   z.object({ kind: z.literal("reconcile") }).strict(),
 ])
 
@@ -48,12 +79,16 @@ async function authorizeMailu(request: Request) {
   return authorization
 }
 
-function safeProviderError(error: unknown, integration?: z.infer<typeof mailuIntegrationSchema>) {
+function safeProviderError(error: unknown, integration?: {
+  api?: { token?: string }
+  collector?: { password?: string }
+  catchAll?: { password?: string }
+}) {
   let message = error instanceof Error ? error.message : "unknown"
   for (const secret of [
-    integration?.api.token,
-    integration?.collector.password,
-    integration?.catchAll.password,
+    integration?.api?.token,
+    integration?.collector?.password,
+    integration?.catchAll?.password,
   ].filter((value): value is string => Boolean(value))) message = message.replaceAll(secret, "[redacted]")
   return message.replace(/[\r\n\0]+/gu, " ").slice(0, 300)
 }
@@ -134,28 +169,31 @@ export async function POST(request: Request) {
     details: validationDetails(parsed.error),
   })
 
-  let integration: z.infer<typeof mailuIntegrationSchema> | null
-  try {
-    integration = parsed.data.kind === "reconcile"
-      ? await getMailuIntegration()
-      : parsed.data.integration
-  } catch (error) {
-    console.error("mailu.config_read_failed", { message: safeProviderError(error) })
-    return apiError("MAILU_CONFIG_READ_FAILED", 500, { headers })
-  }
-  if (!integration) return apiError("MAILU_CONFIG_REQUIRED", 409, { headers })
+  let sensitiveInput: Parameters<typeof safeProviderError>[1]
   try {
     if (parsed.data.kind === "testImap") {
-      return Response.json(await testMailuImapConnection(integration), { headers })
+      sensitiveInput = parsed.data.integration
+      return Response.json(await testMailuImapConnection(parsed.data.integration), { headers })
     }
     if (parsed.data.kind === "testSmtp") {
-      return Response.json(await testMailuSmtpConnection(integration), { headers })
+      sensitiveInput = parsed.data.integration
+      return Response.json(await testMailuSmtpConnection(parsed.data.integration), { headers })
     }
     if (parsed.data.kind === "reconcile") {
+      let integration
+      try {
+        integration = await getMailuIntegration()
+      } catch (error) {
+        console.error("mailu.config_read_failed", { message: safeProviderError(error) })
+        return apiError("MAILU_CONFIG_READ_FAILED", 500, { headers })
+      }
+      if (!integration) return apiError("MAILU_CONFIG_REQUIRED", 409, { headers })
+      sensitiveInput = integration
       if (!integration.enabled) return apiError("MAILU_INTEGRATION_DISABLED", 409, { headers })
       return Response.json(await reconcileMailu(integration), { headers })
     }
-    const inventory = await new MailuClient(integration).listInventory()
+    sensitiveInput = parsed.data.integration
+    const inventory = await new MailuClient(parsed.data.integration).listInventory()
     return Response.json({
       ok: true,
       domains: inventory.domains.map(domain => domain.name).sort(),
@@ -167,7 +205,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("mailu.action_failed", {
       kind: parsed.data.kind,
-      message: safeProviderError(error, integration),
+      message: safeProviderError(error, sensitiveInput),
     })
     return apiError("MAILU_CONNECTION_FAILED", 502, { headers })
   }

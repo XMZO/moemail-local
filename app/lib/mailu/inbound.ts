@@ -159,7 +159,9 @@ async function saveLeasedState(state: State, token: string) {
   })
 }
 
-export function mailuImapClientOptions(integration: MailuIntegration, realtime = false): ImapFlowOptions {
+type MailuImapConnection = Pick<MailuIntegration, "collector" | "imap" | "retention">
+
+export function mailuImapClientOptions(integration: MailuImapConnection, realtime = false): ImapFlowOptions {
   const connectionTimeout = integration.imap.connectionTimeoutSeconds * 1_000
   const idleRenew = integration.imap.realtime.idleRenewSeconds * 1_000
   return {
@@ -185,7 +187,7 @@ export function mailuImapClientOptions(integration: MailuIntegration, realtime =
   }
 }
 
-function clientFor(integration: MailuIntegration, realtime = false) {
+function clientFor(integration: MailuImapConnection, realtime = false) {
   const client = new ImapFlow(mailuImapClientOptions(integration, realtime))
   client.on("error", () => {})
   return client
@@ -196,7 +198,7 @@ async function closeClient(client: ImapFlow) {
   try { await client.logout() } catch { client.close() }
 }
 
-export async function testMailuImapConnection(integration: MailuIntegration) {
+export async function testMailuImapConnection(integration: MailuImapConnection) {
   const client = clientFor(integration)
   try {
     await client.connect()
