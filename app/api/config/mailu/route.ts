@@ -31,7 +31,6 @@ const apiActionIntegrationSchema = mailuIntegrationFieldsSchema
     if (integration.api.token === "replace-me") ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["api", "token"],
-      message: "MAILU_PLACEHOLDER_SECRET_FORBIDDEN",
     })
   })
 const imapActionIntegrationSchema = mailuIntegrationFieldsSchema
@@ -41,7 +40,6 @@ const imapActionIntegrationSchema = mailuIntegrationFieldsSchema
     if (integration.collector.password === "replace-me") ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["collector", "password"],
-      message: "MAILU_PLACEHOLDER_SECRET_FORBIDDEN",
     })
   })
 const smtpActionIntegrationSchema = mailuIntegrationFieldsSchema
@@ -51,7 +49,6 @@ const smtpActionIntegrationSchema = mailuIntegrationFieldsSchema
     if (integration.collector.password === "replace-me") ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["collector", "password"],
-      message: "MAILU_PLACEHOLDER_SECRET_FORBIDDEN",
     })
   })
 const actionSchema = z.discriminatedUnion("kind", [

@@ -296,6 +296,9 @@ export function MailuIntegrationPanel({ onDomainsDiscovered, canImportDomains }:
             <div className="min-w-0 space-y-2"><Label>{t("accounts.collectorPassword")}</Label><SecretInput disabled={persistedEnabled} autoComplete="new-password" showLabel={t("showSecret")} hideLabel={t("hideSecret")} value={integration.collector.password} onChange={event => patch({ collector: { ...integration.collector, password: event.target.value } })} /></div>
             <div className="min-w-0 space-y-2"><Label>{t("accounts.catchAll")}</Label><Input disabled={persistedEnabled} autoComplete="off" value={integration.catchAll.address} onChange={event => patch({ catchAll: { ...integration.catchAll, address: event.target.value } })} /></div>
             <div className="min-w-0 space-y-2"><Label>{t("accounts.catchAllPassword")}</Label><SecretInput disabled={persistedEnabled} autoComplete="new-password" showLabel={t("showSecret")} hideLabel={t("hideSecret")} value={integration.catchAll.password} onChange={event => patch({ catchAll: { ...integration.catchAll, password: event.target.value } })} /></div>
+            <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground md:col-span-2">
+              {t(persistedEnabled ? "accounts.locked" : "accounts.editable")}
+            </p>
             <p className="text-xs leading-relaxed text-muted-foreground md:col-span-2">{t("accounts.safety")}</p>
             <div className="flex flex-wrap gap-2 md:col-span-2">
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={updateCollectorSecret}><KeyRound className="mr-1 h-4 w-4" />{t(persistedEnabled ? "actions.rotateCollector" : "actions.generateCollector")}</Button>

@@ -131,6 +131,8 @@
       "collectorPassword": "Collector 密码",
       "catchAll": "Catch-all 转发账号",
       "catchAllPassword": "Catch-all 账号密码",
+      "locked": "已启用：账号地址已锁定；请用下方按钮随机轮换密码。若要更换地址，请先关闭 Mailu 并保存。",
+      "editable": "未启用：可编辑账号地址或生成随机密码；启用并保存后将由 MoeMail 锁定管理。",
       "safety": "必须是两个不同的 Mailu 用户。MoeMail 会强制关闭 allow_spoofing，并禁用 catch-all 账号登录；它只负责向 collector 转发，不能用于 SMTP 鉴权。"
     },
     "imap": { "title": "IMAP 收取", "summaryRealtime": "{endpoint} · IDLE 实时接收", "summaryPolling": "{endpoint} · 定时轮询", "realtimeEnabled": "实时接收", "realtimeMode": "模式", "modeIdle": "IMAP IDLE", "modeIdleAuto": "自动：优先 IDLE，否则轮询", "reconnect": "断线自动重连", "fallbackPollInterval": "轮询兜底（秒）", "realtimeHelp": "MoeMail 会检测 CAPABILITY，并在可用时保持只读 IDLE 监听；Mailu 新邮件会立即通知，完整定时扫描仍会覆盖漏通知、不支持 IDLE 和连接中断。", "advanced": "高级连接与性能", "connectionTimeout": "连接超时（秒）", "idleRenew": "IDLE 续期（秒）", "reconnectMin": "首次重连延迟（秒）", "reconnectMax": "最大重连延迟（秒）", "advancedHelp": "IDLE 会在常见服务商断开前主动续期；自动重连在所选范围内指数退避，轮询始终独立保留。", "mailbox": "来源文件夹", "recipientHeader": "可信收件人 Header", "initialSync": "初次同步范围", "initialSyncOptions": { "new": "只收取保存后到达的邮件", "unseen": "同时导入未读邮件" }, "maxMessages": "每轮最多处理邮件数" },
