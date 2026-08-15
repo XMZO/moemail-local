@@ -88,15 +88,14 @@ export async function GET(request: Request) {
         image: users.image,
         bannedAt: users.bannedAt,
         role: roles.name,
-        mailboxCount: sql<number>`(
-          SELECT COUNT(*) FROM ${emails}
-          WHERE ${emails.userId} = ${users.id}
-        )`,
+        mailboxCount: sql<number>`COUNT(DISTINCT ${emails.id})`,
       })
       .from(users)
       .leftJoin(userRoles, eq(userRoles.userId, users.id))
       .leftJoin(roles, eq(roles.id, userRoles.roleId))
+      .leftJoin(emails, eq(emails.userId, users.id))
       .where(where)
+      .groupBy(users.id, roles.name)
       .orderBy(roleRank, sql`LENGTH(COALESCE(${users.username}, ${users.name}))`, sql`LOWER(COALESCE(${users.username}, ${users.name}))`)
       .limit(pageSize)
       .offset((page - 1) * pageSize)

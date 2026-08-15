@@ -710,12 +710,27 @@ try {
   assert.ok(session.user?.id)
   const defaultDomainDetails = await request(`/api/users/${encodeURIComponent(session.user.id)}`)
   assert.equal(defaultDomainDetails.status, 200)
+  const defaultDomainDetailsBody = await defaultDomainDetails.json() as {
+    summary?: { mailboxes?: number }
+    mailboxes?: { total?: number; items?: Array<{ id?: string }> }
+    access?: { domainAccess?: { domains?: Record<string, DomainAccessMode> } }
+  }
+  assert.ok((defaultDomainDetailsBody.summary?.mailboxes ?? 0) >= 1)
+  assert.ok((defaultDomainDetailsBody.mailboxes?.total ?? 0) >= 1)
+  assert.ok(defaultDomainDetailsBody.mailboxes?.items?.some(item => item.id === mailbox.id))
   assert.equal(
-    (await defaultDomainDetails.json() as {
-      access?: { domainAccess?: { domains?: Record<string, DomainAccessMode> } }
-    }).access?.domainAccess?.domains?.[validationDomain],
+    defaultDomainDetailsBody.access?.domainAccess?.domains?.[validationDomain],
     "allow",
     "user details must materialize configured domains covered by the effective default rule",
+  )
+  const managedUsers = await request("/api/roles/users?page=1&pageSize=100")
+  assert.equal(managedUsers.status, 200)
+  const managedUsersBody = await managedUsers.json() as {
+    users?: Array<{ id?: string; mailboxCount?: number }>
+  }
+  assert.ok(
+    (managedUsersBody.users?.find(user => user.id === session.user?.id)?.mailboxCount ?? 0) >= 1,
+    "managed-user list must expose the owner's mailbox count",
   )
   const emperorUsage = await request("/api/access-policies/usage?role=emperor")
   assert.equal(emperorUsage.status, 200)

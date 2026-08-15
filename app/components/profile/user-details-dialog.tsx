@@ -149,7 +149,6 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
   const [mailboxPage, setMailboxPage] = useState(1)
   const dialogRef = useRef<HTMLDivElement>(null)
   const tabViewportRef = useRef<HTMLDivElement>(null)
-  const activePanelRef = useRef<HTMLDivElement>(null)
   const [tabViewportHeight, setTabViewportHeight] = useState<number | null>(null)
 
   const fetchDetails = async (signal?: AbortSignal) => {
@@ -226,7 +225,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
 
     const dialog = dialogRef.current
     const viewport = tabViewportRef.current
-    const panel = activePanelRef.current
+    const panel = viewport?.querySelector<HTMLElement>('[role="tabpanel"][data-state="active"]')
     if (!dialog || !viewport || !panel) return
 
     const updateHeight = () => {
@@ -235,15 +234,19 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
         : Math.min(window.innerHeight * 0.92, 860)
       const chromeHeight = viewport.getBoundingClientRect().top - dialog.getBoundingClientRect().top
       const availableHeight = Math.max(112, dialogMaximum - chromeHeight)
-      const nextHeight = Math.ceil(Math.min(panel.scrollHeight, availableHeight))
+      const contentHeight = Math.ceil(panel.scrollHeight)
+      if (contentHeight <= 0) return
+      const nextHeight = Math.max(112, Math.ceil(Math.min(contentHeight, availableHeight)))
       setTabViewportHeight(current => current !== null && Math.abs(current - nextHeight) < 1 ? current : nextHeight)
     }
 
     updateHeight()
+    const animationFrame = window.requestAnimationFrame(updateHeight)
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateHeight)
     observer?.observe(panel)
     window.addEventListener("resize", updateHeight, { passive: true })
     return () => {
+      window.cancelAnimationFrame(animationFrame)
       observer?.disconnect()
       window.removeEventListener("resize", updateHeight)
     }
@@ -319,9 +322,9 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
             style={tabViewportHeight === null ? undefined : { height: tabViewportHeight }}
           >
 
-            <TabsContent ref={tab === "overview" ? activePanelRef : undefined} value="overview" className="m-0 space-y-4 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
+            <TabsContent value="overview" className="m-0 space-y-4 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard icon={Mail} label={t("stats.mailboxes")} value={details.summary.mailboxes} />
+                <StatCard icon={Mail} label={t("stats.mailboxes")} value={details.mailboxes.total} />
                 <StatCard icon={Activity} label={t("stats.messages")} value={details.summary.messages} />
                 <StatCard icon={KeyRound} label={t("stats.apiKeys")} value={`${details.summary.enabledApiKeys} / ${details.summary.apiKeys}`} />
                 <StatCard icon={Webhook} label={t("stats.webhooks")} value={`${details.summary.enabledWebhooks} / ${details.summary.webhooks}`} />
@@ -350,7 +353,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
               </section>
             </TabsContent>
 
-            <TabsContent ref={tab === "mailboxes" ? activePanelRef : undefined} value="mailboxes" className="m-0 space-y-3 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
+            <TabsContent value="mailboxes" className="m-0 space-y-3 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
               <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,.7fr)_10rem]">
                 <Input value={mailboxSearch} onChange={event => { setMailboxSearch(event.target.value); setMailboxPage(1) }} placeholder={t("mailboxes.search")} className="min-w-0" />
                 <Input value={mailboxDomain} onChange={event => { setMailboxDomain(event.target.value); setMailboxPage(1) }} placeholder={t("mailboxes.domain")} className="min-w-0" />
@@ -361,14 +364,14 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
               {details.mailboxes.pages > 1 && <div className="flex items-center justify-between gap-3 pt-1"><Button size="sm" variant="outline" disabled={mailboxPage <= 1 || loading} onClick={() => setMailboxPage(page => Math.max(1, page - 1))}>{t("mailboxes.previous")}</Button><span className="text-xs text-muted-foreground">{t("mailboxes.page", { current: details.mailboxes.page, total: details.mailboxes.pages })}</span><Button size="sm" variant="outline" disabled={mailboxPage >= details.mailboxes.pages || loading} onClick={() => setMailboxPage(page => page + 1)}>{t("mailboxes.next")}</Button></div>}
             </TabsContent>
 
-            <TabsContent ref={tab === "access" ? activePanelRef : undefined} value="access" className="m-0 space-y-4 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
+            <TabsContent value="access" className="m-0 space-y-4 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
               <section className="rounded-md border p-3 sm:p-4"><h3 className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="h-4 w-4 text-primary" />{t("access.permissions")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{permissionEntries.map(([permission, enabled]) => <div key={permission} className={`flex min-w-0 items-center gap-2 rounded border p-2 text-sm ${enabled ? "" : "opacity-55"}`}><span className={`h-2 w-2 shrink-0 rounded-full ${enabled ? "bg-emerald-500" : "bg-muted-foreground/40"}`} /><span className="min-w-0 break-words">{t(`permissions.${permission}` as never)}</span></div>)}</div></section>
               <section className="rounded-md border p-3 sm:p-4"><h3 className="flex items-center gap-2 text-sm font-medium"><Clock3 className="h-4 w-4 text-primary" />{t("access.quotas")}</h3><div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded bg-muted px-2 py-1">{t("access.quotaRole", { role: roleLabel(details.access.quotaRole) })}</span>{Boolean(details.access.override) && <span className="rounded bg-primary/10 px-2 py-1 text-primary">{t("access.overrideActive")}</span>}</div><div className="mt-3 grid gap-2 sm:grid-cols-3">{quotaKeys.map(key => <div key={key} className="rounded border p-2"><div className="text-xs text-muted-foreground">{t(`quotas.${key}` as never)}</div><div className="mt-1 font-medium">{formatLimit(key, details.access.quotas[key] ?? 0)}</div></div>)}</div><p className="mt-3 text-xs leading-relaxed text-muted-foreground">{t("access.quotaRules", { count: details.access.mailQuotaRuleCount })}{details.access.mailQuotaRulesTruncated && <span className="ml-1">{t("access.quotaRulesTruncated")}</span>}</p></section>
               <section className="rounded-md border p-3 sm:p-4"><h3 className="flex items-center gap-2 text-sm font-medium"><Globe2 className="h-4 w-4 text-primary" />{t("access.domains")}</h3><p className="mt-2 text-sm">{t(`domainModes.${details.access.domainAccess.default}` as never)}</p>{domainEntries.length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{domainEntries.map(([domain, mode]) => <div key={domain} className="flex min-w-0 items-center justify-between gap-2 rounded border p-2 text-xs"><span className="min-w-0 truncate font-mono">{domain}</span><span className="shrink-0 text-muted-foreground">{t(`domainModes.${mode}` as never)}</span></div>)}</div>}{details.access.allowedDomains && <p className="mt-3 text-xs text-muted-foreground">{t("access.allowedDomains", { domains: details.access.allowedDomains.length ? format.list(details.access.allowedDomains, { type: "unit" }) : t("none") })}</p>}</section>
               <details className="rounded-md border p-3 sm:p-4"><summary className="cursor-pointer text-sm font-medium">{t("access.quotaRules", { count: details.access.mailQuotaRuleCount })}</summary><div className="mt-3 space-y-2">{details.access.mailQuotaRules.length === 0 ? <p className="text-sm text-muted-foreground">{t("none")}</p> : details.access.mailQuotaRules.map(rule => <div key={rule.id} className="rounded border p-2 text-xs"><p className="break-words leading-relaxed">{ruleSummary(rule)}</p><div className="mt-2 flex flex-wrap gap-1.5">{rule.shareWithinRole && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{t("quotaRules.shared")}</span>}{rule.ignoreEmperor && <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{t("quotaRules.ignoreEmperor")}</span>}</div></div>)}</div>{details.access.mailQuotaRulesTruncated && <p className="mt-2 text-xs text-muted-foreground">{t("access.quotaRulesTruncated")}</p>}</details>
             </TabsContent>
 
-            <TabsContent ref={tab === "resources" ? activePanelRef : undefined} value="resources" className="m-0 space-y-4 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
+            <TabsContent value="resources" className="m-0 space-y-4 p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-200 motion-reduce:animate-none sm:p-6">
               <section className="rounded-md border p-3 sm:p-4"><h3 className="flex items-center gap-2 text-sm font-medium"><KeyRound className="h-4 w-4 text-primary" />{t("resources.apiKeys")}</h3>{details.resources.apiKeys.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">{t("resources.none")}</p> : <div className="mt-3 space-y-2">{details.resources.apiKeys.map(key => <div key={key.id} className="grid min-w-0 gap-1 rounded border p-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"><span className="truncate">{key.name}</span><span className="text-xs text-muted-foreground sm:text-right">{key.enabled ? t("resources.enabled") : t("resources.disabled")} · {dateValue(key.expiresAt, format, t("resources.neverExpires"))}</span></div>)}</div>}</section>
               <section className="rounded-md border p-3 sm:p-4"><h3 className="flex items-center gap-2 text-sm font-medium"><Webhook className="h-4 w-4 text-primary" />{t("resources.webhooks")}</h3>{details.resources.webhooks.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">{t("resources.none")}</p> : <div className="mt-3 space-y-2">{details.resources.webhooks.map(webhook => <div key={webhook.id} className="grid min-w-0 gap-1 rounded border p-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"><span className="truncate font-mono text-xs">{webhook.url}</span><span className="text-xs text-muted-foreground sm:text-right">{webhook.enabled ? t("resources.enabled") : t("resources.disabled")}</span></div>)}</div>}</section>
               <section className="rounded-md border p-3 sm:p-4"><h3 className="flex items-center gap-2 text-sm font-medium"><ShieldAlert className="h-4 w-4 text-primary" />{t("resources.blocks")}</h3>{details.resources.mailboxNameBlocks.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">{t("resources.none")}</p> : <div className="mt-3 flex flex-wrap gap-2">{details.resources.mailboxNameBlocks.map(block => <span key={block.id} className="rounded bg-muted px-2 py-1 font-mono text-xs">{block.localPart}@{block.domain}</span>)}</div>}{details.resources.mailboxNameBlocksTruncated && <p className="mt-3 text-xs text-muted-foreground">{t("resources.truncated", { shown: details.resources.mailboxNameBlocks.length, total: details.resources.mailboxNameBlockCount })}</p>}</section>
