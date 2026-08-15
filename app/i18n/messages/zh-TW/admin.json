@@ -439,7 +439,7 @@
       "allowExecution": "允許執行",
       "customJsPlaceholder": "// 在瀏覽器中執行\nconsole.log(\"MoeMail custom appearance\")",
       "safeMode": "若自訂內容導致頁面無法操作，請在任意頁面 URL 後附加 ?safe-appearance=1（已有參數時使用 &safe-appearance=1）。該次要求會跳過全部進階注入，讓你回到此處清除或修正。",
-      "limits": "每個輸入最多 128 KiB，合計最多 256 KiB。內容儲存在目前資料庫中，備份資料庫時也會一併儲存。",
+      "limits": "每個輸入最多 {fragment} KiB，合計最多 {total} KiB。內容儲存在目前資料庫中，備份資料庫時也會一併儲存。",
       "byteCount": "{used} / {maximum} 位元組",
       "totalByteCount": "即時合計：{used} / {maximum} 位元組",
       "clear": "清除並停用",

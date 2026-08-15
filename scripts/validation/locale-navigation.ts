@@ -82,6 +82,8 @@ const authErrorSource = readFileSync(join(process.cwd(), "app/[locale]/auth-erro
 const authErrorContentSource = readFileSync(join(process.cwd(), "app/components/auth/auth-error-content.tsx"), "utf8")
 const signButtonSource = readFileSync(join(process.cwd(), "app/components/auth/sign-button.tsx"), "utf8")
 const currentOriginSignOutSource = readFileSync(join(process.cwd(), "app/hooks/use-current-origin-sign-out.ts"), "utf8")
+const sessionStatusGuardSource = readFileSync(join(process.cwd(), "app/components/auth/session-status-guard.tsx"), "utf8")
+const apiErrorClientSource = readFileSync(join(process.cwd(), "app/lib/api-error-client.ts"), "utf8")
 const loginFormSource = readFileSync(join(process.cwd(), "app/components/auth/login-form.tsx"), "utf8")
 const loginPageSource = readFileSync(join(process.cwd(), "app/[locale]/login/page.tsx"), "utf8")
 assert.match(authSource, /signIn:\s*"\/login"/u)
@@ -95,6 +97,15 @@ assert.match(currentOriginSignOutSource, /signOut\(\{ redirect: false \}\)/u)
 assert.match(currentOriginSignOutSource, /new URL\("\/", window\.location\.origin\)/u)
 assert.match(currentOriginSignOutSource, /window\.location\.replace\(new URL\("\/", window\.location\.origin\)\.href\)/u)
 assert.doesNotMatch(`${signButtonSource}\n${profileSource}`, /callbackUrl/u)
+assert.match(authSource, /class UserBannedCredentialsError extends CredentialsSignin/u)
+assert.match(authSource, /session\.user\.bannedAt = targetUser\?\.bannedAt \?\? null/u)
+assert.match(loginFormSource, /result\.code === "USER_BANNED"/u)
+assert.match(sessionStatusGuardSource, /signOut\(\{ redirect: false \}\)/u)
+assert.match(sessionStatusGuardSource, /sessionStorage\.removeItem\(BANNED_NOTICE_KEY\)/u)
+assert.match(sessionStatusGuardSource, /window\.location\.replace\(new URL\("\/", window\.location\.origin\)\.href\)/u)
+assert.match(sessionStatusGuardSource, /duration: 5_000/u)
+assert.match(sessionStatusGuardSource, /window\.fetch = guardedFetch/u)
+assert.match(apiErrorClientSource, /code === "USER_BANNED"[\s\S]*dispatchEvent/u)
 assert.doesNotMatch(loginFormSource, /min-h-\[220px\]/u)
 assert.match(loginFormSource, /grid gap-3 min-\[480px\]:grid-cols-2/u)
 assert.match(loginFormSource, /usernameField\("min-\[480px\]:col-span-2"\)/u)
@@ -105,9 +116,16 @@ assert.match(loginFormSource, /max-w-lg/u)
 assert.match(loginPageSource, /min-h-\[100dvh\]/u)
 
 const userPanelSource = readFileSync(join(process.cwd(), "app/components/profile/promote-panel.tsx"), "utf8")
+const userDetailsSource = readFileSync(join(process.cwd(), "app/components/profile/user-details-dialog.tsx"), "utf8")
 assert.doesNotMatch(userPanelSource, /<RoleIcon/u)
 assert.match(userPanelSource, /sm:grid-cols-\[auto_minmax\(0,1fr\)_auto\]/u)
 assert.match(userPanelSource, /className="h-8 w-full min-w-0 text-sm sm:w-auto sm:min-w-28"/u)
+assert.match(userDetailsSource, /useLayoutEffect[\s\S]*ResizeObserver/u)
+assert.match(userDetailsSource, /\[scrollbar-gutter:stable\][^"\n]*transition-\[height\]/u)
+assert.match(userDetailsSource, /grid-cols-2[^"\n]*sm:grid-cols-4/u)
+assert.match(userDetailsSource, /p-4 pr-14 sm:p-6 sm:pr-16/u)
+assert.match(userDetailsSource, /tabViewportRef\.current\?\.scrollTo\(\{ top: 0 \}\)/u)
+assert.doesNotMatch(userDetailsSource, /max-h-72 space-y-2 overflow-y-auto/u)
 
 const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profile/access-policy-panel.tsx"), "utf8")
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
@@ -115,6 +133,7 @@ const quotaGuideSource = readFileSync(join(process.cwd(), "app/components/profil
 const searchableUserSource = readFileSync(join(process.cwd(), "app/components/profile/searchable-user-select.tsx"), "utf8")
 const domainPolicySource = readFileSync(join(process.cwd(), "app/components/profile/domain-policy-panel.tsx"), "utf8")
 const messageListSource = readFileSync(join(process.cwd(), "app/components/emails/message-list.tsx"), "utf8")
+const emailListSource = readFileSync(join(process.cwd(), "app/components/emails/email-list.tsx"), "utf8")
 const htmlFrameSource = readFileSync(join(process.cwd(), "app/components/emails/html-message-frame.tsx"), "utf8")
 const messageViewSource = readFileSync(join(process.cwd(), "app/components/emails/message-view.tsx"), "utf8")
 const sharedMessageSource = readFileSync(join(process.cwd(), "app/components/emails/shared-message-detail.tsx"), "utf8")
@@ -171,6 +190,8 @@ assert.match(domainPolicySource, /imap\.capabilityIdle/u)
 assert.match(domainPolicySource, /sm:grid-cols-2/u)
 assert.match(domainPolicySource, /<details className="group overflow-hidden rounded border/u)
 assert.match(messageListSource, /ml-auto flex min-w-0 flex-1 justify-end gap-1 overflow-x-auto whitespace-nowrap/u)
+assert.match(emailListSource, /if \(!response\.ok\)[\s\S]*MAILBOXES_READ_FAILED[\s\S]*Array\.isArray\(data\.emails\)/u)
+assert.match(messageListSource, /if \(!response\.ok\)[\s\S]*MESSAGES_READ_FAILED[\s\S]*Array\.isArray\(data\.messages\)/u)
 assert.match(messageListSource, /max-w-48 shrink-0 truncate rounded-full/u)
 assert.doesNotMatch(messageListSource, /basis-full flex flex-wrap gap-x-3/u)
 assert.match(htmlFrameSource, /if \(!frame \|\| frame\.html !== html \|\| frame\.dark !== dark\)/u)
@@ -221,10 +242,12 @@ console.log(JSON.stringify({
   visitedProfileTabsPreserved: true,
   setupControlsPresent: true,
   authFallbackPagesLocalized: true,
+  bannedSessionsSignOutWithTransientNotice: true,
   signOutPreservesCurrentBrowserOrigin: true,
   authCardStableAndResponsive: true,
   duplicateRoleIconRemoved: true,
   userRoleEditorResponsive: true,
+  adaptiveUserDetailsDialog: true,
   accessPolicyLayoutCovered: true,
   allDomainMailboxBlocksLocalized: true,
   scalableMailboxBlockEditor: true,

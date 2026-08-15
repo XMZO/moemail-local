@@ -135,7 +135,9 @@ export function LoginForm({ turnstile }: LoginFormProps) {
       if (result?.error) {
         toast({
           title: t("toast.loginFailed"),
-          description: t("toast.loginFailedDesc"),
+          description: result.code === "USER_BANNED"
+            ? tApi("USER_BANNED")
+            : t("toast.loginFailedDesc"),
           variant: "destructive",
         })
         setLoading(false)

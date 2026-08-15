@@ -69,7 +69,15 @@ export function EmailList({ onEmailSelect, selectedEmailId }: EmailListProps) {
         url.searchParams.set('cursor', cursor)
       }
       const response = await fetch(url)
+      if (!response.ok) {
+        await readApiErrorCode(response, "MAILBOXES_READ_FAILED")
+        return
+      }
       const data = await response.json() as EmailResponse
+      if (!Array.isArray(data.emails)) {
+        console.error("mailbox.list_invalid_response")
+        return
+      }
       
       if (!cursor) {
         const newEmails = data.emails

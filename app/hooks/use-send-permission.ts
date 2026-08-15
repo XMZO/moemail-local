@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from "react"
 import { useTranslations } from "next-intl"
+import { readApiErrorCode } from "@/lib/api-error-client"
 
 interface SendPermissionResponse {
   canSend: boolean
@@ -35,6 +36,7 @@ export function useSendPermission(emailId?: string) {
       const response = await fetch(`/api/emails/send-permission?emailId=${encodeURIComponent(emailId)}`)
       
       if (!response.ok) {
+        await readApiErrorCode(response, "SEND_PERMISSION_CHECK_FAILED")
         setCanSend(false)
         setCanUsePrivateRecipientDelivery(false)
         setError(t("permissionCheckFailed"))

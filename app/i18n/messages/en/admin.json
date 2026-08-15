@@ -456,7 +456,7 @@
       "allowExecution": "Allow execution",
       "customJsPlaceholder": "// Runs in the browser\nconsole.log(\"MoeMail custom appearance\")",
       "safeMode": "If custom content makes the page unusable, append ?safe-appearance=1 to any page URL (or &safe-appearance=1 when a query already exists). That request skips all advanced injection so you can clear or fix it here.",
-      "limits": "Each input is limited to 128 KiB and the total to 256 KiB. Content is stored in the current database and included in database backups.",
+      "limits": "Each input is limited to {fragment} KiB and the total to {total} KiB. Content is stored in the current database and included in database backups.",
       "byteCount": "{used} / {maximum} bytes",
       "totalByteCount": "Live total: {used} / {maximum} bytes",
       "clear": "Clear and disable",

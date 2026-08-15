@@ -87,7 +87,11 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
   const fetchQuota = async () => {
     try {
       const response = await fetch(`/api/emails/${email.id}/quota`, { cache: "no-store" })
-      if (response.ok) setQuota(await response.json() as MailboxQuotaResponse)
+      if (!response.ok) {
+        await readApiErrorCode(response, "MAIL_QUOTA_USAGE_READ_FAILED")
+        return
+      }
+      setQuota(await response.json() as MailboxQuotaResponse)
     } catch (error) {
       console.error("mailbox.quota_fetch_failed", error)
     }
@@ -111,7 +115,15 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
         url.searchParams.set('includeTotal', '1')
       }
       const response = await fetch(url)
+      if (!response.ok) {
+        await readApiErrorCode(response, "MESSAGES_READ_FAILED")
+        return
+      }
       const data = await response.json() as MessageResponse
+      if (!Array.isArray(data.messages)) {
+        console.error("message.list_invalid_response")
+        return
+      }
       
       if (!cursor) {
         const newMessages = data.messages

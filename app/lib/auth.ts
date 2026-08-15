@@ -27,6 +27,10 @@ class AuthenticationTemporarilyUnavailableError extends CredentialsSignin {
   code = "temporarily_unavailable"
 }
 
+class UserBannedCredentialsError extends CredentialsSignin {
+  code = "USER_BANNED"
+}
+
 const getDefaultRole = async (): Promise<Role> => {
   const defaultRole = await getConfigValue(CONFIG_KEYS.DEFAULT_ROLE)
 
@@ -257,7 +261,9 @@ export const {
         }
 
         if (user.bannedAt) {
-          throw new Error("USER_BANNED")
+          // Only reveal the ban after a valid password, so the status cannot
+          // be used to enumerate accounts through the login form.
+          throw new UserBannedCredentialsError()
         }
 
         if (passwordVerification.needsRehash) {
@@ -335,6 +341,13 @@ export const {
         session.user.image = token.image as string
 
         const db = createDb()
+        const targetUser = await db.query.users.findFirst({
+          where: eq(users.id, session.user.id),
+          columns: { bannedAt: true },
+        })
+        session.user.bannedAt = targetUser?.bannedAt ?? null
+        if (targetUser?.bannedAt) return session
+
         let userRoleRecords = await db.query.userRoles.findMany({
           where: eq(userRoles.userId, session.user.id),
           with: { role: true },

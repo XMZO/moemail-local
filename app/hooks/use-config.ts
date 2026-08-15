@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { Role, ROLES } from "@/lib/permissions"
 import { EMAIL_CONFIG } from "@/config"
 import { useEffect } from "react"
+import { readApiErrorCode } from "@/lib/api-error-client"
 
 interface Config {
   defaultRole: Exclude<Role, typeof ROLES.EMPEROR>
@@ -30,8 +31,12 @@ const useConfigStore = create<ConfigStore>((set) => ({
     try {
       set({ loading: true, error: null })
       const res = await fetch("/api/config")
-      if (!res.ok) throw new Error(CONFIG_FETCH_FAILED)
+      if (!res.ok) {
+        await readApiErrorCode(res, CONFIG_FETCH_FAILED)
+        throw new Error(CONFIG_FETCH_FAILED)
+      }
       const data = await res.json() as Config
+      if (typeof data.emailDomains !== "string") throw new Error(CONFIG_FETCH_FAILED)
       set({
         config: {
           defaultRole: data.defaultRole || ROLES.CIVILIAN,

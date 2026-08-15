@@ -20,6 +20,7 @@ import { Pool } from "pg"
 import { stringifyConfig } from "../../app/lib/config/file"
 import { createDefaultConfig } from "../../app/lib/config/schema"
 import { parsePostgresConnectionUrl } from "../../app/lib/postgres-connection"
+import { MAX_APPEARANCE_FRAGMENT_BYTES } from "../../app/lib/appearance-values"
 
 const repositoryRoot = process.cwd()
 const temporaryRoot = mkdtempSync(join(tmpdir(), "moemail-setup-http-"))
@@ -706,6 +707,16 @@ try {
     body: JSON.stringify({ roles: accessPoliciesBody.policies.roles, mailQuotaRules: accessPoliciesBody.policies.mailQuotaRules }),
   })
   assert.equal(saveRolePolicies.status, 200)
+  assert.ok(session.user?.id)
+  const defaultDomainDetails = await request(`/api/users/${encodeURIComponent(session.user.id)}`)
+  assert.equal(defaultDomainDetails.status, 200)
+  assert.equal(
+    (await defaultDomainDetails.json() as {
+      access?: { domainAccess?: { domains?: Record<string, DomainAccessMode> } }
+    }).access?.domainAccess?.domains?.[validationDomain],
+    "allow",
+    "user details must materialize configured domains covered by the effective default rule",
+  )
   const emperorUsage = await request("/api/access-policies/usage?role=emperor")
   assert.equal(emperorUsage.status, 200)
   const emperorUsageBody = await emperorUsage.json() as {
@@ -1595,11 +1606,33 @@ try {
   const bannedSessionProbe = await deletionRequest("/api/emails")
   assert.equal(bannedSessionProbe.status, 403)
   assert.equal((await bannedSessionProbe.json() as { code?: string }).code, "USER_BANNED")
+  const bannedSessionState = await deletionRequest("/api/auth/session")
+  assert.equal(bannedSessionState.status, 200)
+  assert.ok((await bannedSessionState.json() as { user?: { bannedAt?: string } }).user?.bannedAt)
   const bannedApiKeyProbe = await fetch(`${baseUrl}/api/emails`, {
     headers: { "X-API-Key": deletionApiKey! },
   })
   assert.equal(bannedApiKeyProbe.status, 403)
   assert.equal((await bannedApiKeyProbe.json() as { code?: string }).code, "USER_BANNED")
+  const bannedLoginJar = new CookieJar()
+  const bannedLoginRequest = (path: string, init: RequestInit = {}) => requestWithJar(bannedLoginJar, path, init)
+  const bannedLoginCsrf = await bannedLoginRequest("/api/auth/csrf")
+  const bannedLoginCsrfToken = (await bannedLoginCsrf.json() as { csrfToken?: string }).csrfToken
+  assert.ok(bannedLoginCsrfToken)
+  const bannedLogin = await bannedLoginRequest("/api/auth/callback/credentials", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      csrfToken: bannedLoginCsrfToken!,
+      username: deletionUsername,
+      password: deletionPassword,
+      callbackUrl: `${baseUrl}/`,
+    }),
+  })
+  assert.ok([302, 303].includes(bannedLogin.status))
+  const bannedLoginLocation = new URL(bannedLogin.headers.get("location")!, baseUrl)
+  assert.equal(bannedLoginLocation.searchParams.get("error"), "CredentialsSignin")
+  assert.equal(bannedLoginLocation.searchParams.get("code"), "USER_BANNED")
   const unbanTarget = await request(`/api/users/${encodeURIComponent(deletionUserId!)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -1758,10 +1791,17 @@ try {
   assert.equal(safeAppearancePage.status, 200)
   assert.doesNotMatch(await safeAppearancePage.text(), new RegExp(appearanceMarker))
 
+  const maximumAppearanceFragment = await request("/api/config/appearance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ customCss: "x".repeat(MAX_APPEARANCE_FRAGMENT_BYTES) }),
+  })
+  assert.equal(maximumAppearanceFragment.status, 200)
+
   const oversizedAppearance = await request("/api/config/appearance", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ customCss: "x".repeat(128 * 1024 + 1) }),
+    body: JSON.stringify({ customCss: "x".repeat(MAX_APPEARANCE_FRAGMENT_BYTES + 1) }),
   })
   assert.equal(oversizedAppearance.status, 400)
 
@@ -1878,10 +1918,12 @@ try {
     mailuConfigSessionPermissionAndOriginGate: true,
     domainPolicyAndWorkerIngestion: true,
     accessDomainAndSendQuotaApis: true,
+    effectiveDomainDetailsMaterialized: true,
     roleToUserFourStateDomainEnforcementE2e: true,
     userSendQuotaEnforcementE2e: true,
     multiRecipientAtomicQuotaAndSmtpE2e: true,
     privateRecipientPermissionAndDeliveryE2e: true,
+    bannedSessionRefreshAndLoginCodeE2e: true,
     sessionAndApiKeyPolicyParityE2e: true,
     atomicMailboxQuotaE2e: true,
     globalUserAndRoleMailboxBlocksE2e: true,
@@ -1900,6 +1942,7 @@ try {
     atomicUserDeletionAndCredentialRevocationE2e: true,
     appearanceValidation: true,
     advancedAppearanceInjectionAndSafeMode: true,
+    advancedAppearanceByteLimitBoundary: true,
     compressedFontAsset: true,
     maintenanceBundleVerified,
   }, null, 2))

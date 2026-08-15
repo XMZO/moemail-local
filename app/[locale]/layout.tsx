@@ -8,6 +8,7 @@ import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import { FloatMenu } from "@/components/float-menu"
 import { CustomAppearanceInjector } from "@/components/custom-appearance-injector"
+import { SessionStatusGuard } from "@/components/auth/session-status-guard"
 import { ThemeProvider } from "@/components/theme/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { cn } from "@/lib/utils"
@@ -160,6 +161,7 @@ export default async function LocaleLayout({
             runtimeRefreshEnabled={configStatus.setupCompleted}
           >
             <InstantLocaleProvider initialLocale={locale} catalogs={catalogs}>
+              {configStatus.setupCompleted && <SessionStatusGuard />}
               {children}
               <FloatMenu />
             </InstantLocaleProvider>

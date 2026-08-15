@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, lt, sql } from "drizzle-orm"
 import { accounts, apiKeys, emailShares, emails, mailboxNameBlocks, messages, messageShares, sendQuotaEvents, users, webhooks } from "@/lib/schema"
-import { getAccessPolicies, resolveAccessPolicy } from "@/lib/access-policies"
+import { domainAccessMode, getAccessPolicies, resolveAccessPolicy } from "@/lib/access-policies"
+import { getDomainPolicies } from "@/lib/domain-policies"
 import { normalizeMailboxDomain } from "@/lib/email-address"
 import { PERMISSIONS, ROLES, type Role } from "@/lib/permissions"
 import { authorizeRequest } from "@/lib/request-auth";
@@ -78,8 +79,18 @@ export async function GET(
     const roleNames = target.userRoles.flatMap(item => (
       validRoles.has(item.role.name as Role) ? [item.role.name as Role] : []
     ))
-    const policies = await getAccessPolicies()
+    const [policies, configuredDomains] = await Promise.all([
+      getAccessPolicies(),
+      getDomainPolicies(),
+    ])
     const access = resolveAccessPolicy(policies, userId, roleNames)
+    const visibleDomainAccess = {
+      default: access.domainAccess.default,
+      domains: Object.fromEntries(configuredDomains.map(({ domain }) => [
+        domain,
+        domainAccessMode(access.domainAccess, domain),
+      ])),
+    }
     const mailboxConditions = [eq(emails.userId, userId)]
     if (mailboxSearch) {
       mailboxConditions.push(sql`LOWER(${emails.address}) LIKE ${`%${mailboxSearch.toLowerCase()}%`}`)
@@ -197,7 +208,7 @@ export async function GET(
       access: {
         permissions: access.permissions,
         quotas: access.quotas,
-        domainAccess: access.domainAccess,
+        domainAccess: visibleDomainAccess,
         allowedDomains: access.allowedDomains,
         quotaRole: access.quotaRole,
         roles: access.roles,

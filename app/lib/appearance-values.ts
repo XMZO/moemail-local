@@ -20,5 +20,5 @@ export const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = Object.freeze({
   customJsEnabled: false,
 })
 
-export const MAX_APPEARANCE_FRAGMENT_BYTES = 128 * 1024
-export const MAX_APPEARANCE_TOTAL_BYTES = 256 * 1024
+export const MAX_APPEARANCE_FRAGMENT_BYTES = 192 * 1024
+export const MAX_APPEARANCE_TOTAL_BYTES = 384 * 1024

@@ -439,7 +439,7 @@
       "allowExecution": "실행 허용",
       "customJsPlaceholder": "// 브라우저에서 실행\nconsole.log(\"MoeMail custom appearance\")",
       "safeMode": "사용자 지정 콘텐츠 때문에 페이지를 사용할 수 없으면 아무 페이지 URL에 ?safe-appearance=1을 추가하세요(기존 쿼리가 있으면 &safe-appearance=1). 해당 요청은 모든 고급 삽입을 건너뛰므로 여기에서 지우거나 수정할 수 있습니다.",
-      "limits": "각 입력은 최대 128 KiB, 합계는 최대 256 KiB입니다. 콘텐츠는 현재 데이터베이스에 저장되며 데이터베이스 백업에도 포함됩니다.",
+      "limits": "각 입력은 최대 {fragment} KiB, 합계는 최대 {total} KiB입니다. 콘텐츠는 현재 데이터베이스에 저장되며 데이터베이스 백업에도 포함됩니다.",
       "byteCount": "{used} / {maximum}바이트",
       "totalByteCount": "실시간 합계: {used} / {maximum}바이트",
       "clear": "지우고 비활성화",
