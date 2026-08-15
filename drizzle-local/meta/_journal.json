@@ -29,6 +29,13 @@
       "when": 1786640429184,
       "tag": "0003_quota_rule_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786752000000,
+      "tag": "0004_user_status",
+      "breakpoints": true
     }
   ]
 }

@@ -94,7 +94,7 @@ BEGIN
     ('site_config', 'key'), ('site_config', 'value'), ('site_config', 'updated_at'),
     ('user', 'id'), ('user', 'name'), ('user', 'email'),
     ('user', 'emailVerified'), ('user', 'image'), ('user', 'username'),
-    ('user', 'password'),
+    ('user', 'password'), ('user', 'banned_at'),
     ('user_role', 'user_id'), ('user_role', 'role_id'), ('user_role', 'created_at'),
     ('webhook', 'id'), ('webhook', 'user_id'), ('webhook', 'url'),
     ('webhook', 'enabled'), ('webhook', 'created_at'), ('webhook', 'updated_at')

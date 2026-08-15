@@ -193,6 +193,181 @@
     "deleteConfirmButton": "Delete",
     "cancel": "Cancel",
     "deleteSuccess": "User deleted successfully",
-    "deleteFailed": "Failed to delete user"
+    "deleteFailed": "Failed to delete user",
+    "mailboxCount": "{count} mailboxes",
+    "filters": {
+      "role": "Role",
+      "status": "Status",
+      "mailboxes": "Mailboxes",
+      "allRoles": "All roles",
+      "allStatuses": "All statuses",
+      "active": "Active",
+      "banned": "Banned",
+      "allMailboxes": "All mailbox states",
+      "withMailboxes": "With mailboxes",
+      "withoutMailboxes": "Without mailboxes"
+    },
+    "status": {
+      "active": "Active",
+      "banned": "Banned",
+      "selfDisabled": "You cannot change your own status"
+    },
+    "details": {
+      "open": "View details",
+      "openFor": "View details for {name}",
+      "title": "User details",
+      "description": "Inspect the account, mailboxes, permissions and related resources.",
+      "loading": "Loading user details…",
+      "loadFailed": "Failed to load user details.",
+      "notAvailable": "Not available",
+      "none": "None",
+      "status": {
+        "active": "Active",
+        "banned": "Banned"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "mailboxes": "Mailboxes",
+        "access": "Access & quotas",
+        "resources": "Resources"
+      },
+      "stats": {
+        "mailboxes": "Mailboxes",
+        "messages": "Messages",
+        "apiKeys": "API keys",
+        "webhooks": "Webhooks"
+      },
+      "identity": {
+        "title": "Identity",
+        "username": "Username",
+        "email": "Email",
+        "role": "Roles",
+        "emailVerified": "Email verified",
+        "providers": "Sign-in providers",
+        "password": "Password",
+        "passwordOnly": "Password only",
+        "configured": "Configured",
+        "notConfigured": "Not configured",
+        "status": "Account status",
+        "id": "User ID"
+      },
+      "activity": {
+        "title": "Activity",
+        "activeMailboxes": "Active mailboxes",
+        "expiredMailboxes": "Expired mailboxes",
+        "received": "Received messages",
+        "sent": "Sent messages"
+      },
+      "mailboxSearch": "Search mailboxes",
+      "mailboxDomain": "Filter by domain",
+      "mailboxStatus": "Mailbox status",
+      "mailboxes": {
+        "search": "Search by address",
+        "domain": "Filter by domain",
+        "allStatuses": "All statuses",
+        "active": "Active",
+        "expired": "Expired",
+        "count": "{count} mailboxes",
+        "empty": "No matching mailboxes",
+        "created": "Created {value}",
+        "expires": "Expires {value}",
+        "messages": "{count} messages",
+        "received": "{count} received",
+        "sent": "{count} sent",
+        "previous": "Previous",
+        "page": "Page {current} / {total}",
+        "next": "Next"
+      },
+      "access": {
+        "permissions": "Permissions",
+        "quotas": "Effective quotas",
+        "domains": "Domain access",
+        "quotaRole": "Quota role: {role}",
+        "overrideActive": "User override active",
+        "quotaRules": "{count} matching mail-quota rules",
+        "quotaRulesTruncated": "Additional rules are omitted from this view.",
+        "allowedDomains": "Allowed domains: {domains}"
+      },
+      "permissions": {
+        "view_email": "View email",
+        "create_email": "Create mailbox",
+        "delete_email": "Delete mailbox",
+        "receive_email": "Receive email",
+        "send_email": "Send email",
+        "private_recipient_delivery": "Hide separate recipients",
+        "share_email": "Share email",
+        "manage_webhook": "Manage webhooks",
+        "promote_user": "Manage users",
+        "manage_config": "Manage configuration",
+        "manage_mailu": "Manage Mailu",
+        "manage_api_key": "Manage API keys"
+      },
+      "quotas": {
+        "maxActiveMailboxes": "Active mailbox limit",
+        "maxMailboxLifetimeDays": "Mailbox lifetime limit (days)",
+        "maxMessageBytes": "Message size limit (bytes)",
+        "unlimited": "Unlimited"
+      },
+      "domainModes": {
+        "allow": "Allowed",
+        "receive": "Receive only",
+        "send": "Send only",
+        "deny": "Denied"
+      },
+      "quotaRules": {
+        "direction": {
+          "send": "Send",
+          "receive": "Receive"
+        },
+        "subject": {
+          "all": "All users",
+          "role": "Role: {value}",
+          "user": "This user"
+        },
+        "target": {
+          "all": "All domains",
+          "domain": "Domain: {value}",
+          "mailbox": "Mailbox: {value}"
+        },
+        "units": {
+          "second": "second(s)",
+          "minute": "minute(s)",
+          "hour": "hour(s)",
+          "day": "day(s)",
+          "week": "week(s)",
+          "month": "30-day month(s)"
+        },
+        "window": "{value} {unit}",
+        "lifetime": "lifetime {value}",
+        "noLifetime": "no lifetime limit",
+        "summary": "{direction} · {subject} · {target} · up to {limit} every {window}; {lifetime}",
+        "shared": "Shared role pool",
+        "ignoreEmperor": "Excludes Emperor"
+      },
+      "resources": {
+        "apiKeys": "API keys",
+        "webhooks": "Webhooks",
+        "blocks": "Mailbox-name blocks",
+        "none": "None",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "neverExpires": "Never expires",
+        "truncated": "Showing the newest {shown} of {total} rules."
+      }
+    },
+    "ban": "Ban",
+    "unban": "Unban",
+    "banFor": "Ban {name}",
+    "unbanFor": "Unban {name}",
+    "deleteFor": "Delete {name}",
+    "deleteSelfDisabled": "You cannot delete your own account",
+    "banTitle": "Ban user",
+    "banDescription": "Ban {name}? They will be signed out and cannot use the service until unbanned.",
+    "unbanTitle": "Unban user",
+    "unbanDescription": "Allow {name} to sign in and use the service again?",
+    "banSuccess": "User banned",
+    "unbanSuccess": "User unbanned",
+    "banFailed": "Failed to ban user",
+    "unbanFailed": "Failed to unban user"
   }
 }

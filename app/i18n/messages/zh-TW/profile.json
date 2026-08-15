@@ -193,6 +193,181 @@
     "deleteConfirmButton": "刪除",
     "cancel": "取消",
     "deleteSuccess": "使用者刪除成功",
-    "deleteFailed": "刪除使用者失敗"
+    "deleteFailed": "刪除使用者失敗",
+    "mailboxCount": "{count} 個信箱",
+    "filters": {
+      "role": "角色",
+      "status": "狀態",
+      "mailboxes": "信箱",
+      "allRoles": "全部角色",
+      "allStatuses": "全部狀態",
+      "active": "正常",
+      "banned": "已封鎖",
+      "allMailboxes": "全部信箱狀態",
+      "withMailboxes": "有信箱",
+      "withoutMailboxes": "無信箱"
+    },
+    "status": {
+      "active": "正常",
+      "banned": "已封鎖",
+      "selfDisabled": "不能變更自己的狀態"
+    },
+    "details": {
+      "open": "檢視詳細資料",
+      "openFor": "檢視 {name} 的詳細資料",
+      "title": "使用者詳細資料",
+      "description": "檢視帳號、信箱、權限與相關資源。",
+      "loading": "正在載入使用者詳細資料…",
+      "loadFailed": "讀取使用者詳細資料失敗。",
+      "notAvailable": "無資料",
+      "none": "無",
+      "status": {
+        "active": "正常",
+        "banned": "已封鎖"
+      },
+      "tabs": {
+        "overview": "概覽",
+        "mailboxes": "信箱",
+        "access": "權限與額度",
+        "resources": "資源"
+      },
+      "stats": {
+        "mailboxes": "信箱數",
+        "messages": "郵件數",
+        "apiKeys": "API 金鑰",
+        "webhooks": "Webhook"
+      },
+      "identity": {
+        "title": "身分資訊",
+        "username": "使用者名稱",
+        "email": "電子郵件",
+        "role": "角色",
+        "emailVerified": "電子郵件已驗證",
+        "providers": "登入方式",
+        "password": "密碼",
+        "passwordOnly": "僅密碼",
+        "configured": "已設定",
+        "notConfigured": "未設定",
+        "status": "帳號狀態",
+        "id": "使用者 ID"
+      },
+      "activity": {
+        "title": "活動統計",
+        "activeMailboxes": "有效信箱",
+        "expiredMailboxes": "已過期信箱",
+        "received": "收到的郵件",
+        "sent": "寄出的郵件"
+      },
+      "mailboxSearch": "搜尋信箱",
+      "mailboxDomain": "依網域篩選",
+      "mailboxStatus": "信箱狀態",
+      "mailboxes": {
+        "search": "依地址搜尋",
+        "domain": "依網域篩選",
+        "allStatuses": "全部狀態",
+        "active": "有效",
+        "expired": "已過期",
+        "count": "共 {count} 個信箱",
+        "empty": "沒有符合的信箱",
+        "created": "建立於 {value}",
+        "expires": "到期於 {value}",
+        "messages": "{count} 封郵件",
+        "received": "收件 {count}",
+        "sent": "寄件 {count}",
+        "previous": "上一頁",
+        "page": "第 {current} / {total} 頁",
+        "next": "下一頁"
+      },
+      "access": {
+        "permissions": "權限",
+        "quotas": "生效額度",
+        "domains": "網域存取",
+        "quotaRole": "額度角色：{role}",
+        "overrideActive": "已啟用使用者覆寫",
+        "quotaRules": "符合 {count} 條收發額度規則",
+        "quotaRulesTruncated": "其餘規則未在此處顯示。",
+        "allowedDomains": "允許的網域：{domains}"
+      },
+      "permissions": {
+        "view_email": "檢視郵件",
+        "create_email": "建立信箱",
+        "delete_email": "刪除信箱",
+        "receive_email": "接收郵件",
+        "send_email": "寄送郵件",
+        "private_recipient_delivery": "隱藏分開的收件人",
+        "share_email": "分享郵件",
+        "manage_webhook": "管理 Webhook",
+        "promote_user": "管理使用者",
+        "manage_config": "管理設定",
+        "manage_mailu": "管理 Mailu",
+        "manage_api_key": "管理 API 金鑰"
+      },
+      "quotas": {
+        "maxActiveMailboxes": "有效信箱上限",
+        "maxMailboxLifetimeDays": "信箱有效期上限（天）",
+        "maxMessageBytes": "郵件大小上限（位元組）",
+        "unlimited": "不限"
+      },
+      "domainModes": {
+        "allow": "允許",
+        "receive": "僅收件",
+        "send": "僅寄件",
+        "deny": "禁止"
+      },
+      "quotaRules": {
+        "direction": {
+          "send": "寄件",
+          "receive": "收件"
+        },
+        "subject": {
+          "all": "所有使用者",
+          "role": "角色：{value}",
+          "user": "目前使用者"
+        },
+        "target": {
+          "all": "全部網域",
+          "domain": "網域：{value}",
+          "mailbox": "信箱：{value}"
+        },
+        "units": {
+          "second": "秒",
+          "minute": "分鐘",
+          "hour": "小時",
+          "day": "天",
+          "week": "週",
+          "month": "30 天月"
+        },
+        "window": "{value}{unit}",
+        "lifetime": "生命週期上限 {value}",
+        "noLifetime": "無生命週期上限",
+        "summary": "{direction} · {subject} · {target} · 每 {window} 最多 {limit} 次；{lifetime}",
+        "shared": "角色共享額度池",
+        "ignoreEmperor": "排除皇帝"
+      },
+      "resources": {
+        "apiKeys": "API 金鑰",
+        "webhooks": "Webhook",
+        "blocks": "信箱名稱封鎖規則",
+        "none": "無",
+        "enabled": "已啟用",
+        "disabled": "已停用",
+        "neverExpires": "永不過期",
+        "truncated": "共 {total} 條規則，僅顯示最新 {shown} 條。"
+      }
+    },
+    "ban": "封鎖",
+    "unban": "解除封鎖",
+    "banFor": "封鎖 {name}",
+    "unbanFor": "解除封鎖 {name}",
+    "deleteFor": "刪除 {name}",
+    "deleteSelfDisabled": "不能刪除自己的帳號",
+    "banTitle": "封鎖使用者",
+    "banDescription": "確定要封鎖 {name} 嗎？封鎖後會登出，解除封鎖前無法使用服務。",
+    "unbanTitle": "解除封鎖使用者",
+    "unbanDescription": "允許 {name} 再次登入並使用服務嗎？",
+    "banSuccess": "使用者已封鎖",
+    "unbanSuccess": "使用者已解除封鎖",
+    "banFailed": "封鎖使用者失敗",
+    "unbanFailed": "解除封鎖使用者失敗"
   }
 }

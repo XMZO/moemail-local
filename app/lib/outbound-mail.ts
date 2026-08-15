@@ -5,47 +5,33 @@ import {
   type DomainPolicy,
   type SmtpOutboundPolicy,
 } from "./domain-policies"
-import { normalizeMailboxAddress, normalizeMailboxDomain } from "./email-address"
+import { normalizeMailboxDomain } from "./email-address"
 import { htmlToPlainText } from "./mail-content"
+import {
+  MAX_OUTBOUND_RECIPIENTS,
+  parseOutboundRecipients,
+} from "./outbound-recipients"
 
-export const MAX_OUTBOUND_RECIPIENTS = 50
+export { MAX_OUTBOUND_RECIPIENTS } from "./outbound-recipients"
 
 const outboundRecipientsSchema = z.union([
   z.string().max(20_000, "RECIPIENTS_TOO_LONG"),
   z.array(z.string().max(320, "RECIPIENT_TOO_LONG")).max(MAX_OUTBOUND_RECIPIENTS, "TOO_MANY_RECIPIENTS"),
 ]).transform((value, ctx) => {
-  const parts = (Array.isArray(value) ? value : [value])
-    .flatMap(item => item.split(/[;,]/u))
-    .map(item => item.trim())
-
-  if (parts.length === 0 || parts.some(part => part.length === 0)) {
+  const parsed = parseOutboundRecipients(value)
+  if (parsed.recipients.length === 0 && parsed.invalid.length === 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_REQUIRED" })
     return z.NEVER
   }
-
-  const recipients: string[] = []
-  const seen = new Set<string>()
-  for (const part of parts) {
-    if (part.length > 320 || /[\r\n]/u.test(part)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_INVALID" })
-      return z.NEVER
-    }
-    const recipient = normalizeMailboxAddress(part)
-    if (!recipient) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_INVALID" })
-      return z.NEVER
-    }
-    if (!seen.has(recipient)) {
-      seen.add(recipient)
-      recipients.push(recipient)
-    }
+  if (parsed.invalid.length > 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RECIPIENT_INVALID" })
+    return z.NEVER
   }
-
-  if (recipients.length > MAX_OUTBOUND_RECIPIENTS) {
+  if (parsed.tooMany) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TOO_MANY_RECIPIENTS" })
     return z.NEVER
   }
-  return recipients
+  return parsed.recipients
 })
 
 export const outboundMessageSchema = z.object({

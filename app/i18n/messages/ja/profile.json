@@ -193,6 +193,181 @@
     "deleteConfirmButton": "削除",
     "cancel": "キャンセル",
     "deleteSuccess": "ユーザーを削除しました",
-    "deleteFailed": "ユーザーの削除に失敗しました"
+    "deleteFailed": "ユーザーの削除に失敗しました",
+    "mailboxCount": "{count} 件のメールボックス",
+    "filters": {
+      "role": "ロール",
+      "status": "状態",
+      "mailboxes": "メールボックス",
+      "allRoles": "すべてのロール",
+      "allStatuses": "すべての状態",
+      "active": "有効",
+      "banned": "停止中",
+      "allMailboxes": "すべてのメールボックス状態",
+      "withMailboxes": "メールボックスあり",
+      "withoutMailboxes": "メールボックスなし"
+    },
+    "status": {
+      "active": "有効",
+      "banned": "停止中",
+      "selfDisabled": "自分の状態は変更できません"
+    },
+    "details": {
+      "open": "詳細を表示",
+      "openFor": "{name} の詳細を表示",
+      "title": "ユーザー詳細",
+      "description": "アカウント、メールボックス、権限、関連リソースを確認します。",
+      "loading": "ユーザー詳細を読み込み中…",
+      "loadFailed": "ユーザー詳細を読み込めませんでした。",
+      "notAvailable": "利用できません",
+      "none": "なし",
+      "status": {
+        "active": "有効",
+        "banned": "停止中"
+      },
+      "tabs": {
+        "overview": "概要",
+        "mailboxes": "メールボックス",
+        "access": "権限と上限",
+        "resources": "リソース"
+      },
+      "stats": {
+        "mailboxes": "メールボックス",
+        "messages": "メッセージ",
+        "apiKeys": "API キー",
+        "webhooks": "Webhook"
+      },
+      "identity": {
+        "title": "本人情報",
+        "username": "ユーザー名",
+        "email": "メールアドレス",
+        "role": "ロール",
+        "emailVerified": "メール確認済み",
+        "providers": "ログイン方法",
+        "password": "パスワード",
+        "passwordOnly": "パスワードのみ",
+        "configured": "設定済み",
+        "notConfigured": "未設定",
+        "status": "アカウント状態",
+        "id": "ユーザー ID"
+      },
+      "activity": {
+        "title": "アクティビティ",
+        "activeMailboxes": "有効なメールボックス",
+        "expiredMailboxes": "期限切れメールボックス",
+        "received": "受信メッセージ",
+        "sent": "送信メッセージ"
+      },
+      "mailboxSearch": "メールボックスを検索",
+      "mailboxDomain": "ドメインで絞り込み",
+      "mailboxStatus": "メールボックス状態",
+      "mailboxes": {
+        "search": "アドレスで検索",
+        "domain": "ドメインで絞り込み",
+        "allStatuses": "すべての状態",
+        "active": "有効",
+        "expired": "期限切れ",
+        "count": "{count} 件のメールボックス",
+        "empty": "一致するメールボックスはありません",
+        "created": "作成 {value}",
+        "expires": "期限 {value}",
+        "messages": "{count} 件",
+        "received": "受信 {count}",
+        "sent": "送信 {count}",
+        "previous": "前へ",
+        "page": "{current} / {total} ページ",
+        "next": "次へ"
+      },
+      "access": {
+        "permissions": "権限",
+        "quotas": "有効な上限",
+        "domains": "ドメインアクセス",
+        "quotaRole": "上限ロール：{role}",
+        "overrideActive": "ユーザー上書きを適用中",
+        "quotaRules": "一致するメール上限ルール {count} 件",
+        "quotaRulesTruncated": "追加のルールは省略されています。",
+        "allowedDomains": "許可されたドメイン：{domains}"
+      },
+      "permissions": {
+        "view_email": "メールを表示",
+        "create_email": "メールボックスを作成",
+        "delete_email": "メールボックスを削除",
+        "receive_email": "メールを受信",
+        "send_email": "メールを送信",
+        "private_recipient_delivery": "個別宛先を非表示",
+        "share_email": "メールを共有",
+        "manage_webhook": "Webhook を管理",
+        "promote_user": "ユーザーを管理",
+        "manage_config": "設定を管理",
+        "manage_mailu": "Mailu を管理",
+        "manage_api_key": "API キーを管理"
+      },
+      "quotas": {
+        "maxActiveMailboxes": "有効メールボックス上限",
+        "maxMailboxLifetimeDays": "メールボックス有効期間上限（日）",
+        "maxMessageBytes": "メッセージサイズ上限（バイト）",
+        "unlimited": "無制限"
+      },
+      "domainModes": {
+        "allow": "許可",
+        "receive": "受信のみ",
+        "send": "送信のみ",
+        "deny": "拒否"
+      },
+      "quotaRules": {
+        "direction": {
+          "send": "送信",
+          "receive": "受信"
+        },
+        "subject": {
+          "all": "すべてのユーザー",
+          "role": "ロール：{value}",
+          "user": "このユーザー"
+        },
+        "target": {
+          "all": "すべてのドメイン",
+          "domain": "ドメイン：{value}",
+          "mailbox": "メールボックス：{value}"
+        },
+        "units": {
+          "second": "秒",
+          "minute": "分",
+          "hour": "時間",
+          "day": "日",
+          "week": "週間",
+          "month": "30 日月"
+        },
+        "window": "{value}{unit}",
+        "lifetime": "生涯上限 {value}",
+        "noLifetime": "生涯上限なし",
+        "summary": "{direction} · {subject} · {target} · {window} あたり最大 {limit} 件；{lifetime}",
+        "shared": "ロール共有プール",
+        "ignoreEmperor": "皇帝を除外"
+      },
+      "resources": {
+        "apiKeys": "API キー",
+        "webhooks": "Webhook",
+        "blocks": "メールボックス名ブロック",
+        "none": "なし",
+        "enabled": "有効",
+        "disabled": "無効",
+        "neverExpires": "無期限",
+        "truncated": "全 {total} 件のうち、最新 {shown} 件を表示しています。"
+      }
+    },
+    "ban": "停止",
+    "unban": "停止解除",
+    "banFor": "{name} を停止",
+    "unbanFor": "{name} の停止を解除",
+    "deleteFor": "{name} を削除",
+    "deleteSelfDisabled": "自分のアカウントは削除できません",
+    "banTitle": "ユーザーを停止",
+    "banDescription": "{name} を停止しますか？停止中はログアウトされ、解除までサービスを利用できません。",
+    "unbanTitle": "ユーザーの停止を解除",
+    "unbanDescription": "{name} のログインとサービス利用を再び許可しますか？",
+    "banSuccess": "ユーザーを停止しました",
+    "unbanSuccess": "ユーザーの停止を解除しました",
+    "banFailed": "ユーザーの停止に失敗しました",
+    "unbanFailed": "ユーザーの停止解除に失敗しました"
   }
 }

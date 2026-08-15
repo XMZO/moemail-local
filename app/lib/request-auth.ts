@@ -98,6 +98,23 @@ export async function authorizeRequest(
     }
   }
 
+  // Do not trust the session/API-key snapshot: an Emperor may have disabled
+  // this account after the credential was issued.
+  const { isUserBanned } = await import("./user-status")
+  const banned = await isUserBanned(unresolvedPrincipal.userId)
+  if (banned === null) {
+    return {
+      ok: false,
+      response: apiError("UNAUTHORIZED", 401),
+    }
+  }
+  if (banned) {
+    return {
+      ok: false,
+      response: apiError("USER_BANNED", 403),
+    }
+  }
+
   const principal: RequestPrincipal = {
     ...unresolvedPrincipal,
     access: await getEffectiveAccessPolicy(unresolvedPrincipal.userId, unresolvedPrincipal.roles),

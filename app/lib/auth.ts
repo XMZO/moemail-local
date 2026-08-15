@@ -256,6 +256,10 @@ export const {
           throw new Error("INVALID_CREDENTIALS")
         }
 
+        if (user.bannedAt) {
+          throw new Error("USER_BANNED")
+        }
+
         if (passwordVerification.needsRehash) {
           try {
             const upgradedPassword = await hashPassword(parsedCredentials.password)
@@ -299,6 +303,21 @@ export const {
     },
   },
   callbacks: {
+    async signIn({ user }) {
+      if (!user.id) return false
+      try {
+        const target = await createDb().query.users.findFirst({
+          where: eq(users.id, user.id),
+          columns: { bannedAt: true },
+        })
+        return Boolean(target && !target.bannedAt)
+      } catch (error) {
+        console.error("auth.banned_status_check_failed", {
+          name: error instanceof Error ? error.name : "UnknownError",
+        })
+        return false
+      }
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id

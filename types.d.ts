@@ -50,6 +50,7 @@ declare module "next-auth" {
     roles?: { name: string }[]
     username?: string | null
     providers?: string[]
+    bannedAt?: Date | null
     permissions?: string[]
     quotas?: Record<string, number>
     allowedDomains?: string[] | null

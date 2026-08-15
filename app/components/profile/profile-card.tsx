@@ -166,7 +166,7 @@ export function ProfileCard({ user }: ProfileCardProps) {
         </TabsContent>}
         {(canManageConfig || canManageMailu) && visitedTabs.has("domains") && <TabsContent value="domains" forceMount className={persistentTabClass}><DomainPolicyPanel canManageConfig={canManageConfig} canManageMailu={canManageMailu} /></TabsContent>}
         {isEmperor && visitedTabs.has("access") && <TabsContent value="access" forceMount className={persistentTabClass}><AccessPolicyPanel /></TabsContent>}
-        {canPromote && visitedTabs.has("users") && <TabsContent value="users" forceMount className={persistentTabClass}><PromotePanel /></TabsContent>}
+        {canPromote && visitedTabs.has("users") && <TabsContent value="users" forceMount className={persistentTabClass}><PromotePanel currentUserId={user.id} /></TabsContent>}
         {canManageConfig && visitedTabs.has("site") && <TabsContent value="site" forceMount className={persistentTabClass}><WebsiteConfigPanel /></TabsContent>}
         {canManageConfig && visitedTabs.has("appearance") && <TabsContent value="appearance" forceMount className={persistentTabClass}><AppearancePanel allowAdvanced={isEmperor} /></TabsContent>}
         {isEmperor && visitedTabs.has("runtime") && <TabsContent value="runtime" forceMount className={persistentTabClass}><RuntimeConfigPanel /></TabsContent>}

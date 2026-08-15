@@ -888,6 +888,35 @@ try {
     assert.equal(blocked.status, 403)
     assert.equal((await blocked.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
   }
+  const updateGlobalBlock = await request(
+    `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(globalBlock.block!.id!)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "global", localPart: "globally-edited", domain: validationDomain }),
+    },
+  )
+  assert.equal(updateGlobalBlock.status, 200)
+  const updatedGlobalBlock = await updateGlobalBlock.json() as {
+    block?: { id?: string; localPart?: string }
+  }
+  assert.equal(updatedGlobalBlock.block?.id, globalBlock.block!.id)
+  assert.equal(updatedGlobalBlock.block?.localPart, "globally-edited")
+  const oldNameReleased = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("globally-blocked"),
+  })
+  assert.equal(oldNameReleased.status, 200)
+  const releasedMailbox = await oldNameReleased.json() as { id: string }
+  assert.equal((await memberRequest(`/api/emails/${releasedMailbox.id}`, { method: "DELETE" })).status, 200)
+  const editedNameBlocked = await memberRequest("/api/emails/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: mailboxPayload("globally-edited"),
+  })
+  assert.equal(editedNameBlocked.status, 403)
+  assert.equal((await editedNameBlocked.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
   const clearGlobalBlock = await request(
     `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(globalBlock.block!.id!)}`,
     { method: "DELETE" },
@@ -924,6 +953,32 @@ try {
     { method: "DELETE" },
   )
   assert.equal(clearAllDomainBlock.status, 200)
+
+  const wildcardBlockResponse = await request("/api/access-policies/mailbox-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "global", localPart: "*", domain: "*" }),
+  })
+  assert.equal(wildcardBlockResponse.status, 201)
+  const wildcardBlock = await wildcardBlockResponse.json() as {
+    block?: { id?: string; localPart?: string; domain?: string }
+  }
+  assert.ok(wildcardBlock.block?.id)
+  assert.equal(wildcardBlock.block?.localPart, "*")
+  assert.equal(wildcardBlock.block?.domain, "*")
+  for (const name of ["wildcard-custom", ""]) {
+    const wildcardBlocked = await memberRequest("/api/emails/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: mailboxPayload(name),
+    })
+    assert.equal(wildcardBlocked.status, 403)
+    assert.equal((await wildcardBlocked.json() as { code?: string }).code, "MAILBOX_NAME_BLOCKED")
+  }
+  assert.equal((await request(
+    `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(wildcardBlock.block!.id!)}`,
+    { method: "DELETE" },
+  )).status, 200)
 
   const userBlockResponse = await request("/api/access-policies/mailbox-blocks", {
     method: "POST",
@@ -1037,7 +1092,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      to: "first-recipient@example.net; SECOND-recipient@example.net, first-recipient@example.net",
+      to: "first-recipient@example.net SECOND-recipient@example.net，first-recipient@example.net；SECOND-recipient@example.net",
       subject: "multiple recipient quota integration",
       content: "multi-recipient marker",
       format: "text",
@@ -1460,6 +1515,21 @@ try {
     (await protectedEmperorDelete.json() as { code?: string }).code,
     "CANNOT_DELETE_EMPEROR",
   )
+  for (const banned of [true, false]) {
+    const protectedEmperorStatus = await memberRequest(
+      `/api/users/${encodeURIComponent(session.user!.id!)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ banned, expectedBanned: false }),
+      },
+    )
+    assert.equal(protectedEmperorStatus.status, 400)
+    assert.equal(
+      (await protectedEmperorStatus.json() as { code?: string }).code,
+      "CANNOT_BAN_EMPEROR",
+    )
+  }
 
   // Exercise the complete ordinary-user deletion unit: a non-cascading API
   // key, a site_config policy override, and a user-scoped mailbox block must
@@ -1516,6 +1586,32 @@ try {
   assert.equal(deletionKeyResponse.status, 200)
   const deletionApiKey = (await deletionKeyResponse.json() as { key?: string }).key
   assert.match(deletionApiKey ?? "", /^mk_[A-Za-z0-9_-]{32}$/)
+  const banTarget = await request(`/api/users/${encodeURIComponent(deletionUserId!)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ banned: true, expectedBanned: false }),
+  })
+  assert.equal(banTarget.status, 200)
+  const bannedSessionProbe = await deletionRequest("/api/emails")
+  assert.equal(bannedSessionProbe.status, 403)
+  assert.equal((await bannedSessionProbe.json() as { code?: string }).code, "USER_BANNED")
+  const bannedApiKeyProbe = await fetch(`${baseUrl}/api/emails`, {
+    headers: { "X-API-Key": deletionApiKey! },
+  })
+  assert.equal(bannedApiKeyProbe.status, 403)
+  assert.equal((await bannedApiKeyProbe.json() as { code?: string }).code, "USER_BANNED")
+  const unbanTarget = await request(`/api/users/${encodeURIComponent(deletionUserId!)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ banned: false, expectedBanned: true }),
+  })
+  assert.equal(unbanTarget.status, 200)
+  const unbannedSessionProbe = await deletionRequest("/api/emails")
+  assert.equal(unbannedSessionProbe.status, 200)
+  const unbannedApiKeyProbe = await fetch(`${baseUrl}/api/emails`, {
+    headers: { "X-API-Key": deletionApiKey! },
+  })
+  assert.equal(unbannedApiKeyProbe.status, 200)
   const deletionOverride = await request(
     `/api/access-policies/users/${encodeURIComponent(deletionUserId!)}`,
     {
@@ -1789,7 +1885,9 @@ try {
     sessionAndApiKeyPolicyParityE2e: true,
     atomicMailboxQuotaE2e: true,
     globalUserAndRoleMailboxBlocksE2e: true,
+    atomicMailboxBlockEditingE2e: true,
     allDomainMailboxNameBlocksE2e: true,
+    wildcardMailboxNameBlocksE2e: true,
     selfQuotaSummaryAndApiKeyBoundaryE2e: true,
     receiveLifetimeQuotaSurvivesRecreationE2e: true,
     emperorExactMailboxResetE2e: true,
@@ -1797,6 +1895,8 @@ try {
     independentOutboundDisable: true,
     emperorAccessImmutable: true,
     emperorDeletionProtectedServerSide: true,
+    emperorStatusImmutableServerSide: true,
+    userBanAndUnbanSessionRevocationE2e: true,
     atomicUserDeletionAndCredentialRevocationE2e: true,
     appearanceValidation: true,
     advancedAppearanceInjectionAndSafeMode: true,

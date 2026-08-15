@@ -107,7 +107,7 @@ assert.match(loginPageSource, /min-h-\[100dvh\]/u)
 const userPanelSource = readFileSync(join(process.cwd(), "app/components/profile/promote-panel.tsx"), "utf8")
 assert.doesNotMatch(userPanelSource, /<RoleIcon/u)
 assert.match(userPanelSource, /sm:grid-cols-\[auto_minmax\(0,1fr\)_auto\]/u)
-assert.match(userPanelSource, /<SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-auto sm:min-w-28">/u)
+assert.match(userPanelSource, /className="h-8 w-full min-w-0 text-sm sm:w-auto sm:min-w-28"/u)
 
 const accessPanelSource = readFileSync(join(process.cwd(), "app/components/profile/access-policy-panel.tsx"), "utf8")
 const sendQuotaSource = readFileSync(join(process.cwd(), "app/components/profile/mail-quota-editor.tsx"), "utf8")
@@ -120,6 +120,7 @@ const messageViewSource = readFileSync(join(process.cwd(), "app/components/email
 const sharedMessageSource = readFileSync(join(process.cwd(), "app/components/emails/shared-message-detail.tsx"), "utf8")
 const threeColumnSource = readFileSync(join(process.cwd(), "app/components/emails/three-column-layout.tsx"), "utf8")
 const appearancePanelSource = readFileSync(join(process.cwd(), "app/components/profile/appearance-panel.tsx"), "utf8")
+const mailboxBlockRouteSource = readFileSync(join(process.cwd(), "app/api/access-policies/mailbox-blocks/route.ts"), "utf8")
 assert.match(accessPanelSource, /ROLES\.EMPEROR, ROLES\.DUKE, ROLES\.KNIGHT, ROLES\.CIVILIAN/u)
 assert.match(accessPanelSource, /<MailQuotaRuleEditor/u)
 assert.match(accessPanelSource, /mailQuotaRules/u)
@@ -149,6 +150,13 @@ assert.match(quotaGuideSource, /unlimitedOverride/u)
 assert.match(accessPanelSource, /setUsageRevision\(value => value \+ 1\)/u)
 assert.match(accessPanelSource, /ALL_MAILBOX_BLOCK_DOMAINS/u)
 assert.match(accessPanelSource, /blocks\.allDomains/u)
+assert.match(accessPanelSource, /mailboxBlockPageSize = 12/u)
+assert.match(accessPanelSource, /useDeferredValue\(blockSearch\)/u)
+assert.match(accessPanelSource, /filteredBlocks\.slice/u)
+assert.match(accessPanelSource, /blockScopeFilter[\s\S]*blockDomainFilter/u)
+assert.match(accessPanelSource, /editBlock[\s\S]*scrollIntoView\(\{ behavior: "smooth"/u)
+assert.match(accessPanelSource, /method: updating \? "PUT" : "POST"/u)
+assert.match(mailboxBlockRouteSource, /export async function PUT/u)
 assert.match(sendQuotaSource, /<SearchableUserSelect/u)
 assert.match(searchableUserSource, /setTimeout\(\(\) =>/u)
 assert.match(searchableUserSource, /\/api\/roles\/users\?\$\{params\}/u)
@@ -219,6 +227,7 @@ console.log(JSON.stringify({
   userRoleEditorResponsive: true,
   accessPolicyLayoutCovered: true,
   allDomainMailboxBlocksLocalized: true,
+  scalableMailboxBlockEditor: true,
   bidirectionalMailQuotaUiLocalized: true,
   liveQuotaCompatibilityGuidance: true,
   quotaUsageRefreshAfterSave: true,

@@ -41,7 +41,7 @@ const REQUIRED_COLUMNS: Record<RequiredTable, readonly string[]> = {
   role: ["id", "name", "description", "created_at", "updated_at"],
   send_quota_event: ["id", "user_id", "quota_subject", "policy_role", "direction", "sender_domain", "mailbox_address", "global_rule_id", "scoped_rule_id", "status", "created_at", "reservation_expires_at", "completed_at"],
   site_config: ["key", "value", "updated_at"],
-  user: ["id", "name", "email", "emailVerified", "image", "username", "password"],
+  user: ["id", "name", "email", "emailVerified", "image", "username", "password", "banned_at"],
   user_role: ["user_id", "role_id", "created_at"],
   webhook: ["id", "user_id", "url", "enabled", "created_at", "updated_at"],
 }

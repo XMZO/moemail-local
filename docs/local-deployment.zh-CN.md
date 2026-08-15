@@ -4,7 +4,7 @@
 
 选择 Cloudflare Email Routing 时，Email Worker 仍使用 Wrangler `vars`/Secret，因为它们属于 Worker 的远端 binding，不是本地应用配置。选择外部 IMAP 时无需 Cloudflare，但邮局必须提供 catch-all/全域转发，并保留可识别原始收件地址的 Header。
 
-仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.19.10`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
+仓库提供两个互斥的 standalone 部署目录：`sqlite/docker-compose.yml` 默认只运行轻量 Web；`postgres/docker-compose.yml` 默认运行轻量 Web 与内置 PostgreSQL 18。备份、恢复、迁移、校验、监控和异地同步使用按需拉取的 `ghcr.io/xmzo/moemail-local:latest-tools`，PostgreSQL 归档另用 `ghcr.io/xmzo/moemail-local-postgres-tools:latest`。只进入其中一个目录，日常命令都是普通 `docker compose ...`；各目录相邻的 `./data` 天然隔离，复制或打包整个目录即可同时带走部署定义与数据。不能用多个 `-f` 参数叠加两者。镜像只在 Docker-compatible Git tag（例如 `v0.20.0`，不含 `/`）push 或手动触发 `Publish Docker Images` 时发布。amd64 使用 `ubuntu-24.04`，arm64 使用 `ubuntu-24.04-arm` 原生 runner 构建，不使用 QEMU 模拟；Web、应用维护、PostgreSQL server 和 PostgreSQL tools 四种变体都先在对应架构 runner 上执行 smoke test，两个 native digest 最后合并成同一 multi-arch tag。带 `/` 的 Git tag不自动触发，可改用手动输入 `publish_tag`。
 
 首次成功发布后，到 GitHub Packages 中确认实际使用的 container package visibility 为 **Public**，否则未登录的 Compose 主机无法拉取；PostgreSQL 方案需要确认全部三个 package。稳定 semver tag 会同时刷新 `latest` 与应用维护用的 `latest-tools`。必须等待整个发布 Action 的四个 manifest 全部成功后再执行 `pull`；回滚时把所选方案的 Web、维护、数据库和数据库工具标签一起固定到同一旧版本或 digest。不能借升级切换数据库方案，也不通过 `.env` 选 tag。两个 Compose 都不内置 Caddy，只把 Web 绑定到宿主 `127.0.0.1:3000`，HTTPS/TLS 由宿主机上的 Caddy 或其他反向代理负责。
 
@@ -444,7 +444,7 @@ IMAP 只是读取邮局中已经收到的信，不能替代 MX/catch-all，也�
 
 ```bash
 sudo useradd --system --home /var/lib/moemail --create-home --shell /usr/sbin/nologin moemail
-sudo git clone --branch v0.19.10 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
+sudo git clone --branch v0.20.0 --depth 1 https://github.com/XMZO/moemail-local.git /opt/moemail
 sudo chown -R moemail:moemail /opt/moemail /var/lib/moemail
 sudo -H -u moemail sh -c 'cd /opt/moemail && /usr/bin/pnpm install --frozen-lockfile && /usr/bin/pnpm build'
 sudo install -d -m 0700 -o moemail -g moemail \

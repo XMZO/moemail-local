@@ -264,18 +264,19 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
           {(["receive", "send"] as const).map(direction => {
             const state = quota[direction]
             if (!state) return null
-            if (!state.allowed && state.error) {
-              const reason = tApi.has(state.error as never)
-                ? tApi(state.error as never)
-                : t(`quota.${direction}` as never)
-              const summary = tFormat("labelValue", {
+            const errorSummary = !state.allowed && state.error
+              ? tFormat("labelValue", {
                 label: t(`quota.${direction}` as never),
-                value: reason,
+                value: tApi.has(state.error as never)
+                  ? tApi(state.error as never)
+                  : t(`quota.${direction}` as never),
               })
-              return <span key={direction} title={summary} className="max-w-48 shrink-0 truncate rounded-full border bg-muted/40 px-2 py-0.5">{summary}</span>
-            }
+              : null
+            const errorBadge = errorSummary
+              ? <span key={direction} title={errorSummary} className="max-w-48 shrink-0 truncate rounded-full border bg-muted/40 px-2 py-0.5">{errorSummary}</span>
+              : null
             const applied = state.quota?.applied ?? []
-            if (applied.length === 0) return null
+            if (applied.length === 0) return errorBadge
             const finiteRolling = applied.flatMap(item => item.rolling.remaining === null ? [] : [item.rolling.remaining])
             const finiteLifetime = applied.flatMap(item => item.lifetimeRemaining === null ? [] : [item.lifetimeRemaining])
             const parts = [
@@ -286,7 +287,7 @@ export function MessageList({ email, messageType, onMessageSelect, selectedMessa
                 ? null
                 : t("quota.lifetime", { count: Math.min(...finiteLifetime) }),
             ].filter((value): value is string => value !== null)
-            if (parts.length === 0) return null
+            if (parts.length === 0) return errorBadge
             const summary = tFormat("labelValue", {
               label: t(`quota.${direction}` as never),
               value: format.list(parts, { type: "unit" }),

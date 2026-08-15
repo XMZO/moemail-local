@@ -377,12 +377,18 @@ assert.equal(outboundMessageSchema.parse({
   content: "hello",
   format: "text",
 }).privateRecipients, false)
-assert.equal(outboundMessageSchema.safeParse({
+assert.deepEqual(outboundMessageSchema.parse({
   to: "recipient@example.net, ",
   subject: "Trailing separator",
   content: "hello",
   format: "text",
-}).success, false)
+}).to, ["recipient@example.net"])
+assert.deepEqual(outboundMessageSchema.parse({
+  to: "first@example.net， second@example.net；FIRST@example.net",
+  subject: "Localized separators",
+  content: "hello",
+  format: "text",
+}).to, ["first@example.net", "second@example.net"])
 assert.deepEqual(
   outboundContent({ to: ["recipient@example.net"], subject: "Text", content: "<unsafe>&", format: "text", privateRecipients: false }),
   {

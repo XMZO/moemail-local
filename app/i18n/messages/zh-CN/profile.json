@@ -193,6 +193,181 @@
     "deleteConfirmButton": "删除",
     "cancel": "取消",
     "deleteSuccess": "用户删除成功",
-    "deleteFailed": "删除用户失败"
+    "deleteFailed": "删除用户失败",
+    "mailboxCount": "{count} 个邮箱",
+    "filters": {
+      "role": "角色",
+      "status": "状态",
+      "mailboxes": "邮箱",
+      "allRoles": "全部角色",
+      "allStatuses": "全部状态",
+      "active": "正常",
+      "banned": "已封禁",
+      "allMailboxes": "全部邮箱状态",
+      "withMailboxes": "有邮箱",
+      "withoutMailboxes": "无邮箱"
+    },
+    "status": {
+      "active": "正常",
+      "banned": "已封禁",
+      "selfDisabled": "不能修改自己的状态"
+    },
+    "details": {
+      "open": "查看详情",
+      "openFor": "查看 {name} 的详情",
+      "title": "用户详情",
+      "description": "查看账号、邮箱、权限及相关资源。",
+      "loading": "正在加载用户详情…",
+      "loadFailed": "读取用户详情失败。",
+      "notAvailable": "暂无",
+      "none": "无",
+      "status": {
+        "active": "正常",
+        "banned": "已封禁"
+      },
+      "tabs": {
+        "overview": "概览",
+        "mailboxes": "邮箱",
+        "access": "权限与额度",
+        "resources": "资源"
+      },
+      "stats": {
+        "mailboxes": "邮箱数",
+        "messages": "邮件数",
+        "apiKeys": "API 密钥",
+        "webhooks": "Webhook"
+      },
+      "identity": {
+        "title": "身份信息",
+        "username": "用户名",
+        "email": "邮箱",
+        "role": "角色",
+        "emailVerified": "邮箱已验证",
+        "providers": "登录方式",
+        "password": "密码",
+        "passwordOnly": "仅密码",
+        "configured": "已配置",
+        "notConfigured": "未配置",
+        "status": "账号状态",
+        "id": "用户 ID"
+      },
+      "activity": {
+        "title": "活动统计",
+        "activeMailboxes": "有效邮箱",
+        "expiredMailboxes": "已过期邮箱",
+        "received": "收到的邮件",
+        "sent": "发出的邮件"
+      },
+      "mailboxSearch": "搜索邮箱",
+      "mailboxDomain": "按域名筛选",
+      "mailboxStatus": "邮箱状态",
+      "mailboxes": {
+        "search": "按地址搜索",
+        "domain": "按域名筛选",
+        "allStatuses": "全部状态",
+        "active": "有效",
+        "expired": "已过期",
+        "count": "共 {count} 个邮箱",
+        "empty": "没有匹配的邮箱",
+        "created": "创建于 {value}",
+        "expires": "到期于 {value}",
+        "messages": "{count} 封邮件",
+        "received": "收件 {count}",
+        "sent": "发件 {count}",
+        "previous": "上一页",
+        "page": "第 {current} / {total} 页",
+        "next": "下一页"
+      },
+      "access": {
+        "permissions": "权限",
+        "quotas": "生效额度",
+        "domains": "域名访问",
+        "quotaRole": "额度角色：{role}",
+        "overrideActive": "已启用用户覆盖",
+        "quotaRules": "匹配 {count} 条收发额度规则",
+        "quotaRulesTruncated": "其余规则未在此处显示。",
+        "allowedDomains": "允许的域名：{domains}"
+      },
+      "permissions": {
+        "view_email": "查看邮件",
+        "create_email": "创建邮箱",
+        "delete_email": "删除邮箱",
+        "receive_email": "接收邮件",
+        "send_email": "发送邮件",
+        "private_recipient_delivery": "隐藏独立收件人",
+        "share_email": "分享邮件",
+        "manage_webhook": "管理 Webhook",
+        "promote_user": "管理用户",
+        "manage_config": "管理配置",
+        "manage_mailu": "管理 Mailu",
+        "manage_api_key": "管理 API 密钥"
+      },
+      "quotas": {
+        "maxActiveMailboxes": "有效邮箱上限",
+        "maxMailboxLifetimeDays": "邮箱有效期上限（天）",
+        "maxMessageBytes": "邮件大小上限（字节）",
+        "unlimited": "不限"
+      },
+      "domainModes": {
+        "allow": "允许",
+        "receive": "仅收件",
+        "send": "仅发件",
+        "deny": "禁止"
+      },
+      "quotaRules": {
+        "direction": {
+          "send": "发件",
+          "receive": "收件"
+        },
+        "subject": {
+          "all": "所有用户",
+          "role": "角色：{value}",
+          "user": "当前用户"
+        },
+        "target": {
+          "all": "全部域名",
+          "domain": "域名：{value}",
+          "mailbox": "邮箱：{value}"
+        },
+        "units": {
+          "second": "秒",
+          "minute": "分钟",
+          "hour": "小时",
+          "day": "天",
+          "week": "周",
+          "month": "30 天月"
+        },
+        "window": "{value}{unit}",
+        "lifetime": "生命周期上限 {value}",
+        "noLifetime": "无生命周期上限",
+        "summary": "{direction} · {subject} · {target} · 每 {window} 最多 {limit} 次；{lifetime}",
+        "shared": "角色共享额度池",
+        "ignoreEmperor": "排除皇帝"
+      },
+      "resources": {
+        "apiKeys": "API 密钥",
+        "webhooks": "Webhook",
+        "blocks": "邮箱名拦截规则",
+        "none": "无",
+        "enabled": "已启用",
+        "disabled": "已停用",
+        "neverExpires": "永不过期",
+        "truncated": "共 {total} 条规则，仅显示最新 {shown} 条。"
+      }
+    },
+    "ban": "封禁",
+    "unban": "解封",
+    "banFor": "封禁 {name}",
+    "unbanFor": "解封 {name}",
+    "deleteFor": "删除 {name}",
+    "deleteSelfDisabled": "不能删除自己的账号",
+    "banTitle": "封禁用户",
+    "banDescription": "确定封禁 {name} 吗？封禁后将被退出登录，解封前不能使用服务。",
+    "unbanTitle": "解封用户",
+    "unbanDescription": "允许 {name} 重新登录并使用服务吗？",
+    "banSuccess": "用户已封禁",
+    "unbanSuccess": "用户已解封",
+    "banFailed": "封禁用户失败",
+    "unbanFailed": "解封用户失败"
   }
 }

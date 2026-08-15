@@ -12,6 +12,11 @@ import { Send } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { readApiErrorCode } from "@/lib/api-error-client"
 import {
+  MAX_OUTBOUND_RECIPIENTS,
+  parseOutboundRecipients,
+} from "@/lib/outbound-recipients"
+import { RecipientInput } from "./recipient-input"
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -34,19 +39,33 @@ export function SendDialog({ emailId, fromAddress, canUsePrivateDelivery, onSend
   const tApi = useTranslations("api")
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [to, setTo] = useState("")
+  const [recipients, setRecipients] = useState<string[]>([])
+  const [recipientDraft, setRecipientDraft] = useState("")
+  const [recipientError, setRecipientError] = useState("")
   const [subject, setSubject] = useState("")
   const [content, setContent] = useState("")
   const [format, setFormat] = useState<"text" | "html">("text")
   const [privateRecipients, setPrivateRecipients] = useState(false)
   const { toast } = useToast()
   const privateRecipientsId = useId()
-  const recipientCount = useMemo(() => new Set(
-    to.split(/[;,]/u).map(value => value.trim().toLowerCase()).filter(Boolean),
-  ).size, [to])
+  const recipientPreview = useMemo(
+    () => parseOutboundRecipients([...recipients, recipientDraft]),
+    [recipientDraft, recipients],
+  )
+  const recipientCount = recipientPreview.invalid.length > 0
+    ? recipients.length
+    : recipientPreview.recipients.length
 
   const handleSend = async () => {
-    if (!to.trim() || !subject.trim() || !content.trim()) {
+    if (recipientPreview.invalid.length > 0) {
+      setRecipientError(t("recipientInvalid", { value: recipientPreview.invalid[0] }))
+      return
+    }
+    if (recipientPreview.tooMany) {
+      setRecipientError(t("recipientLimit", { maximum: MAX_OUTBOUND_RECIPIENTS }))
+      return
+    }
+    if (recipientPreview.recipients.length === 0 || !subject.trim() || !content.trim()) {
       toast({
         title: tList("error"),
         description: t("requiredFields", {
@@ -57,17 +76,21 @@ export function SendDialog({ emailId, fromAddress, canUsePrivateDelivery, onSend
       return
     }
 
+    setRecipients(recipientPreview.recipients)
+    setRecipientDraft("")
+    setRecipientError("")
+
     setLoading(true)
     try {
       const response = await fetch(`/api/emails/${emailId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          to,
+          to: recipientPreview.recipients,
           subject,
           content,
           format,
-          privateRecipients: privateRecipients && recipientCount > 1,
+          privateRecipients: privateRecipients && recipientPreview.recipients.length > 1,
         })
       })
 
@@ -86,7 +109,9 @@ export function SendDialog({ emailId, fromAddress, canUsePrivateDelivery, onSend
         description: t("success")
       })
       setOpen(false)
-      setTo("")
+      setRecipients([])
+      setRecipientDraft("")
+      setRecipientError("")
       setSubject("")
       setContent("")
       setFormat("text")
@@ -126,7 +151,7 @@ export function SendDialog({ emailId, fromAddress, canUsePrivateDelivery, onSend
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t("title")}</DialogTitle>
         </DialogHeader>
@@ -134,13 +159,17 @@ export function SendDialog({ emailId, fromAddress, canUsePrivateDelivery, onSend
           <div className="text-sm text-muted-foreground">
             {tFormat("labelValue", { label: t("from"), value: fromAddress })}
           </div>
-          <Input
-            value={to}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTo(e.target.value)}
-            placeholder={t("toPlaceholder")}
+          <RecipientInput
+            recipients={recipients}
+            draft={recipientDraft}
+            error={recipientError}
+            disabled={loading}
+            onRecipientsChange={setRecipients}
+            onDraftChange={setRecipientDraft}
+            onErrorChange={setRecipientError}
           />
           <p className="text-xs text-muted-foreground">
-            {t("toHelp", { count: recipientCount, maximum: 50 })}
+            {t("toHelp", { count: recipientCount, maximum: MAX_OUTBOUND_RECIPIENTS })}
           </p>
           {recipientCount > 1 && (
             <div className="flex min-w-0 items-start justify-between gap-4 rounded-md border p-3">

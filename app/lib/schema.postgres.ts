@@ -25,7 +25,10 @@ export const users = pgTable("user", {
   image: text("image"),
   username: text("username").unique(),
   password: text("password"),
-})
+  bannedAt: dateColumn("banned_at"),
+}, (table) => [
+  index("user_banned_at_idx").on(table.bannedAt),
+])
 
 export const accounts = pgTable(
   "account",

@@ -193,6 +193,181 @@
     "deleteConfirmButton": "삭제",
     "cancel": "취소",
     "deleteSuccess": "사용자가 삭제되었습니다",
-    "deleteFailed": "사용자 삭제에 실패했습니다"
+    "deleteFailed": "사용자 삭제에 실패했습니다",
+    "mailboxCount": "메일함 {count}개",
+    "filters": {
+      "role": "역할",
+      "status": "상태",
+      "mailboxes": "메일함",
+      "allRoles": "모든 역할",
+      "allStatuses": "모든 상태",
+      "active": "활성",
+      "banned": "차단됨",
+      "allMailboxes": "모든 메일함 상태",
+      "withMailboxes": "메일함 있음",
+      "withoutMailboxes": "메일함 없음"
+    },
+    "status": {
+      "active": "활성",
+      "banned": "차단됨",
+      "selfDisabled": "자신의 상태는 변경할 수 없습니다"
+    },
+    "details": {
+      "open": "상세 보기",
+      "openFor": "{name} 상세 보기",
+      "title": "사용자 상세 정보",
+      "description": "계정, 메일함, 권한 및 관련 리소스를 확인합니다.",
+      "loading": "사용자 상세 정보를 불러오는 중…",
+      "loadFailed": "사용자 상세 정보를 불러오지 못했습니다.",
+      "notAvailable": "없음",
+      "none": "없음",
+      "status": {
+        "active": "활성",
+        "banned": "차단됨"
+      },
+      "tabs": {
+        "overview": "개요",
+        "mailboxes": "메일함",
+        "access": "권한 및 할당량",
+        "resources": "리소스"
+      },
+      "stats": {
+        "mailboxes": "메일함",
+        "messages": "메시지",
+        "apiKeys": "API 키",
+        "webhooks": "Webhook"
+      },
+      "identity": {
+        "title": "신원 정보",
+        "username": "사용자 이름",
+        "email": "이메일",
+        "role": "역할",
+        "emailVerified": "이메일 인증",
+        "providers": "로그인 방식",
+        "password": "비밀번호",
+        "passwordOnly": "비밀번호만",
+        "configured": "설정됨",
+        "notConfigured": "설정되지 않음",
+        "status": "계정 상태",
+        "id": "사용자 ID"
+      },
+      "activity": {
+        "title": "활동 통계",
+        "activeMailboxes": "활성 메일함",
+        "expiredMailboxes": "만료된 메일함",
+        "received": "받은 메시지",
+        "sent": "보낸 메시지"
+      },
+      "mailboxSearch": "메일함 검색",
+      "mailboxDomain": "도메인으로 필터",
+      "mailboxStatus": "메일함 상태",
+      "mailboxes": {
+        "search": "주소로 검색",
+        "domain": "도메인으로 필터",
+        "allStatuses": "모든 상태",
+        "active": "활성",
+        "expired": "만료됨",
+        "count": "메일함 {count}개",
+        "empty": "일치하는 메일함이 없습니다",
+        "created": "생성 {value}",
+        "expires": "만료 {value}",
+        "messages": "메시지 {count}개",
+        "received": "수신 {count}",
+        "sent": "발신 {count}",
+        "previous": "이전",
+        "page": "{current} / {total} 페이지",
+        "next": "다음"
+      },
+      "access": {
+        "permissions": "권한",
+        "quotas": "적용된 할당량",
+        "domains": "도메인 접근",
+        "quotaRole": "할당량 역할: {role}",
+        "overrideActive": "사용자 재정의 적용 중",
+        "quotaRules": "일치하는 메일 할당량 규칙 {count}개",
+        "quotaRulesTruncated": "추가 규칙은 이 화면에서 생략되었습니다.",
+        "allowedDomains": "허용된 도메인: {domains}"
+      },
+      "permissions": {
+        "view_email": "메일 보기",
+        "create_email": "메일함 만들기",
+        "delete_email": "메일함 삭제",
+        "receive_email": "메일 수신",
+        "send_email": "메일 발신",
+        "private_recipient_delivery": "개별 수신자 숨기기",
+        "share_email": "메일 공유",
+        "manage_webhook": "Webhook 관리",
+        "promote_user": "사용자 관리",
+        "manage_config": "구성 관리",
+        "manage_mailu": "Mailu 관리",
+        "manage_api_key": "API 키 관리"
+      },
+      "quotas": {
+        "maxActiveMailboxes": "활성 메일함 한도",
+        "maxMailboxLifetimeDays": "메일함 수명 한도(일)",
+        "maxMessageBytes": "메시지 크기 한도(바이트)",
+        "unlimited": "무제한"
+      },
+      "domainModes": {
+        "allow": "허용",
+        "receive": "수신만",
+        "send": "발신만",
+        "deny": "거부"
+      },
+      "quotaRules": {
+        "direction": {
+          "send": "발신",
+          "receive": "수신"
+        },
+        "subject": {
+          "all": "모든 사용자",
+          "role": "역할: {value}",
+          "user": "현재 사용자"
+        },
+        "target": {
+          "all": "모든 도메인",
+          "domain": "도메인: {value}",
+          "mailbox": "메일함: {value}"
+        },
+        "units": {
+          "second": "초",
+          "minute": "분",
+          "hour": "시간",
+          "day": "일",
+          "week": "주",
+          "month": "30일 단위"
+        },
+        "window": "{value}{unit}",
+        "lifetime": "평생 한도 {value}",
+        "noLifetime": "평생 한도 없음",
+        "summary": "{direction} · {subject} · {target} · {window}마다 최대 {limit}회; {lifetime}",
+        "shared": "역할 공유 풀",
+        "ignoreEmperor": "황제 제외"
+      },
+      "resources": {
+        "apiKeys": "API 키",
+        "webhooks": "Webhook",
+        "blocks": "메일함 이름 차단 규칙",
+        "none": "없음",
+        "enabled": "활성화됨",
+        "disabled": "비활성화됨",
+        "neverExpires": "만료되지 않음",
+        "truncated": "전체 {total}개 규칙 중 최신 {shown}개만 표시합니다."
+      }
+    },
+    "ban": "차단",
+    "unban": "차단 해제",
+    "banFor": "{name} 차단",
+    "unbanFor": "{name} 차단 해제",
+    "deleteFor": "{name} 삭제",
+    "deleteSelfDisabled": "자신의 계정은 삭제할 수 없습니다",
+    "banTitle": "사용자 차단",
+    "banDescription": "{name}을(를) 차단하시겠습니까? 로그아웃되며 차단 해제 전까지 서비스를 사용할 수 없습니다.",
+    "unbanTitle": "사용자 차단 해제",
+    "unbanDescription": "{name}이(가) 다시 로그인하고 서비스를 사용하도록 허용하시겠습니까?",
+    "banSuccess": "사용자가 차단되었습니다",
+    "unbanSuccess": "사용자 차단이 해제되었습니다",
+    "banFailed": "사용자 차단에 실패했습니다",
+    "unbanFailed": "사용자 차단 해제에 실패했습니다"
   }
 }

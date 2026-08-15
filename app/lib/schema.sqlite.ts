@@ -10,7 +10,10 @@ export const users = sqliteTable("user", {
   image: text("image"),
   username: text("username").unique(),
   password: text("password"),
-})
+  bannedAt: integer("banned_at", { mode: "timestamp_ms" }),
+}, (table) => [
+  index("user_banned_at_idx").on(table.bannedAt),
+])
 
 export const accounts = sqliteTable(
   "account",

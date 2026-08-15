@@ -28,6 +28,13 @@ export function normalizeMailboxCreationName(value: unknown) {
   return normalizeMailboxLocalPart(value.split("@", 1)[0])
 }
 
+/** Accepts the reserved `*` sentinel only for mailbox-name block rules. */
+export function normalizeMailboxBlockCreationName(value: unknown) {
+  if (typeof value !== "string") return null
+  const localPart = value.split("@", 1)[0].trim()
+  return localPart === "*" ? "*" : normalizeMailboxLocalPart(localPart)
+}
+
 export function normalizeMailboxDomain(value: unknown) {
   if (typeof value !== "string") return null
 

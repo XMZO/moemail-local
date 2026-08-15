@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm"
 import { createDb, getDatabaseDriver, getPostgresPool, getSqlite } from "./db"
 import {
+  normalizeMailboxBlockCreationName,
   normalizeMailboxDomain,
-  normalizeMailboxLocalPart,
 } from "./email-address"
 import { mailboxNameBlocks } from "./schema"
 import type { Role } from "./permissions"
@@ -17,6 +17,7 @@ import {
 
 export {
   ALL_MAILBOX_BLOCK_DOMAINS,
+  ALL_MAILBOX_BLOCK_LOCAL_PARTS,
   GLOBAL_MAILBOX_BLOCK_SCOPE,
   mailboxBlockAllowedRoles,
 } from "./mailbox-block-scope"
@@ -36,7 +37,7 @@ function userScopeKey(userId: string) {
 }
 
 function normalizeInput(input: MailboxNameBlockInput) {
-  const localPart = normalizeMailboxLocalPart(input.localPart)
+  const localPart = normalizeMailboxBlockCreationName(input.localPart)
   const domain = input.domain.trim() === ALL_MAILBOX_BLOCK_DOMAINS
     ? ALL_MAILBOX_BLOCK_DOMAINS
     : normalizeMailboxDomain(input.domain)
@@ -159,6 +160,131 @@ export async function createMailboxNameBlock(input: MailboxNameBlockInput) {
       WHERE scope_key = $1 AND local_part = $2 AND domain = $3
       LIMIT 1
     `, [normalized.scopeKey, normalized.localPart, normalized.domain])
+    await client.query("COMMIT")
+    return result.rows[0]
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateMailboxNameBlock(id: string, input: MailboxNameBlockInput) {
+  if (!id || id.length > 128) return null
+  const normalized = normalizeInput(input)
+
+  if (getDatabaseDriver() === "sqlite") {
+    return getSqlite().transaction(() => {
+      const existing = getSqlite().prepare(`
+        SELECT 1 FROM mailbox_name_block WHERE id = ? LIMIT 1
+      `).get(id)
+      if (!existing) return null
+
+      if (normalized.userId) {
+        const target = getSqlite().prepare(`SELECT 1 FROM user WHERE id = ? LIMIT 1`)
+          .get(normalized.userId)
+        if (!target) throw new Error("USER_NOT_FOUND")
+      }
+
+      const duplicate = getSqlite().prepare(`
+        SELECT 1 FROM mailbox_name_block
+        WHERE id <> ? AND scope_key = ? AND local_part = ? AND domain = ?
+        LIMIT 1
+      `).get(id, normalized.scopeKey, normalized.localPart, normalized.domain)
+      const competingRoleRule = input.scope === "roles"
+        ? getSqlite().prepare(`
+            SELECT 1 FROM mailbox_name_block
+            WHERE id <> ? AND local_part = ? AND domain = ? AND scope_key LIKE 'roles:%'
+            LIMIT 1
+          `).get(id, normalized.localPart, normalized.domain)
+        : null
+      if (duplicate || competingRoleRule) throw new Error("MAILBOX_BLOCK_CONFLICT")
+
+      getSqlite().prepare(`
+        UPDATE mailbox_name_block
+        SET user_id = ?, scope_key = ?, local_part = ?, domain = ?
+        WHERE id = ?
+      `).run(
+        normalized.userId,
+        normalized.scopeKey,
+        normalized.localPart,
+        normalized.domain,
+        id,
+      )
+      return getSqlite().prepare(`
+        SELECT
+          id,
+          user_id AS userId,
+          scope_key AS scopeKey,
+          local_part AS localPart,
+          domain,
+          created_at AS createdAt
+        FROM mailbox_name_block
+        WHERE id = ?
+        LIMIT 1
+      `).get(id)
+    }).immediate()
+  }
+
+  const client = await getPostgresPool().connect()
+  try {
+    await client.query("BEGIN")
+    // Editing may move a rule between global, role and user scopes. An
+    // exclusive global lock keeps the old and new policy atomic with mailbox
+    // creation, without exposing a momentary gap between delete and create.
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      ["moemail:mailbox-block:global"],
+    )
+    const existing = await client.query(
+      "SELECT 1 FROM mailbox_name_block WHERE id = $1 FOR UPDATE",
+      [id],
+    )
+    if (!existing.rowCount) {
+      await client.query("ROLLBACK")
+      return null
+    }
+    if (normalized.userId) {
+      const target = await client.query(
+        `SELECT 1 FROM "user" WHERE id = $1 FOR KEY SHARE`,
+        [normalized.userId],
+      )
+      if (!target.rowCount) throw new Error("USER_NOT_FOUND")
+    }
+    const duplicate = await client.query(`
+      SELECT 1 FROM mailbox_name_block
+      WHERE id <> $1 AND scope_key = $2 AND local_part = $3 AND domain = $4
+      LIMIT 1
+    `, [id, normalized.scopeKey, normalized.localPart, normalized.domain])
+    const competingRoleRule = input.scope === "roles"
+      ? await client.query(`
+          SELECT 1 FROM mailbox_name_block
+          WHERE id <> $1 AND local_part = $2 AND domain = $3 AND scope_key LIKE 'roles:%'
+          LIMIT 1
+        `, [id, normalized.localPart, normalized.domain])
+      : null
+    if (duplicate.rowCount || competingRoleRule?.rowCount) {
+      throw new Error("MAILBOX_BLOCK_CONFLICT")
+    }
+    const result = await client.query(`
+      UPDATE mailbox_name_block
+      SET user_id = $2, scope_key = $3, local_part = $4, domain = $5
+      WHERE id = $1
+      RETURNING
+        id,
+        user_id AS "userId",
+        scope_key AS "scopeKey",
+        local_part AS "localPart",
+        domain,
+        created_at AS "createdAt"
+    `, [
+      id,
+      normalized.userId,
+      normalized.scopeKey,
+      normalized.localPart,
+      normalized.domain,
+    ])
     await client.query("COMMIT")
     return result.rows[0]
   } catch (error) {

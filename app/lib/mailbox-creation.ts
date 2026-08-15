@@ -2,6 +2,7 @@ import { nanoid } from "nanoid"
 import { getDatabaseDriver, getPostgresPool, getSqlite } from "./db"
 import {
   ALL_MAILBOX_BLOCK_DOMAINS,
+  ALL_MAILBOX_BLOCK_LOCAL_PARTS,
   mailboxBlockAllowedRoles,
   mailboxUserBlockScope,
 } from "./mailbox-block-scope"
@@ -66,11 +67,21 @@ function sqliteCreateMailbox(input: MailboxCreationInput): MailboxCreationResult
       const localPart = input.localPart ?? randomLocalPart()
       const address = `${localPart}@${input.domain}`
       const blocks = sqlite.prepare(`
-        SELECT scope_key AS scopeKey FROM mailbox_name_block
-        WHERE local_part = ? AND domain IN (?, ?)
-      `).all(localPart, input.domain, ALL_MAILBOX_BLOCK_DOMAINS) as Array<{ scopeKey: string }>
-      if (blocks.some(block => mailboxBlockApplies(block.scopeKey, input.userId, roleNames))) {
-        if (input.localPart) return { ok: false, code: "MAILBOX_NAME_BLOCKED" }
+        SELECT scope_key AS scopeKey, local_part AS localPart FROM mailbox_name_block
+        WHERE local_part IN (?, ?) AND domain IN (?, ?)
+      `).all(
+        localPart,
+        ALL_MAILBOX_BLOCK_LOCAL_PARTS,
+        input.domain,
+        ALL_MAILBOX_BLOCK_DOMAINS,
+      ) as Array<{ scopeKey: string; localPart: string }>
+      const applicableBlocks = blocks.filter(block => (
+        mailboxBlockApplies(block.scopeKey, input.userId, roleNames)
+      ))
+      if (applicableBlocks.length > 0) {
+        if (input.localPart || applicableBlocks.some(block => block.localPart === ALL_MAILBOX_BLOCK_LOCAL_PARTS)) {
+          return { ok: false, code: "MAILBOX_NAME_BLOCKED" }
+        }
         continue
       }
       const existing = sqlite.prepare(`
@@ -128,12 +139,20 @@ async function postgresCreateMailbox(input: MailboxCreationInput): Promise<Mailb
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const localPart = input.localPart ?? randomLocalPart()
       const address = `${localPart}@${input.domain}`
-      const blocks = await client.query<{ scopeKey: string }>(`
-        SELECT scope_key AS "scopeKey" FROM mailbox_name_block
-        WHERE local_part = $1 AND domain IN ($2, $3)
-      `, [localPart, input.domain, ALL_MAILBOX_BLOCK_DOMAINS])
-      if (blocks.rows.some(block => mailboxBlockApplies(block.scopeKey, input.userId, roleNames))) {
-        if (input.localPart) {
+      const blocks = await client.query<{ scopeKey: string; localPart: string }>(`
+        SELECT scope_key AS "scopeKey", local_part AS "localPart" FROM mailbox_name_block
+        WHERE local_part IN ($1, $2) AND domain IN ($3, $4)
+      `, [
+        localPart,
+        ALL_MAILBOX_BLOCK_LOCAL_PARTS,
+        input.domain,
+        ALL_MAILBOX_BLOCK_DOMAINS,
+      ])
+      const applicableBlocks = blocks.rows.filter(block => (
+        mailboxBlockApplies(block.scopeKey, input.userId, roleNames)
+      ))
+      if (applicableBlocks.length > 0) {
+        if (input.localPart || applicableBlocks.some(block => block.localPart === ALL_MAILBOX_BLOCK_LOCAL_PARTS)) {
           await client.query("ROLLBACK")
           return { ok: false, code: "MAILBOX_NAME_BLOCKED" }
         }

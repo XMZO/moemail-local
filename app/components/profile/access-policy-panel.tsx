@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { Crown, Globe2, Info, Loader2, RotateCcw, Save, Search, ShieldCheck, Trash2, UserCog } from "lucide-react"
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { ChevronLeft, ChevronRight, Crown, Globe2, Info, Loader2, Pencil, RotateCcw, Save, Search, ShieldCheck, Trash2, UserCog, X } from "lucide-react"
 import { useFormatter, useTranslations } from "next-intl"
 import {
   AlertDialog,
@@ -35,8 +35,11 @@ import { useToast } from "@/components/ui/use-toast"
 import { readApiErrorCode } from "@/lib/api-error-client"
 import { LocalizedUiError, localizedUiErrorMessage } from "@/lib/localized-ui-error"
 import { ROLES, type Permission, type Role } from "@/lib/permissions"
-import { normalizeMailboxCreationName } from "@/lib/email-address"
-import { ALL_MAILBOX_BLOCK_DOMAINS } from "@/lib/mailbox-block-scope"
+import { normalizeMailboxBlockCreationName } from "@/lib/email-address"
+import {
+  ALL_MAILBOX_BLOCK_DOMAINS,
+  ALL_MAILBOX_BLOCK_LOCAL_PARTS,
+} from "@/lib/mailbox-block-scope"
 import { SearchableUserSelect, type SearchableUser } from "@/components/profile/searchable-user-select"
 
 const quotaKeys = ["maxActiveMailboxes", "maxMailboxLifetimeDays", "maxMessageBytes"] as const
@@ -75,6 +78,9 @@ const roles = [ROLES.EMPEROR, ROLES.DUKE, ROLES.KNIGHT, ROLES.CIVILIAN] as const
 const domainModes: DomainAccessMode[] = ["allow", "receive", "send", "deny"]
 const roleTranslationKeys = { emperor: "EMPEROR", duke: "DUKE", knight: "KNIGHT", civilian: "CIVILIAN" } as const
 const emptyOverride = (): UserOverride => ({ permissions: {}, quotas: {} })
+const mailboxBlockPageSize = 12
+const allMailboxBlockScopes = "all"
+const allMailboxBlockDomains = "__all_domains__"
 
 function copyOverride(value: UserOverride | null | undefined) {
   return value ? structuredClone(value) : emptyOverride()
@@ -173,21 +179,55 @@ export function AccessPolicyPanel() {
   const [blockUserId, setBlockUserId] = useState("")
   const [blockAllowedRoles, setBlockAllowedRoles] = useState<Role[]>([])
   const [blockSearch, setBlockSearch] = useState("")
-  const normalizedBlockLocalPart = normalizeMailboxCreationName(blockLocalPart)
+  const [blockScopeFilter, setBlockScopeFilter] = useState<"all" | "global" | "user" | "roles">("all")
+  const [blockDomainFilter, setBlockDomainFilter] = useState(allMailboxBlockDomains)
+  const [blockPage, setBlockPage] = useState(1)
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
+  const [savingBlock, setSavingBlock] = useState(false)
+  const [deletingBlockId, setDeletingBlockId] = useState<string | null>(null)
+  const blockFormRef = useRef<HTMLDivElement>(null)
+  const deferredBlockSearch = useDeferredValue(blockSearch)
+  const normalizedBlockLocalPart = normalizeMailboxBlockCreationName(blockLocalPart)
   const invalidBlockLocalPart = blockLocalPart.length > 0 && !normalizedBlockLocalPart
-  const visibleBlocks = useMemo(() => {
-    const query = blockSearch.trim().toLowerCase()
-    if (!query) return blocks
-    return blocks.filter(block => {
+  const indexedBlocks = useMemo(() => blocks.map(block => {
       const identity = block.user?.name || block.user?.username || block.user?.email || block.userId || ""
       const domainLabel = block.domain === ALL_MAILBOX_BLOCK_DOMAINS ? t("blocks.allDomains") : block.domain
-      const rawMatch = `${block.localPart}@${block.domain} ${domainLabel} ${identity} ${block.allowedRoles?.join(" ") ?? ""}`
-        .toLowerCase().includes(query)
-      const localizedRoleMatch = block.allowedRoles
-        ?.some(item => tRoles(roleTranslationKeys[item]).toLowerCase().includes(query)) ?? false
-      return rawMatch || localizedRoleMatch
-    })
-  }, [blockSearch, blocks, t, tRoles])
+      const localizedRoles = block.allowedRoles?.map(item => tRoles(roleTranslationKeys[item])).join(" ") ?? ""
+      return {
+        block,
+        scope: block.allowedRoles ? "roles" as const : block.userId ? "user" as const : "global" as const,
+        searchText: `${block.localPart}@${block.domain} ${domainLabel} ${identity} ${block.allowedRoles?.join(" ") ?? ""} ${localizedRoles}`
+          .normalize("NFKC").toLocaleLowerCase(),
+      }
+    }), [blocks, t, tRoles])
+  const filteredBlocks = useMemo(() => {
+    const query = deferredBlockSearch.trim().normalize("NFKC").toLocaleLowerCase()
+    return indexedBlocks.filter(item => (
+      (!query || item.searchText.includes(query))
+      && (blockScopeFilter === allMailboxBlockScopes || item.scope === blockScopeFilter)
+      && (blockDomainFilter === allMailboxBlockDomains || item.block.domain === blockDomainFilter)
+    )).map(item => item.block)
+  }, [blockDomainFilter, blockScopeFilter, deferredBlockSearch, indexedBlocks])
+  const blockPageCount = Math.max(1, Math.ceil(filteredBlocks.length / mailboxBlockPageSize))
+  const currentBlockPage = Math.min(blockPage, blockPageCount)
+  const pagedBlocks = useMemo(() => {
+    const start = (currentBlockPage - 1) * mailboxBlockPageSize
+    return filteredBlocks.slice(start, start + mailboxBlockPageSize)
+  }, [currentBlockPage, filteredBlocks])
+  const blockKnownUsers = useMemo(() => {
+    const byId = new Map<string, SearchableUser>(users.map(user => [user.id, user]))
+    for (const block of blocks) {
+      if (block.user && !byId.has(block.user.id)) {
+        byId.set(block.user.id, { ...block.user, role: null })
+      }
+    }
+    return [...byId.values()]
+  }, [blocks, users])
+  const blockFilterDomains = useMemo(() => [...new Set([
+    ALL_MAILBOX_BLOCK_DOMAINS,
+    ...domains,
+    ...blocks.map(block => block.domain),
+  ])], [blocks, domains])
 
   const loadPolicies = useCallback(async () => {
     setLoading(true)
@@ -249,6 +289,15 @@ export function AccessPolicyPanel() {
     const timer = setTimeout(() => void loadUsers(controller.signal), 200)
     return () => { clearTimeout(timer); controller.abort() }
   }, [loadUsers])
+  useEffect(() => { setBlockPage(1) }, [blockDomainFilter, blockScopeFilter, deferredBlockSearch])
+  useEffect(() => {
+    if (blockPage > blockPageCount) setBlockPage(blockPageCount)
+  }, [blockPage, blockPageCount])
+  useEffect(() => {
+    if (blockDomainFilter !== allMailboxBlockDomains && !blockFilterDomains.includes(blockDomainFilter)) {
+      setBlockDomainFilter(allMailboxBlockDomains)
+    }
+  }, [blockDomainFilter, blockFilterDomains])
 
   const selectedUser = useMemo(() => users.find(user => user.id === selectedUserId) ?? null, [selectedUserId, users])
   const selectedUserRole = roleForUser(selectedUser)
@@ -293,17 +342,70 @@ export function AccessPolicyPanel() {
     } catch (caught) { setError(localizedUiErrorMessage(caught, t("errors.resetUser"))) } finally { setSaving(false) }
   }
 
-  const createBlock = async () => {
+  const resetBlockDraft = () => {
+    setEditingBlockId(null)
+    setBlockLocalPart("")
+    setBlockScope("global")
+    setBlockUserId("")
+    setBlockAllowedRoles([])
+  }
+
+  const editBlock = (block: MailboxBlock) => {
+    setEditingBlockId(block.id)
+    setBlockLocalPart(block.localPart)
+    setBlockDomain(block.domain)
+    if (block.allowedRoles) {
+      setBlockScope("roles")
+      setBlockAllowedRoles(block.allowedRoles)
+      setBlockUserId("")
+    } else if (block.userId) {
+      setBlockScope("user")
+      setBlockUserId(block.userId)
+      setBlockAllowedRoles([])
+    } else {
+      setBlockScope("global")
+      setBlockUserId("")
+      setBlockAllowedRoles([])
+    }
+    requestAnimationFrame(() => blockFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }))
+  }
+
+  const saveBlock = async () => {
     if (!normalizedBlockLocalPart || !blockDomain || (blockScope === "user" && !blockUserId)) return
-    const response = await fetch("/api/access-policies/mailbox-blocks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: blockScope, userId: blockScope === "user" ? blockUserId : undefined, allowedRoles: blockScope === "roles" ? blockAllowedRoles : undefined, localPart: normalizedBlockLocalPart, domain: blockDomain }) })
-    if (!response.ok) { setError(tApi(await readApiErrorCode(response, "MAILBOX_BLOCK_CREATE_FAILED") as never)); return }
-    setBlockLocalPart(""); await loadBlocks(); toast({ title: t("success.createBlock") })
+    const updating = editingBlockId !== null
+    setSavingBlock(true)
+    setError("")
+    try {
+      const endpoint = updating
+        ? `/api/access-policies/mailbox-blocks?id=${encodeURIComponent(editingBlockId!)}`
+        : "/api/access-policies/mailbox-blocks"
+      const response = await fetch(endpoint, { method: updating ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: blockScope, userId: blockScope === "user" ? blockUserId : undefined, allowedRoles: blockScope === "roles" ? blockAllowedRoles : undefined, localPart: normalizedBlockLocalPart, domain: blockDomain }) })
+      if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, updating ? "MAILBOX_BLOCK_UPDATE_FAILED" : "MAILBOX_BLOCK_CREATE_FAILED") as never))
+      await loadBlocks()
+      if (updating) resetBlockDraft()
+      else setBlockLocalPart("")
+      toast({ title: t(updating ? "success.updateBlock" : "success.createBlock") })
+    } catch (caught) {
+      setError(localizedUiErrorMessage(caught, t(updating ? "errors.updateBlock" : "errors.createBlock")))
+    } finally {
+      setSavingBlock(false)
+    }
   }
 
   const deleteBlock = async (id: string) => {
-    const response = await fetch(`/api/access-policies/mailbox-blocks?id=${encodeURIComponent(id)}`, { method: "DELETE" })
-    if (!response.ok) { setError(tApi(await readApiErrorCode(response, "MAILBOX_BLOCK_DELETE_FAILED") as never)); return }
-    setBlocks(previous => previous.filter(block => block.id !== id)); toast({ title: t("success.deleteBlock") })
+    setDeletingBlockId(id)
+    setError("")
+    try {
+      const response = await fetch(`/api/access-policies/mailbox-blocks?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+      if (!response.ok) throw new LocalizedUiError(tApi(await readApiErrorCode(response, "MAILBOX_BLOCK_DELETE_FAILED") as never))
+      setBlocks(previous => previous.filter(block => block.id !== id))
+      if (editingBlockId === id) resetBlockDraft()
+      toast({ title: t("success.deleteBlock") })
+    } catch (caught) {
+      setError(localizedUiErrorMessage(caught, t("errors.deleteBlock")))
+    } finally {
+      setDeletingBlockId(null)
+    }
   }
 
   const setUserDomainMode = (mode: "inherit" | "custom") => setOverride(previous => {
@@ -327,6 +429,18 @@ export function AccessPolicyPanel() {
       ? t("blocks.allDomainsAddress", { localPart: block.localPart })
       : `${block.localPart}@${block.domain}`
   )
+  const blockScopeDescription = (block: MailboxBlock) => block.allowedRoles
+    ? t("blocks.rolesScope", { roles: block.allowedRoles.length ? formatList.list(block.allowedRoles.map(item => tRoles(roleTranslationKeys[item])), { type: "unit" }) : t("blocks.emperorOnly") })
+    : block.userId
+      ? t("blocks.userScope", { user: block.user?.name || block.user?.username || block.user?.email || block.userId })
+      : t("blocks.globalScope")
+  const blockRangeStart = filteredBlocks.length === 0
+    ? 0
+    : (currentBlockPage - 1) * mailboxBlockPageSize + 1
+  const blockRangeEnd = Math.min(currentBlockPage * mailboxBlockPageSize, filteredBlocks.length)
+  const blockFiltersActive = blockSearch.length > 0
+    || blockScopeFilter !== allMailboxBlockScopes
+    || blockDomainFilter !== allMailboxBlockDomains
   return (
     <div className="min-w-0 rounded-lg border-2 border-primary/20 bg-background p-4 sm:p-5">
       <div className="mb-4 flex min-w-0 items-start gap-2"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div className="min-w-0"><h2 className="font-semibold">{t("title")}</h2><p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("description")}</p></div></div>
@@ -353,21 +467,50 @@ export function AccessPolicyPanel() {
           {!selectedUser ? <div className="rounded border border-dashed p-8 text-center text-sm text-muted-foreground"><UserCog className="mx-auto mb-2 h-6 w-6" />{t("selectUserHint")}</div> : <div className="space-y-4"><p className="text-xs text-muted-foreground">{selectedUserIsEmperor ? t("emperorLockedHint") : t("overrideHint")}</p><div className="grid gap-4 xl:grid-cols-2">{!selectedUserIsEmperor && <><section className="rounded border p-4"><h3 className="mb-3 text-sm font-medium">{t("sections.permissionOverrides")}</h3><div className="space-y-2">{permissions.map(permission => <div key={permission} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-2"><span className="text-sm">{t(`permissions.${permission}` as never)}</span><Select value={override.permissions[permission] === undefined ? "inherit" : override.permissions[permission] ? "allow" : "deny"} onValueChange={value => setOverride(previous => { const next = { ...previous, permissions: { ...previous.permissions } }; if (value === "inherit") delete next.permissions[permission]; else next.permissions[permission] = value === "allow"; return next })}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inherit">{t("inherit")}</SelectItem><SelectItem value="allow">{t("allow")}</SelectItem><SelectItem value="deny">{t("deny")}</SelectItem></SelectContent></Select></div>)}</div></section><section className="rounded border p-4"><h3 className="text-sm font-medium">{t("sections.quotaOverrides")}</h3><p className="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">{t("quotas.overrideHelp")}</p><GeneralQuotaFields values={override.quotas} inherited={policies.roles[selectedUserRole].quotas} onChange={(key, value) => setOverride(previous => { const quotas = { ...previous.quotas }; if (value === undefined) delete quotas[key]; else quotas[key] = value; return { ...previous, quotas } })} /></section><section className="space-y-3 rounded border p-4 xl:col-span-2"><div><h3 className="flex items-center gap-2 text-sm font-medium"><Globe2 className="h-4 w-4 text-primary" />{t("sections.domainOverrides")}</h3><p className="mt-1 text-xs text-muted-foreground">{t("domains.userHelp")}</p></div><Select value={userDomainMode} onValueChange={value => setUserDomainMode(value as "inherit" | "custom")}><SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inherit">{t("domains.inherit")}</SelectItem><SelectItem value="custom">{t("domains.custom")}</SelectItem></SelectContent></Select>{override.domainAccess && <><div className="flex items-center justify-between gap-3 rounded border p-2"><span className="text-sm">{t("domains.default")}</span><DomainModeSelect value={override.domainAccess.default ?? policies.roles[selectedUserRole].domainAccess.default} onChange={defaultMode => setOverride(previous => ({ ...previous, domainAccess: { ...previous.domainAccess, default: defaultMode } }))} /></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{domains.map(domain => <div key={domain} className="flex items-center justify-between gap-3 rounded border p-2"><span className="min-w-0 truncate font-mono text-xs">{domain}</span><DomainModeSelect value={userDomainValue(domain)} onChange={mode => setOverride(previous => ({ ...previous, domainAccess: { ...previous.domainAccess, domains: { ...previous.domainAccess?.domains, [domain]: mode } } }))} /></div>)}</div></>}</section></>}</div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void resetUserOverride()} disabled={saving}><RotateCcw className="mr-1 h-4 w-4" />{t("actions.inheritAll")}</Button><Button onClick={() => void saveUserOverride()} disabled={saving}><Save className="mr-1 h-4 w-4" />{t("actions.saveUser")}</Button></div></div>}
         </TabsContent>
         <TabsContent value="mailQuotas" className="min-w-0 space-y-4 pt-2"><MailQuotaRuleEditor rules={policies.mailQuotaRules} domains={domains} users={users} onUserResolved={rememberUser} onChange={mailQuotaRules => setPolicies(previous => previous ? { ...previous, mailQuotaRules } : previous)} /><MailQuotaUsageManager users={users} revision={usageRevision} onUserResolved={rememberUser} onReset={() => { setUsageRevision(value => value + 1); toast({ title: t("success.resetUsage") }) }} /><div className="flex justify-end"><Button className="w-full sm:w-auto" onClick={() => void saveRoles()} disabled={saving}><Save className="mr-1 h-4 w-4 shrink-0" />{t("actions.save")}</Button></div></TabsContent>
-        <TabsContent value="blocks" className="space-y-4 pt-2">
-          <div><h3 className="text-sm font-medium">{t("blocks.title")}</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("blocks.help")}</p></div>
-          <div className="space-y-3 rounded border p-3">
-            <div className="grid min-w-0 gap-2 lg:grid-cols-2 xl:grid-cols-[minmax(7rem,1fr)_minmax(8rem,1fr)_minmax(8rem,.8fr)_minmax(10rem,1.2fr)_auto]">
-              <Input className="h-8 min-w-0" value={blockLocalPart} onChange={event => setBlockLocalPart(event.target.value.split("@", 1)[0].slice(0, 64))} placeholder={t("blocks.localPart")} maxLength={64} pattern="[A-Za-z0-9._+-]+" autoCapitalize="none" autoComplete="off" spellCheck={false} />
-              <Select value={blockDomain} onValueChange={setBlockDomain}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("blocks.domain")} /></SelectTrigger><SelectContent><SelectItem value={ALL_MAILBOX_BLOCK_DOMAINS}>{t("blocks.allDomains")}</SelectItem>{domains.map(domain => <SelectItem key={domain} value={domain}>{domain}</SelectItem>)}</SelectContent></Select>
-              <Select value={blockScope} onValueChange={value => setBlockScope(value as "global" | "user" | "roles")}><SelectTrigger className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="global">{t("blocks.global")}</SelectItem><SelectItem value="user">{t("blocks.user")}</SelectItem><SelectItem value="roles">{t("blocks.roles")}</SelectItem></SelectContent></Select>
-              {blockScope === "user" ? <SearchableUserSelect value={blockUserId} onValueChange={setBlockUserId} knownUsers={users} onUserResolved={rememberUser} /> : <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1 text-xs">{blockScope === "roles" ? roles.filter(item => item !== ROLES.EMPEROR).map(item => <label key={item} className="flex items-center gap-1"><Checkbox checked={blockAllowedRoles.includes(item)} onChange={checked => setBlockAllowedRoles(previous => checked ? [...new Set([...previous, item])] : previous.filter(roleName => roleName !== item))} />{tRoles(roleTranslationKeys[item])}</label>) : <span className="min-w-0 leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("blocks.globalHint")}</span>}</div>}
-              <Button type="button" size="sm" className="min-h-8 h-auto w-full whitespace-normal lg:col-span-2 lg:w-auto lg:justify-self-end xl:col-span-1" disabled={!normalizedBlockLocalPart || !blockDomain || (blockScope === "user" && !blockUserId)} onClick={() => void createBlock()}>{t("blocks.add")}</Button>
+        <TabsContent value="blocks" className="min-w-0 space-y-4 pt-2">
+          <div>
+            <h3 className="text-sm font-medium">{t("blocks.title")}</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("blocks.help")}</p>
+          </div>
+
+          <div ref={blockFormRef} className={`space-y-3 rounded-md border p-3 transition-colors ${editingBlockId ? "border-primary/50 bg-primary/[0.03]" : ""}`}>
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="text-sm font-medium">{t(editingBlockId ? "blocks.editTitle" : "blocks.createTitle")}</h4>
+                <p className="text-xs leading-relaxed text-muted-foreground">{t(editingBlockId ? "blocks.editHelp" : "blocks.createHelp")}</p>
+              </div>
+              {editingBlockId && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">{t("blocks.editing")}</span>}
             </div>
+            <div className="grid min-w-0 gap-2 lg:grid-cols-2 xl:grid-cols-[minmax(7rem,1fr)_minmax(8rem,1fr)_minmax(8rem,.8fr)_minmax(10rem,1.2fr)_auto]">
+              <Input aria-label={t("blocks.localPart")} className="h-8 min-w-0" value={blockLocalPart} onChange={event => setBlockLocalPart(event.target.value.split("@", 1)[0].slice(0, 64))} placeholder={t("blocks.localPart")} maxLength={64} pattern="(?:\*|[A-Za-z0-9._+-]+)" autoCapitalize="none" autoComplete="off" spellCheck={false} />
+              <Select value={blockDomain} onValueChange={setBlockDomain}><SelectTrigger aria-label={t("blocks.domain")} className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue placeholder={t("blocks.domain")} /></SelectTrigger><SelectContent><SelectItem value={ALL_MAILBOX_BLOCK_DOMAINS}>{t("blocks.allDomains")}</SelectItem>{domains.map(domain => <SelectItem key={domain} value={domain}>{domain}</SelectItem>)}</SelectContent></Select>
+              <Select value={blockScope} onValueChange={value => setBlockScope(value as "global" | "user" | "roles")}><SelectTrigger aria-label={t("blocks.scope")} className="h-8 min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="global">{t("blocks.global")}</SelectItem><SelectItem value="user">{t("blocks.user")}</SelectItem><SelectItem value="roles">{t("blocks.roles")}</SelectItem></SelectContent></Select>
+              {blockScope === "user" ? <SearchableUserSelect value={blockUserId} onValueChange={setBlockUserId} knownUsers={blockKnownUsers} onUserResolved={rememberUser} /> : <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1 text-xs">{blockScope === "roles" ? roles.filter(item => item !== ROLES.EMPEROR).map(item => <label key={item} className="flex items-center gap-1"><Checkbox checked={blockAllowedRoles.includes(item)} onChange={checked => setBlockAllowedRoles(previous => checked ? [...new Set([...previous, item])] : previous.filter(roleName => roleName !== item))} />{tRoles(roleTranslationKeys[item])}</label>) : <span className="min-w-0 leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{t("blocks.globalHint")}</span>}</div>}
+              <div className="flex min-w-0 gap-2 lg:col-span-2 lg:justify-end xl:col-span-1">
+                {editingBlockId && <Button type="button" size="sm" variant="outline" className="min-h-8 h-auto flex-1 whitespace-normal lg:flex-none" disabled={savingBlock} onClick={resetBlockDraft}><X className="mr-1 h-4 w-4 shrink-0" />{t("blocks.cancelEdit")}</Button>}
+                <Button type="button" size="sm" className="min-h-8 h-auto flex-1 whitespace-normal lg:flex-none" disabled={savingBlock || !normalizedBlockLocalPart || !blockDomain || (blockScope === "user" && !blockUserId)} onClick={() => void saveBlock()}>{savingBlock && <Loader2 className="mr-1 h-4 w-4 shrink-0 animate-spin" />}{t(editingBlockId ? "blocks.update" : "blocks.add")}</Button>
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">{t("blocks.wildcardHelp", { wildcard: ALL_MAILBOX_BLOCK_LOCAL_PARTS })}</p>
             {blockScope === "roles" && <p className="text-xs leading-relaxed text-muted-foreground">{t("blocks.rolesHelp")}</p>}
             {invalidBlockLocalPart && <p className="text-xs text-destructive">{t("blocks.invalidLocalPart")}</p>}
           </div>
-          <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={blockSearch} onChange={event => setBlockSearch(event.target.value)} placeholder={t("blocks.search")} className="pl-9" /></div>
-          {blocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.empty")}</div> : visibleBlocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.noSearchResults")}</div> : <div className="grid gap-2 sm:grid-cols-2">{visibleBlocks.map(block => <div key={block.id} className="flex items-center justify-between gap-3 rounded border p-3"><div className="min-w-0"><div className="truncate font-mono text-sm">{blockAddress(block)}</div><div className="truncate text-xs text-muted-foreground">{block.allowedRoles ? t("blocks.rolesScope", { roles: block.allowedRoles.length ? formatList.list(block.allowedRoles.map(item => tRoles(roleTranslationKeys[item])), { type: "unit" }) : t("blocks.emperorOnly") }) : block.userId ? t("blocks.userScope", { user: block.user?.name || block.user?.username || block.user?.email || block.userId }) : t("blocks.globalScope")}</div></div><AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" size="icon" className="shrink-0 text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("blocks.deleteTitle")}</AlertDialogTitle><AlertDialogDescription>{t("blocks.deleteDescription", { address: blockAddress(block) })}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("blocks.cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void deleteBlock(block.id)}>{t("blocks.delete")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)}</div>}
+
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1fr)_10rem_minmax(10rem,14rem)_auto]">
+            <div className="relative min-w-0 sm:col-span-2 xl:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={blockSearch} onChange={event => setBlockSearch(event.target.value)} placeholder={t("blocks.search")} className="min-w-0 pl-9" /></div>
+            <Select value={blockScopeFilter} onValueChange={value => setBlockScopeFilter(value as typeof blockScopeFilter)}><SelectTrigger aria-label={t("blocks.scopeFilter")} className="min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate"><SelectValue /></SelectTrigger><SelectContent><SelectItem value={allMailboxBlockScopes}>{t("blocks.allScopes")}</SelectItem><SelectItem value="global">{t("blocks.global")}</SelectItem><SelectItem value="user">{t("blocks.user")}</SelectItem><SelectItem value="roles">{t("blocks.roles")}</SelectItem></SelectContent></Select>
+            <Select value={blockDomainFilter} onValueChange={setBlockDomainFilter}><SelectTrigger aria-label={t("blocks.domainFilter")} className="min-w-0 gap-2 [&>span]:min-w-0 [&>span]:truncate"><SelectValue /></SelectTrigger><SelectContent><SelectItem value={allMailboxBlockDomains}>{t("blocks.allDomainScopes")}</SelectItem>{blockFilterDomains.map(domain => <SelectItem key={domain} value={domain}>{domain === ALL_MAILBOX_BLOCK_DOMAINS ? t("blocks.allDomains") : domain}</SelectItem>)}</SelectContent></Select>
+            <Button type="button" variant="outline" className="min-w-0 sm:col-span-2 xl:col-span-1" disabled={!blockFiltersActive} onClick={() => { setBlockSearch(""); setBlockScopeFilter("all"); setBlockDomainFilter(allMailboxBlockDomains) }}><X className="mr-1 h-4 w-4 shrink-0" />{t("blocks.clearFilters")}</Button>
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>{t("blocks.resultCount", { filtered: filteredBlocks.length, total: blocks.length })}</span>
+            {filteredBlocks.length > 0 && <span>{t("blocks.range", { start: blockRangeStart, end: blockRangeEnd, total: filteredBlocks.length })}</span>}
+          </div>
+
+          {blocks.length === 0 ? <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">{t("blocks.empty")}</div> : filteredBlocks.length === 0 ? <div className="space-y-3 rounded border border-dashed p-6 text-center text-sm text-muted-foreground"><p>{t("blocks.noSearchResults")}</p>{blockFiltersActive && <Button type="button" size="sm" variant="outline" onClick={() => { setBlockSearch(""); setBlockScopeFilter("all"); setBlockDomainFilter(allMailboxBlockDomains) }}>{t("blocks.clearFilters")}</Button>}</div> : <div className="overflow-hidden rounded-md border">{pagedBlocks.map(block => <div key={block.id} className={`grid min-w-0 gap-2 border-b p-2.5 transition-colors last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,.9fr)_auto] sm:items-center ${editingBlockId === block.id ? "bg-primary/[0.05]" : "hover:bg-muted/40"}`}><div className="min-w-0 truncate font-mono text-sm" title={blockAddress(block)}>{blockAddress(block)}</div><div className="min-w-0 text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{blockScopeDescription(block)}</div><div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t("blocks.editAddress", { address: blockAddress(block) })} title={t("blocks.edit")} disabled={savingBlock || deletingBlockId === block.id} onClick={() => editBlock(block)}><Pencil className="h-4 w-4" /></Button><AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive" aria-label={t("blocks.deleteAddress", { address: blockAddress(block) })} title={t("blocks.delete")} disabled={savingBlock || deletingBlockId === block.id}>{deletingBlockId === block.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("blocks.deleteTitle")}</AlertDialogTitle><AlertDialogDescription>{t("blocks.deleteDescription", { address: blockAddress(block) })}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("blocks.cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void deleteBlock(block.id)}>{t("blocks.delete")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></div>)}</div>}
+
+          {filteredBlocks.length > mailboxBlockPageSize && <div className="flex min-w-0 items-center justify-between gap-3"><Button type="button" size="sm" variant="outline" disabled={currentBlockPage <= 1} onClick={() => setBlockPage(page => Math.max(1, page - 1))}><ChevronLeft className="mr-1 h-4 w-4" />{t("blocks.previous")}</Button><span className="text-xs text-muted-foreground">{t("blocks.page", { page: currentBlockPage, pages: blockPageCount })}</span><Button type="button" size="sm" variant="outline" disabled={currentBlockPage >= blockPageCount} onClick={() => setBlockPage(page => Math.min(blockPageCount, page + 1))}>{t("blocks.next")}<ChevronRight className="ml-1 h-4 w-4" /></Button></div>}
         </TabsContent>
       </Tabs>
     </div>
