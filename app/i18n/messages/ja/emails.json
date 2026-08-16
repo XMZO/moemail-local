@@ -49,8 +49,7 @@
     "invalidName": "1～64文字の英数字、ドット、アンダースコア、プラス記号、ハイフンを使用してください",
     "domainDiscarded": "@ より前の名前だけを使用します。ドメインは別に選択してください",
     "usageWarningBadge": "要注意",
-    "usageWarningTitle": "{domain} は安定性に問題がある可能性があります",
-    "usageWarningDescription": "このドメインでは可用性、受信、配信に問題が起きる場合があります。メールボックスを頻繁に作成したり、長期的に安定したアドレスとして依存したりしないでください。",
+    "usageWarningInline": "受信や配信が不安定な場合があります。頻繁な作成や長期利用は非推奨です。",
     "randomName": "ランダムなメールボックス名を生成"
   },
   "messages": {

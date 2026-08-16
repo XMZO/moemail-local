@@ -49,8 +49,7 @@
     "invalidName": "Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens",
     "domainDiscarded": "Only the part before @ is used; choose the domain separately",
     "usageWarningBadge": "Use with care",
-    "usageWarningTitle": "{domain} may be less stable",
-    "usageWarningDescription": "This domain may have availability, receiving, or delivery issues. Avoid creating mailboxes on it frequently or relying on it as a long-term address.",
+    "usageWarningInline": "Delivery may be unstable. Avoid frequent creation or long-term use.",
     "randomName": "Generate a random mailbox name"
   },
   "messages": {

@@ -133,97 +133,101 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
           {t("title")}
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)_auto]">
-            <Input
-              value={emailName}
-              onChange={event => {
-                const value = event.target.value
-                setDiscardedDomain(value.includes("@"))
-                setEmailName(value.split("@", 1)[0].slice(0, 64))
-              }}
-              placeholder={t("namePlaceholder")}
-              maxLength={64}
-              pattern="[A-Za-z0-9._+-]+"
-              autoCapitalize="none"
-              autoComplete="off"
-              spellCheck={false}
-              className="flex-1"
-            />
-            {(config?.domains.length ?? 0) > 1 ? (
-              <Select value={currentDomain} onValueChange={setCurrentDomain}>
-                <SelectTrigger className={selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : ""}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {config?.domains.map(option => (
-                    <SelectItem key={option.domain} value={option.domain}>
-                      <span className={`flex min-w-0 items-center gap-2 ${option.usageWarning ? "text-amber-700 dark:text-amber-300" : ""}`}>
-                        {option.usageWarning && <TriangleAlert className="h-3.5 w-3.5 shrink-0" />}
-                        <span className="truncate">@{option.domain}</span>
-                        {option.usageWarning && (
-                          <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
-                            {t("usageWarningBadge")}
+          <div className="space-y-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)_auto]">
+              <Input
+                value={emailName}
+                onChange={event => {
+                  const value = event.target.value
+                  setDiscardedDomain(value.includes("@"))
+                  setEmailName(value.split("@", 1)[0].slice(0, 64))
+                }}
+                placeholder={t("namePlaceholder")}
+                maxLength={64}
+                pattern="[A-Za-z0-9._+-]+"
+                autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
+                className="min-w-0"
+              />
+              <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:row-auto">
+                {(config?.domains.length ?? 0) > 1 ? (
+                  <Select value={currentDomain} onValueChange={setCurrentDomain}>
+                    <SelectTrigger className={selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : ""}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {config?.domains.map(option => (
+                        <SelectItem
+                          key={option.domain}
+                          value={option.domain}
+                          className="[&>span:last-child]:min-w-0 [&>span:last-child]:flex-1"
+                        >
+                          <span className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 ${option.usageWarning ? "text-amber-700 dark:text-amber-300" : ""}`}>
+                            <span className="truncate">@{option.domain}</span>
+                            {option.usageWarning && (
+                              <span className="flex shrink-0 items-center gap-1.5">
+                                <TriangleAlert className="h-3.5 w-3.5" />
+                                <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
+                                  {t("usageWarningBadge")}
+                                </span>
+                              </span>
+                            )}
                           </span>
-                        )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className={`flex h-9 min-w-0 items-center gap-2 rounded-md border px-3 text-sm ${selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "bg-muted/30 text-muted-foreground"}`}>
+                    {selectedDomain?.usageWarning && <TriangleAlert className="h-3.5 w-3.5 shrink-0" />}
+                    <span className="min-w-0 truncate">@{currentDomain}</span>
+                    {selectedDomain?.usageWarning && (
+                      <span className="ml-auto shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
+                        {t("usageWarningBadge")}
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className={`flex h-9 min-w-0 items-center gap-2 rounded-md border px-3 text-sm ${selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "bg-muted/30 text-muted-foreground"}`}>
-                {selectedDomain?.usageWarning && <TriangleAlert className="h-3.5 w-3.5 shrink-0" />}
-                <span className="min-w-0 truncate">@{currentDomain}</span>
-                {selectedDomain?.usageWarning && (
-                  <span className="ml-auto shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
-                    {t("usageWarningBadge")}
-                  </span>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={generateRandomName}
-              type="button"
-              aria-label={t("randomName")}
-              title={t("randomName")}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={generateRandomName}
+                type="button"
+                aria-label={t("randomName")}
+                title={t("randomName")}
+                className="col-start-2 row-start-1 sm:col-auto sm:row-auto"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div aria-live="polite" className="h-10 overflow-hidden sm:h-5">
+              {invalidEmailName ? (
+                <p className="line-clamp-2 text-xs leading-5 text-destructive sm:line-clamp-1">{t("invalidName")}</p>
+              ) : discardedDomain ? (
+                <p className="line-clamp-2 text-xs leading-5 text-muted-foreground sm:line-clamp-1">{t("domainDiscarded")}</p>
+              ) : selectedDomain?.usageWarning ? (
+                <p className="flex items-start gap-1.5 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="line-clamp-2 sm:line-clamp-1">{t("usageWarningInline")}</span>
+                </p>
+              ) : null}
+            </div>
           </div>
 
-          {(discardedDomain || invalidEmailName) && (
-            <p className={invalidEmailName ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-              {invalidEmailName ? t("invalidName") : t("domainDiscarded")}
-            </p>
-          )}
-
-          {selectedDomain?.usageWarning && (
-            <div role="status" className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
-              <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400" />
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                  {t("usageWarningTitle", { domain: selectedDomain.domain })}
-                </p>
-                <p className="text-xs leading-relaxed text-amber-900/75 dark:text-amber-100/70">
-                  {t("usageWarningDescription")}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-4">
+          <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4">
             <Label className="shrink-0 text-muted-foreground">{t("expiryTime")}</Label>
             <RadioGroup
               value={expiryTime}
               onValueChange={setExpiryTime}
-              className="flex gap-6"
+              className="grid grid-cols-2 gap-x-4 gap-y-2 sm:flex sm:flex-wrap sm:gap-x-6"
             >
               {EXPIRY_OPTIONS.map(option => {
                 return (
