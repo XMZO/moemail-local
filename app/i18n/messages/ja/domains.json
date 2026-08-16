@@ -20,6 +20,13 @@
   "domainInbound": "ドメインと受信",
   "deleteDomain": "現在のドメインを削除",
   "domain": "メールドメイン",
+  "usageWarning": {
+    "label": "注意が必要なドメインとして表示",
+    "description": "不安定な可能性、配信品質の変動、または高頻度の利用に適さないドメイン向けです。",
+    "badge": "要注意",
+    "previewTitle": "メールボックス作成時にユーザーへ警告します",
+    "previewDescription": "通常のドメインを優先して選択します。このドメインも手動で選択して利用できます。"
+  },
   "inboundMode": "受信方法",
   "inboundModes": {
     "worker": "Cloudflare Email Worker",

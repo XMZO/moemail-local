@@ -6,10 +6,18 @@ import { EMAIL_CONFIG } from "@/config"
 import { useEffect } from "react"
 import { readApiErrorCode } from "@/lib/api-error-client"
 
+interface DomainOption {
+  domain: string
+  usageWarning: boolean
+  inboundMode: "worker" | "imap" | "mailu" | "disabled"
+  outboundMode: "resend" | "smtp" | "mailu" | "disabled"
+}
+
 interface Config {
   defaultRole: Exclude<Role, typeof ROLES.EMPEROR>
   emailDomains: string
   emailDomainsArray: string[]
+  domains: DomainOption[]
   adminContact: string
   maxEmails: number
 }
@@ -35,13 +43,27 @@ const useConfigStore = create<ConfigStore>((set) => ({
         await readApiErrorCode(res, CONFIG_FETCH_FAILED)
         throw new Error(CONFIG_FETCH_FAILED)
       }
-      const data = await res.json() as Config
+      const data = await res.json() as Omit<Config, "emailDomainsArray" | "domains"> & {
+        domains?: DomainOption[]
+      }
       if (typeof data.emailDomains !== "string") throw new Error(CONFIG_FETCH_FAILED)
+      const fallbackDomains = data.emailDomains.split(",").filter(Boolean).map(domain => ({
+        domain,
+        usageWarning: false,
+        inboundMode: "worker" as const,
+        outboundMode: "disabled" as const,
+      }))
+      const domains = Array.isArray(data.domains)
+        ? data.domains
+            .filter(option => typeof option?.domain === "string")
+            .map(option => ({ ...option, usageWarning: option.usageWarning === true }))
+        : fallbackDomains
       set({
         config: {
           defaultRole: data.defaultRole || ROLES.CIVILIAN,
           emailDomains: data.emailDomains,
-          emailDomainsArray: data.emailDomains.split(',').filter(Boolean),
+          emailDomainsArray: domains.map(option => option.domain),
+          domains,
           adminContact: data.adminContact || "",
           maxEmails: Number(data.maxEmails) || EMAIL_CONFIG.MAX_ACTIVE_EMAILS
         },

@@ -20,6 +20,13 @@
   "domainInbound": "域名与收件",
   "deleteDomain": "删除当前域名",
   "domain": "邮箱域名",
+  "usageWarning": {
+    "label": "标记为谨慎使用",
+    "description": "适用于可能不稳定、投递率波动或不适合高频使用的域名。",
+    "badge": "谨慎",
+    "previewTitle": "用户创建邮箱时会看到警告",
+    "previewDescription": "系统会优先选择普通域名；该域名仍可手动选择和使用。"
+  },
   "inboundMode": "收件方式",
   "inboundModes": {
     "worker": "Cloudflare Email Worker",

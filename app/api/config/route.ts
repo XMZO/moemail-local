@@ -3,7 +3,11 @@ import { EMAIL_CONFIG } from "@/config"
 import { CONFIG_KEYS, getConfigValues, setConfigValues } from "@/lib/config-store"
 import { authorizeRequest } from "@/lib/request-auth"
 import { normalizeMailboxDomain } from "@/lib/email-address"
-import { getDomainPolicies, saveDomainPolicies } from "@/lib/domain-policies"
+import {
+  getDomainPolicies,
+  publicDomainPolicy,
+  saveDomainPolicies,
+} from "@/lib/domain-policies"
 import { apiError } from "@/lib/api-response"
 
 export const runtime = "nodejs"
@@ -33,11 +37,7 @@ export async function GET(request: Request) {
   return Response.json({
     defaultRole: config.DEFAULT_ROLE || ROLES.CIVILIAN,
     emailDomains: availableDomainPolicies.map(policy => policy.domain).join(","),
-    domains: availableDomainPolicies.map(policy => ({
-      domain: policy.domain,
-      inboundMode: policy.inbound.mode,
-      outboundMode: policy.outbound.mode,
-    })),
+    domains: availableDomainPolicies.map(publicDomainPolicy),
     adminContact: config.ADMIN_CONTACT || "",
     maxEmails: config.MAX_EMAILS || EMAIL_CONFIG.MAX_ACTIVE_EMAILS.toString(),
     turnstile: canManageConfig ? {
@@ -123,6 +123,7 @@ export async function POST(request: Request) {
     await saveDomainPolicies(configuredDomains.map(domain => (
       currentPolicies.find(policy => policy.domain === domain) ?? {
         domain,
+        usageWarning: false,
         inbound: { mode: "worker" as const },
         outbound: { mode: "disabled" as const },
       }

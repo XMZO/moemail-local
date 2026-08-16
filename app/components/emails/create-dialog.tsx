@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Copy, Plus, RefreshCw } from "lucide-react"
+import { Copy, Plus, RefreshCw, TriangleAlert } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { nanoid } from "nanoid"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -39,6 +39,7 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
 
   const normalizedEmailName = normalizeMailboxCreationName(emailName) ?? ""
   const invalidEmailName = emailName.length > 0 && !normalizedEmailName
+  const selectedDomain = config?.domains.find(option => option.domain === currentDomain)
 
   const generateRandomName = () => {
     setEmailName(nanoid(8))
@@ -111,9 +112,13 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
   }
 
   useEffect(() => {
-    const availableDomains = config?.emailDomainsArray ?? []
+    const availableDomains = config?.domains ?? []
     setCurrentDomain(current => (
-      availableDomains.includes(current) ? current : availableDomains[0] ?? ""
+      availableDomains.some(option => option.domain === current)
+        ? current
+        : availableDomains.find(option => !option.usageWarning)?.domain
+          ?? availableDomains[0]?.domain
+          ?? ""
     ))
   }, [config])
 
@@ -123,7 +128,7 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
       if (nextOpen) void refreshConfig()
     }}>
       <DialogTrigger asChild>
-        <Button className="gap-2" disabled={(config?.emailDomainsArray.length ?? 0) === 0} title={(config?.emailDomainsArray.length ?? 0) === 0 ? t("noAvailableDomains") : undefined}>
+        <Button className="gap-2" disabled={(config?.domains.length ?? 0) === 0} title={(config?.domains.length ?? 0) === 0 ? t("noAvailableDomains") : undefined}>
           <Plus className="w-4 h-4" />
           {t("title")}
         </Button>
@@ -133,7 +138,7 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
           <DialogTitle>{t("title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="flex gap-2">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)_auto]">
             <Input
               value={emailName}
               onChange={event => {
@@ -149,17 +154,37 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
               spellCheck={false}
               className="flex-1"
             />
-            {(config?.emailDomainsArray?.length ?? 0) > 1 && (
+            {(config?.domains.length ?? 0) > 1 ? (
               <Select value={currentDomain} onValueChange={setCurrentDomain}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className={selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : ""}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {config?.emailDomainsArray?.map(d => (
-                    <SelectItem key={d} value={d}>@{d}</SelectItem>
+                  {config?.domains.map(option => (
+                    <SelectItem key={option.domain} value={option.domain}>
+                      <span className={`flex min-w-0 items-center gap-2 ${option.usageWarning ? "text-amber-700 dark:text-amber-300" : ""}`}>
+                        {option.usageWarning && <TriangleAlert className="h-3.5 w-3.5 shrink-0" />}
+                        <span className="truncate">@{option.domain}</span>
+                        {option.usageWarning && (
+                          <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
+                            {t("usageWarningBadge")}
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            ) : (
+              <div className={`flex h-9 min-w-0 items-center gap-2 rounded-md border px-3 text-sm ${selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "bg-muted/30 text-muted-foreground"}`}>
+                {selectedDomain?.usageWarning && <TriangleAlert className="h-3.5 w-3.5 shrink-0" />}
+                <span className="min-w-0 truncate">@{currentDomain}</span>
+                {selectedDomain?.usageWarning && (
+                  <span className="ml-auto shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
+                    {t("usageWarningBadge")}
+                  </span>
+                )}
+              </div>
             )}
             <Button
               variant="outline"
@@ -177,6 +202,20 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
             <p className={invalidEmailName ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
               {invalidEmailName ? t("invalidName") : t("domainDiscarded")}
             </p>
+          )}
+
+          {selectedDomain?.usageWarning && (
+            <div role="status" className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
+              <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  {t("usageWarningTitle", { domain: selectedDomain.domain })}
+                </p>
+                <p className="text-xs leading-relaxed text-amber-900/75 dark:text-amber-100/70">
+                  {t("usageWarningDescription")}
+                </p>
+              </div>
+            </div>
           )}
 
           <div className="flex items-center gap-4">

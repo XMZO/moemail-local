@@ -48,6 +48,9 @@
     "noAvailableDomains": "目前帳戶沒有可用的郵件網域",
     "invalidName": "請輸入 1–64 位字母、數字、點、底線、加號或連字號",
     "domainDiscarded": "只會使用 @ 前面的名稱；網域請另外選擇",
+    "usageWarningBadge": "謹慎使用",
+    "usageWarningTitle": "{domain} 可能有穩定性風險",
+    "usageWarningDescription": "此網域可能出現可用性、收信或投遞問題，不建議頻繁建立郵箱或將它當作長期穩定地址。",
     "randomName": "產生隨機郵箱名稱"
   },
   "messages": {

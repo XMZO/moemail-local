@@ -20,6 +20,13 @@
   "domainInbound": "網域與收件",
   "deleteDomain": "刪除目前網域",
   "domain": "信箱網域",
+  "usageWarning": {
+    "label": "標記為謹慎使用",
+    "description": "適用於可能不穩定、投遞率波動或不適合高頻使用的網域。",
+    "badge": "謹慎",
+    "previewTitle": "使用者建立郵箱時會看到警告",
+    "previewDescription": "系統會優先選擇一般網域；此網域仍可手動選擇與使用。"
+  },
   "inboundMode": "收件方式",
   "inboundModes": {
     "worker": "Cloudflare Email Worker",

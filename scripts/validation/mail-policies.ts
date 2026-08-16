@@ -12,7 +12,11 @@ import {
   type MailQuotaPolicy,
   type MailQuotaRule,
 } from "../../app/lib/access-policies"
-import { domainPoliciesSchema, type DomainPolicy } from "../../app/lib/domain-policies"
+import {
+  domainPoliciesSchema,
+  publicDomainPolicy,
+  type DomainPolicy,
+} from "../../app/lib/domain-policies"
 import { outboundContent, outboundMessageSchema, sendOutboundMessage, testSmtpConnection } from "../../app/lib/outbound-mail"
 import { PERMISSIONS } from "../../app/lib/permissions"
 import { sendQuotaWindowMilliseconds } from "../../app/lib/send-permissions"
@@ -20,6 +24,7 @@ import { sendQuotaWindowMilliseconds } from "../../app/lib/send-permissions"
 const domainPolicies = domainPoliciesSchema.parse([
   {
     domain: "Resend.Example",
+    usageWarning: true,
     inbound: { mode: "worker" },
     outbound: { mode: "resend", apiKey: "re_test_domain_one", fromName: "Domain One" },
   },
@@ -53,6 +58,14 @@ const domainPolicies = domainPoliciesSchema.parse([
   },
 ])
 assert.equal(domainPolicies[0].domain, "resend.example")
+assert.equal(domainPolicies[0].usageWarning, true)
+assert.equal(domainPolicies[1].usageWarning, false)
+assert.deepEqual(publicDomainPolicy(domainPolicies[0]), {
+  domain: "resend.example",
+  usageWarning: true,
+  inboundMode: "worker",
+  outboundMode: "resend",
+})
 const legacyImapInbound = domainPolicies[1].inbound as Extract<DomainPolicy["inbound"], { mode: "imap" }>
 assert.equal(legacyImapInbound.connectionTimeoutSeconds, 15)
 assert.equal(legacyImapInbound.realtime.enabled, false)

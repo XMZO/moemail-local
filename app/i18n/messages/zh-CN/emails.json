@@ -48,6 +48,9 @@
     "noAvailableDomains": "当前账号没有可用的邮箱域名",
     "invalidName": "请输入 1–64 位字母、数字、点、下划线、加号或连字符",
     "domainDiscarded": "只会使用 @ 前面的名称；域名请单独选择",
+    "usageWarningBadge": "谨慎使用",
+    "usageWarningTitle": "{domain} 可能存在稳定性风险",
+    "usageWarningDescription": "该域名可能出现可用性、收信或投递问题，不建议频繁创建邮箱或把它作为长期稳定地址。",
     "randomName": "生成随机邮箱名称"
   },
   "messages": {

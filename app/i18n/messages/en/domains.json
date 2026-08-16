@@ -20,6 +20,13 @@
   "domainInbound": "Domain and inbound mail",
   "deleteDomain": "Delete this domain",
   "domain": "Mail domain",
+  "usageWarning": {
+    "label": "Mark as use with care",
+    "description": "For domains that may be unstable, have variable delivery, or are unsuitable for frequent use.",
+    "badge": "Caution",
+    "previewTitle": "Users will see a warning when creating a mailbox",
+    "previewDescription": "A normal domain is selected first. This domain remains available for manual selection."
+  },
   "inboundMode": "Inbound method",
   "inboundModes": {
     "worker": "Cloudflare Email Worker",

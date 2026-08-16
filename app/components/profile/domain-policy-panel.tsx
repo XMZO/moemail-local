@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ChevronDown, Globe2, Loader2, PlugZap, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
+import { ChevronDown, Globe2, Loader2, PlugZap, Plus, RotateCcw, Save, Trash2, TriangleAlert } from "lucide-react"
 import { useFormatter, useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -75,12 +75,14 @@ type Outbound =
 
 interface DomainPolicy {
   domain: string
+  usageWarning: boolean
   inbound: Inbound
   outbound: Outbound
 }
 
 const freshPolicy = (domain = "example.com"): DomainPolicy => ({
   domain,
+  usageWarning: false,
   inbound: { mode: "worker" },
   outbound: { mode: "disabled" },
 })
@@ -290,6 +292,7 @@ export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
       const existing = new Set(previous.map(policy => policy.domain))
       return [...previous, ...domains.filter(domain => !existing.has(domain)).map(domain => ({
         domain,
+        usageWarning: false,
         inbound: { mode: "mailu" as const },
         outbound: { mode: "mailu" as const },
       }))]
@@ -345,6 +348,9 @@ export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
                 className="shrink-0"
                 onClick={() => setSelected(index)}
               >
+                {policy.usageWarning && (
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                )}
                 {policy.domain}
               </Button>
             ))}
@@ -359,6 +365,28 @@ export function DomainPolicyPanel({ canManageConfig, canManageMailu }: {
               <div className="space-y-2">
                 <Label>{t("domain")}</Label>
                 <Input value={current.domain} onChange={event => updateCurrent(policy => ({ ...policy, domain: event.target.value }))} spellCheck={false} />
+              </div>
+              <div className={`space-y-3 rounded-md border p-3 transition-colors ${current.usageWarning ? "border-amber-500/50 bg-amber-500/5" : "bg-muted/20"}`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 space-y-1">
+                    <Label htmlFor="domain-usage-warning" className="flex items-center gap-2">
+                      <TriangleAlert className={`h-4 w-4 shrink-0 ${current.usageWarning ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} />
+                      {t("usageWarning.label")}
+                    </Label>
+                    <p className="text-xs leading-relaxed text-muted-foreground">{t("usageWarning.description")}</p>
+                  </div>
+                  <Switch
+                    id="domain-usage-warning"
+                    checked={current.usageWarning}
+                    onCheckedChange={usageWarning => updateCurrent(policy => ({ ...policy, usageWarning }))}
+                  />
+                </div>
+                {current.usageWarning && (
+                  <div className="rounded border border-amber-500/30 bg-background/70 p-2.5 text-xs leading-relaxed">
+                    <p className="font-medium text-amber-700 dark:text-amber-300">{t("usageWarning.previewTitle")}</p>
+                    <p className="mt-1 text-muted-foreground">{t("usageWarning.previewDescription")}</p>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>{t("inboundMode")}</Label>

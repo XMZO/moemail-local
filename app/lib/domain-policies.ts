@@ -135,6 +135,7 @@ const domainPolicySchema = z.object({
     }
     return normalized
   }),
+  usageWarning: z.boolean().default(false),
   inbound: z.discriminatedUnion("mode", [
     workerInboundSchema,
     imapInboundSchema,
@@ -218,6 +219,7 @@ async function legacyPolicies(): Promise<DomainPolicies> {
 
   return uniqueDomains.map(domain => ({
     domain,
+    usageWarning: false,
     inbound: { mode: "worker" as const },
     outbound: resendEnabled
       ? { mode: "resend" as const, apiKey: values.RESEND_API_KEY as string, fromName: null }
@@ -254,6 +256,7 @@ export async function saveDomainPolicies(input: unknown): Promise<DomainPolicies
 export function publicDomainPolicy(policy: DomainPolicy) {
   return {
     domain: policy.domain,
+    usageWarning: policy.usageWarning,
     inboundMode: policy.inbound.mode,
     outboundMode: policy.outbound.mode,
   }
