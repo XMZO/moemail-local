@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { nanoid } from "nanoid"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 import { EXPIRY_OPTIONS } from "@/types/email"
 import { useCopy } from "@/hooks/use-copy"
 import { useConfig } from "@/hooks/use-config"
@@ -34,6 +34,7 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
   const [discardedDomain, setDiscardedDomain] = useState(false)
   const [currentDomain, setCurrentDomain] = useState("")
   const [expiryTime, setExpiryTime] = useState(EXPIRY_OPTIONS[1].value.toString())
+  const usageWarningDescriptionId = useId()
   const { toast } = useToast()
   const { copyToClipboard } = useCopy()
 
@@ -158,9 +159,21 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
               <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:row-auto">
                 {(config?.domains.length ?? 0) > 1 ? (
                   <Select value={currentDomain} onValueChange={setCurrentDomain}>
-                    <SelectTrigger className={selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : ""}>
-                      <SelectValue />
+                    <SelectTrigger
+                      className={`gap-2 [&>svg:last-child]:shrink-0 ${selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : ""}`}
+                      aria-describedby={selectedDomain?.usageWarning ? usageWarningDescriptionId : undefined}
+                      title={`@${currentDomain}`}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-left">@{currentDomain}</span>
+                        {selectedDomain?.usageWarning && (
+                          <TriangleAlert aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                      </span>
                     </SelectTrigger>
+                    {selectedDomain?.usageWarning && (
+                      <span id={usageWarningDescriptionId} className="sr-only">{t("usageWarningInline")}</span>
+                    )}
                     <SelectContent>
                       {config?.domains.map(option => (
                         <SelectItem
@@ -184,13 +197,13 @@ export function CreateDialog({ onEmailCreated }: CreateDialogProps) {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <div className={`flex h-9 min-w-0 items-center gap-2 rounded-md border px-3 text-sm ${selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "bg-muted/30 text-muted-foreground"}`}>
-                    {selectedDomain?.usageWarning && <TriangleAlert className="h-3.5 w-3.5 shrink-0" />}
-                    <span className="min-w-0 truncate">@{currentDomain}</span>
+                  <div
+                    className={`flex h-9 min-w-0 items-center gap-2 rounded-md border px-3 text-sm ${selectedDomain?.usageWarning ? "border-amber-500/60 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "bg-muted/30 text-muted-foreground"}`}
+                    title={`@${currentDomain}`}
+                  >
+                    <span className="min-w-0 flex-1 truncate">@{currentDomain}</span>
                     {selectedDomain?.usageWarning && (
-                      <span className="ml-auto shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium">
-                        {t("usageWarningBadge")}
-                      </span>
+                      <TriangleAlert aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                     )}
                   </div>
                 )}
